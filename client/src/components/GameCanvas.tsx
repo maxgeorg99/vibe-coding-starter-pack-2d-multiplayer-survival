@@ -93,27 +93,56 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   
   // Game loop
   const gameLoop = () => {
+    // Get local player position *before* updating based on input
+    // This helps keep the camera centered on the position sent to the server
+    const localPlayer = getLocalPlayer(); 
     updatePlayerBasedOnInput();
-    renderGame();
+    renderGame(localPlayer); // Pass local player to renderGame
     requestIdRef.current = requestAnimationFrame(gameLoop);
   };
   
-  // Draw the game
-  const renderGame = () => {
+  // Draw the game, centered on the local player
+  const renderGame = (localPlayer: SpacetimeDBPlayer | undefined) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Clear the canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // --- Pre-Camera Rendering --- 
+    // Fill entire canvas with black background (area outside game world)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Save the default state (before camera translation)
+    ctx.save();
+
+    // Calculate camera translation
+    const cameraX = canvas.width / 2;
+    const cameraY = canvas.height / 2;
+    if (localPlayer) {
+      ctx.translate(cameraX - localPlayer.positionX, cameraY - localPlayer.positionY);
+    }
     
-    // Draw grid
+    // --- Post-Camera Rendering (World Space) --- 
+
+    // Draw the green game world background
+    ctx.fillStyle = '#8FBC8F'; // Soft grass green (DarkSeaGreen)
+    ctx.fillRect(
+      0, // World origin X
+      0, // World origin Y
+      gameConfig.worldWidth * gameConfig.tileSize, // World width in pixels
+      gameConfig.worldHeight * gameConfig.tileSize // World height in pixels
+    );
+    
+    // Draw grid (on top of green background)
     drawGrid(ctx);
     
-    // Draw players
+    // Draw players (on top of green background)
     drawPlayers(ctx);
+
+    // Restore the default state (removes the translation)
+    ctx.restore();
   };
   
   // Draw the grid
@@ -174,30 +203,26 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
   };
   
-  // Set up and clean up the game loop
+  // Effect for game loop
   useEffect(() => {
-    if (canvasRef.current) {
-      // Start the game loop
-      requestIdRef.current = requestAnimationFrame(gameLoop);
-    }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Start the game loop
+    requestIdRef.current = requestAnimationFrame(gameLoop);
     
-    // Clean up
+    // Clean up game loop
     return () => {
       cancelAnimationFrame(requestIdRef.current);
     };
-  }, [players, localPlayerId]);
+  }, [players, localPlayerId]); // Original dependencies
   
   return (
     <canvas
       ref={canvasRef}
-      width={gameConfig.canvasWidth}
+      // Restore static width/height based on game config
+      width={gameConfig.canvasWidth} 
       height={gameConfig.canvasHeight}
-      style={{
-        border: '1px solid #000',
-        margin: '20px auto',
-        display: 'block',
-        backgroundColor: '#f0f0f0'
-      }}
     />
   );
 };

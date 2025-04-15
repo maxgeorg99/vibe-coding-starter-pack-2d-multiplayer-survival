@@ -181,8 +181,6 @@ function App() {
   
   return (
     <div className="App">
-      <h1>2D Survival Game</h1>
-      
       {error && <div className="error-message">{error}</div>}
       
       {!isConnected ? (
@@ -208,10 +206,6 @@ function App() {
             localPlayerId={connection?.identity?.toHexString()}
             updatePlayerPosition={updatePlayerPosition}
           />
-          <div className="game-info">
-            <p>Players online: {players.size}</p>
-            <p>Use WASD or arrow keys to move your player</p>
-          </div>
         </div>
       )}
     </div>

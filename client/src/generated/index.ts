@@ -122,10 +122,6 @@ export class RemoteReducers {
     this.connection.offReducer("identity_connected", callback);
   }
 
-  identityDisconnected() {
-    this.connection.callReducer("identity_disconnected", new Uint8Array(0), this.setCallReducerFlags.identityDisconnectedFlags);
-  }
-
   onIdentityDisconnected(callback: (ctx: ReducerEventContext) => void) {
     this.connection.onReducer("identity_disconnected", callback);
   }
@@ -150,19 +146,19 @@ export class RemoteReducers {
     this.connection.offReducer("register_player", callback);
   }
 
-  updatePlayerPosition(positionX: number, positionY: number) {
-    const __args = { positionX, positionY };
+  updatePlayerPosition(proposedX: number, proposedY: number) {
+    const __args = { proposedX, proposedY };
     let __writer = new BinaryWriter(1024);
     UpdatePlayerPosition.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("update_player_position", __argsBuffer, this.setCallReducerFlags.updatePlayerPositionFlags);
   }
 
-  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, positionX: number, positionY: number) => void) {
+  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, proposedX: number, proposedY: number) => void) {
     this.connection.onReducer("update_player_position", callback);
   }
 
-  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, positionX: number, positionY: number) => void) {
+  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, proposedX: number, proposedY: number) => void) {
     this.connection.offReducer("update_player_position", callback);
   }
 
@@ -172,11 +168,6 @@ export class SetReducerFlags {
   identityConnectedFlags: CallReducerFlags = 'FullUpdate';
   identityConnected(flags: CallReducerFlags) {
     this.identityConnectedFlags = flags;
-  }
-
-  identityDisconnectedFlags: CallReducerFlags = 'FullUpdate';
-  identityDisconnected(flags: CallReducerFlags) {
-    this.identityDisconnectedFlags = flags;
   }
 
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
