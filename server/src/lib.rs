@@ -78,6 +78,7 @@ pub struct Player {
     pub is_sprinting: bool,
     pub is_dead: bool,
     pub respawn_at: Timestamp,
+    pub last_hit_time: Option<Timestamp>,
 }
 
 // When a client connects, we need to create a player for them
@@ -239,6 +240,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         is_sprinting: false,
         is_dead: false,
         respawn_at: ctx.timestamp,
+        last_hit_time: None,
     };
     
     // Insert the new player
@@ -941,6 +943,7 @@ pub fn update_player_position(
             is_sprinting: current_sprinting_state,
             is_dead: player_died,
             respawn_at: calculated_respawn_at,
+            last_hit_time: None,
             ..current_player
         };
         players.identity().update(player);
@@ -996,7 +999,7 @@ pub fn jump(ctx: &ReducerContext) -> Result<(), String> {
 pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
-    let item_defs = ctx.db.item_definition();
+    let item_defs = ctx.db.item_definition(); // Keep for potential future use (e.g., dropping items)
     let inventory = ctx.db.inventory_item();
 
     // Find the player requesting respawn
@@ -1012,13 +1015,42 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     // Check if the respawn timer is up
     if ctx.timestamp < player.respawn_at {
         log::warn!("Player {:?} requested respawn too early.", sender_id);
-        // Calculate remaining time using the correct method
         let remaining_micros = player.respawn_at.to_micros_since_unix_epoch().saturating_sub(ctx.timestamp.to_micros_since_unix_epoch());
         let remaining_secs = (remaining_micros as f64 / 1_000_000.0).ceil() as u64;
         return Err(format!("Respawn available in {} seconds.", remaining_secs));
     }
 
-    log::info!("Respawning player {} ({:?})...", player.username, sender_id);
+    log::info!("Respawning player {} ({:?}). Clearing inventory...", player.username, sender_id);
+
+    // --- Clear Player Inventory ---
+    let mut items_to_delete = Vec::new();
+    for item in inventory.iter().filter(|item| item.player_identity == sender_id) {
+        items_to_delete.push(item.instance_id);
+    }
+    let delete_count = items_to_delete.len();
+    for item_instance_id in items_to_delete {
+        inventory.instance_id().delete(item_instance_id);
+    }
+    log::info!("Cleared {} items from inventory for player {:?}.", delete_count, sender_id);
+    // --- End Clear Inventory ---
+
+    // --- Grant Starting Rock ---
+    log::info!("Granting starting Rock to respawned player: {}", player.username);
+    if let Some(rock_def) = item_defs.iter().find(|def| def.name == "Rock") {
+        match inventory.try_insert(items::InventoryItem {
+            instance_id: 0, // Auto-incremented
+            player_identity: sender_id,
+            item_def_id: rock_def.id,
+            quantity: 1,
+            hotbar_slot: Some(0), // Put in first slot
+        }) {
+            Ok(_) => log::info!("Granted 1 Rock (slot 0) to player {}", player.username),
+            Err(e) => log::error!("Failed to grant starting Rock to player {}: {}", player.username, e),
+        }
+    } else {
+        log::error!("Could not find item definition for starting Rock!");
+    }
+    // --- End Grant Starting Rock ---
 
     // --- Reset Stats and State ---
     player.health = 100.0;
@@ -1029,7 +1061,7 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     player.jump_start_time_ms = 0;
     player.is_sprinting = false;
     player.is_dead = false; // Mark as alive again
-    // player.respawn_at remains the old time, doesn't matter now
+    player.last_hit_time = None; 
 
     // --- Reset Position ---
     let spawn_x = 640.0; // Simple initial spawn point
@@ -1040,53 +1072,6 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
 
     // --- Update Timestamp ---
     player.last_update = ctx.timestamp;
-
-    // --- Grant Starting Items (Similar to register_player) ---
-    // Note: This simply adds/updates items. Existing inventory is not cleared.
-    // Consider clearing inventory or dropping items in a future update.
-    log::info!("Granting starting items to respawned player: {}", player.username);
-    let starting_items = [
-        ("Stone Hatchet", 1, 0u8), 
-        ("Stone Pickaxe", 1, 1u8),
-        ("Wood", 50, 2u8), // Reduced starting wood/stone
-        ("Stone", 50, 3u8),
-        ("Camp Fire", 1, 4u8),
-    ];
-
-    for (item_name, quantity, slot) in starting_items.iter() {
-        if let Some(item_def) = item_defs.iter().find(|def| def.name == *item_name) {
-            // Check if player already has this item type in this slot
-            let existing_item = inventory.iter()
-                .find(|item| item.player_identity == sender_id && 
-                              item.item_def_id == item_def.id && 
-                              item.hotbar_slot == Some(*slot));
-
-            match existing_item {
-                Some(mut item) => {
-                    // Update quantity if item exists in the slot
-                    item.quantity = *quantity; // Set to exact starting quantity
-                    inventory.instance_id().update(item);
-                    log::info!("Updated {} to quantity {} (slot {}) for player {}", item_name, quantity, slot, player.username);
-                }
-                None => {
-                    // Insert new item if it doesn't exist in the slot
-                    match inventory.try_insert(items::InventoryItem {
-                        instance_id: 0, // Auto-incremented
-                        player_identity: sender_id,
-                        item_def_id: item_def.id,
-                        quantity: *quantity,
-                        hotbar_slot: Some(*slot),
-                    }) {
-                        Ok(_) => log::info!("Granted {} {} (slot {}) to player {}", quantity, item_name, slot, player.username),
-                        Err(e) => log::error!("Failed to grant starting item {} to player {}: {}", item_name, player.username, e),
-                    }
-                }
-            }
-        } else {
-            log::error!("Could not find item definition for starting item: {}", item_name);
-        }
-    }
-    // --- End Grant Starting Items ---
 
     // --- Apply Player Changes ---
     players.identity().update(player);

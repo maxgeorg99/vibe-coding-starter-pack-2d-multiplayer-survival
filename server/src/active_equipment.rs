@@ -1,4 +1,4 @@
-use spacetimedb::{ Identity, ReducerContext, Table };
+use spacetimedb::{ Identity, ReducerContext, Table, Timestamp };
 use log;
 
 // Import table traits needed for ctx.db access
@@ -14,6 +14,10 @@ use crate::items::item_definition as item_definition_table_trait; // Alias to av
 use crate::environment::{TREE_COLLISION_Y_OFFSET, STONE_COLLISION_Y_OFFSET}; // Import offset constants
 use crate::PLAYER_RADIUS; // Add back the import for PLAYER_RADIUS
 use std::f32::consts::PI;
+
+// --- Constants ---
+pub(crate) const RESPAWN_TIME_MS: u64 = 5000; // 5 seconds respawn time
+const PVP_DAMAGE_MULTIPLIER: f32 = 6.0;
 
 #[spacetimedb::table(name = active_equipment, public)]
 #[derive(Clone, Default, Debug)]
@@ -132,8 +136,8 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
     };
 
     // --- Attack Logic ---
-    let attack_range = PLAYER_RADIUS * 3.0; // Increased range slightly
-    let attack_angle_degrees = 70.0; // Width of the attack arc (degrees)
+    let attack_range = PLAYER_RADIUS * 4.0; // Increased range further
+    let attack_angle_degrees = 90.0; // Widen attack arc to 90 degrees
     let attack_angle_rad = attack_angle_degrees * PI / 180.0;
     let half_attack_angle_rad = attack_angle_rad / 2.0;
 
@@ -279,9 +283,22 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             let mut target_player = players.identity().find(target_player_id)
                 .ok_or("Target player disappeared?")?;
             let old_health = target_player.health;
-            target_player.health = (target_player.health - item_damage as f32).max(0.0);
-            log::info!("Player {:?} hit Player {:?} with {} for {} damage. Health: {:.1} -> {:.1}",
-                     sender_id, target_player_id, item_def.name, item_damage, old_health, target_player.health);
+            // Apply PvP multiplier
+            let actual_damage = (item_damage as f32 * PVP_DAMAGE_MULTIPLIER).max(0.0);
+            target_player.health = (target_player.health - actual_damage).max(0.0);
+            target_player.last_hit_time = Some(now_ts); // <-- Set last hit time
+            log::info!("Player {:?} hit Player {:?} with {} for {:.1} ({} base * {}x) damage. Health: {:.1} -> {:.1}",
+                     sender_id, target_player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+
+            // Check for death
+            if target_player.health <= 0.0 && !target_player.is_dead {
+                target_player.is_dead = true;
+                let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
+                target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
+                log::info!("Player {:?} killed Player {:?}. Respawn at {:?}", sender_id, target_player_id, target_player.respawn_at);
+                // TODO: Drop items? Clear equipment?
+            }
+
             players.identity().update(target_player);
             hit_something = true;
         }
@@ -334,11 +351,152 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             let mut target_player = players.identity().find(target_player_id)
                 .ok_or("Target player disappeared?")?;
             let old_health = target_player.health;
-            target_player.health = (target_player.health - item_damage as f32).max(0.0);
-            log::info!("Player {:?} hit Player {:?} with {} for {} damage. Health: {:.1} -> {:.1}",
-                     sender_id, target_player_id, item_def.name, item_damage, old_health, target_player.health);
+            // Apply PvP multiplier
+            let actual_damage = (item_damage as f32 * PVP_DAMAGE_MULTIPLIER).max(0.0);
+            target_player.health = (target_player.health - actual_damage).max(0.0);
+            target_player.last_hit_time = Some(now_ts); // <-- Set last hit time
+            log::info!("Player {:?} hit Player {:?} with {} for {:.1} ({} base * {}x) damage. Health: {:.1} -> {:.1}",
+                     sender_id, target_player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+
+            // Check for death
+            if target_player.health <= 0.0 && !target_player.is_dead {
+                target_player.is_dead = true;
+                let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
+                target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
+                log::info!("Player {:?} killed Player {:?}. Respawn at {:?}", sender_id, target_player_id, target_player.respawn_at);
+                // TODO: Drop items? Clear equipment?
+            }
+
             players.identity().update(target_player);
             hit_something = true;
+        }
+
+    } else if tool_name == "Rock" {
+        // Rock: Prioritize closest Stone, Tree, OR Player
+        let mut closest_dist_sq = f32::MAX;
+        let mut closest_target_type = None; // Option<"tree" | "stone" | "player">
+
+        if let Some((_, dist_sq)) = closest_tree_target {
+            if dist_sq < closest_dist_sq {
+                closest_dist_sq = dist_sq;
+                closest_target_type = Some("tree");
+            }
+        }
+        if let Some((_, dist_sq)) = closest_stone_target {
+             if dist_sq < closest_dist_sq {
+                closest_dist_sq = dist_sq;
+                closest_target_type = Some("stone");
+            }
+        }
+        if let Some((_, dist_sq)) = closest_player_target {
+             if dist_sq < closest_dist_sq {
+                // closest_dist_sq = dist_sq; // Intentionally removed - player dist already calculated
+                closest_target_type = Some("player");
+            }
+        }
+        
+        match closest_target_type {
+            Some("tree") => {
+                if let Some((tree_id, _)) = closest_tree_target { // Retrieve ID again
+                    // --- Damage Tree & Grant Wood (Damage = 1) ---
+                    let mut tree = trees.id().find(tree_id).ok_or("Target tree disappeared?")?;
+                    let old_health = tree.health;
+                    tree.health = tree.health.saturating_sub(1); // Rock damage = 1
+                    tree.last_hit_time = Some(now_ts);
+                    log::info!("Player {:?} hit Tree {} with {} for {} damage. Health: {} -> {}",
+                            sender_id, tree_id, item_def.name, 1, old_health, tree.health);
+
+                    // Grant 1 Wood
+                    if let Some(wood_def) = item_defs.iter().find(|def| def.name == "Wood") {
+                        match inventory_items.iter().find(|item| item.player_identity == sender_id && item.item_def_id == wood_def.id) {
+                            Some(mut existing_stack) => {
+                                existing_stack.quantity = existing_stack.quantity.saturating_add(1);
+                                inventory_items.instance_id().update(existing_stack);
+                                log::debug!("Added 1 wood to existing stack for player {:?}.", sender_id);
+                            },
+                            None => {
+                                let mut target_slot: Option<u8> = None;
+                                let mut occupied_slots = std::collections::HashSet::new();
+                                for item in inventory_items.iter().filter(|i| i.player_identity == sender_id && i.hotbar_slot.is_some()) {
+                                    occupied_slots.insert(item.hotbar_slot.unwrap());
+                                }
+                                for i in 0..6u8 { if !occupied_slots.contains(&i) { target_slot = Some(i); break; } }
+                                match inventory_items.try_insert(crate::items::InventoryItem { instance_id: 0, player_identity: sender_id, item_def_id: wood_def.id, quantity: 1, hotbar_slot: target_slot }) {
+                                    Ok(_) => {}, Err(e) => log::error!("Failed to grant new wood stack to player {:?}: {}", sender_id, e),
+                                }
+                            }
+                        }
+                    } else { log::error!("Wood item definition not found for Rock hit."); }
+
+                    if tree.health == 0 { trees.id().delete(tree_id); }
+                    else { trees.id().update(tree); }
+                    hit_something = true;
+                }
+            },
+            Some("stone") => {
+                if let Some((stone_id, _)) = closest_stone_target { // Retrieve ID again
+                    // --- Damage Stone & Grant Stone (Damage = 1) ---
+                    let mut stone = stones.id().find(stone_id).ok_or("Target stone disappeared?")?;
+                    let old_health = stone.health;
+                    stone.health = stone.health.saturating_sub(1); // Rock damage = 1
+                    stone.last_hit_time = Some(now_ts);
+                    log::info!("Player {:?} hit Stone {} with {} for {} damage. Health: {} -> {}",
+                            sender_id, stone_id, item_def.name, 1, old_health, stone.health);
+
+                    // Grant 1 Stone
+                    if let Some(stone_def) = item_defs.iter().find(|def| def.name == "Stone") {
+                       match inventory_items.iter().find(|item| item.player_identity == sender_id && item.item_def_id == stone_def.id) {
+                            Some(mut existing_stack) => {
+                                existing_stack.quantity = existing_stack.quantity.saturating_add(1);
+                                inventory_items.instance_id().update(existing_stack);
+                                log::debug!("Added 1 stone to existing stack for player {:?}.", sender_id);
+                            },
+                            None => {
+                                let mut target_slot: Option<u8> = None;
+                                let mut occupied_slots = std::collections::HashSet::new();
+                                for item in inventory_items.iter().filter(|i| i.player_identity == sender_id && i.hotbar_slot.is_some()) {
+                                    occupied_slots.insert(item.hotbar_slot.unwrap());
+                                }
+                                for i in 0..6u8 { if !occupied_slots.contains(&i) { target_slot = Some(i); break; } }
+                                match inventory_items.try_insert(crate::items::InventoryItem { instance_id: 0, player_identity: sender_id, item_def_id: stone_def.id, quantity: 1, hotbar_slot: target_slot }) {
+                                    Ok(_) => {}, Err(e) => log::error!("Failed to grant new stone stack to player {:?}: {}", sender_id, e),
+                                }
+                            }
+                        }
+                    } else { log::error!("Stone item definition not found for Rock hit."); }
+
+                    if stone.health == 0 { stones.id().delete(stone_id); }
+                    else { stones.id().update(stone); }
+                    hit_something = true;
+                }
+            },
+            Some("player") => {
+                if let Some((player_id, _)) = closest_player_target { // Retrieve ID again
+                    // --- Damage Player (Rock Damage = 1 * Multiplier) ---
+                    let mut target_player = players.identity().find(player_id)
+                        .ok_or("Target player disappeared?")?;
+                    let old_health = target_player.health;
+                    // Rock base damage is 1
+                    let actual_damage = (1.0 * PVP_DAMAGE_MULTIPLIER).max(0.0);
+                    target_player.health = (target_player.health - actual_damage).max(0.0);
+                    target_player.last_hit_time = Some(now_ts);
+                    log::info!("Player {:?} hit Player {:?} with {} for {:.1} (1 base * {}x) damage. Health: {:.1} -> {:.1}",
+                            sender_id, player_id, item_def.name, actual_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+
+                    // Check for death
+                    if target_player.health <= 0.0 && !target_player.is_dead {
+                        target_player.is_dead = true;
+                        let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
+                        target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
+                        log::info!("Player {:?} killed Player {:?}. Respawn at {:?}", sender_id, player_id, target_player.respawn_at);
+                    }
+
+                    players.identity().update(target_player);
+                    hit_something = true;
+                }
+            },
+            None => { /* No target found */ }, 
+            _ => { /* Should not happen */ log::error!("Invalid closest_target_type"); }
         }
 
     } else {
@@ -403,9 +561,22 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     let mut target_player = players.identity().find(player_id)
                         .ok_or("Target player disappeared?")?;
                     let old_health = target_player.health;
-                    target_player.health = (target_player.health - item_damage as f32).max(0.0);
-                    log::info!("Player {:?} hit Player {:?} with {} for {} damage. Health: {:.1} -> {:.1}",
-                            sender_id, player_id, item_def.name, item_damage, old_health, target_player.health);
+                    // Apply PvP multiplier
+                    let actual_damage = (item_damage as f32 * PVP_DAMAGE_MULTIPLIER).max(0.0);
+                    target_player.health = (target_player.health - actual_damage).max(0.0);
+                    target_player.last_hit_time = Some(now_ts); // <-- Set last hit time
+                    log::info!("Player {:?} hit Player {:?} with {} for {:.1} ({} base * {}x) damage. Health: {:.1} -> {:.1}",
+                            sender_id, player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+
+                    // Check for death
+                    if target_player.health <= 0.0 && !target_player.is_dead {
+                        target_player.is_dead = true;
+                        let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
+                        target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
+                        log::info!("Player {:?} killed Player {:?}. Respawn at {:?}", sender_id, player_id, target_player.respawn_at);
+                        // TODO: Drop items? Clear equipment?
+                    }
+
                     players.identity().update(target_player);
                     hit_something = true;
                 }

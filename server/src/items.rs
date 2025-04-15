@@ -113,6 +113,17 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             stack_size: 1,
             is_equippable: false, // Campfire is placeable, not equippable
         },
+        ItemDefinition {
+            id: 0,
+            name: "Rock".to_string(),
+            description: "A basic tool for gathering.".to_string(),
+            category: ItemCategory::Tool,
+            icon_asset_name: "rock_item.png".to_string(),
+            damage: Some(1),
+            is_stackable: false,
+            stack_size: 1,
+            is_equippable: true,
+        },
     ];
 
     let mut seeded_count = 0;
