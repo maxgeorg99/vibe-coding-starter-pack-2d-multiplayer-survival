@@ -36,6 +36,7 @@ export type Player = {
   positionX: number,
   positionY: number,
   color: string,
+  direction: string,
   lastUpdate: Timestamp,
 };
 
@@ -54,6 +55,7 @@ export namespace Player {
       new ProductTypeElement("positionX", AlgebraicType.createF32Type()),
       new ProductTypeElement("positionY", AlgebraicType.createF32Type()),
       new ProductTypeElement("color", AlgebraicType.createStringType()),
+      new ProductTypeElement("direction", AlgebraicType.createStringType()),
       new ProductTypeElement("lastUpdate", AlgebraicType.createTimestampType()),
     ]);
   }

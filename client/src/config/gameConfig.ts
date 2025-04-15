@@ -1,6 +1,6 @@
 export const gameConfig = {
   // Tile settings
-  tileSize: 64, // pixels
+  tileSize: 48, // pixels
   
   // World dimensions (in tiles)
   worldWidth: 20,

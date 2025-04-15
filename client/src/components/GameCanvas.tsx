@@ -1,6 +1,16 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { gameConfig } from '../config/gameConfig';
 import { Player as SpacetimeDBPlayer } from '../generated';
+import { Identity as SpacetimeDBIdentity, Timestamp as SpacetimeDBTimestamp } from '@clockworklabs/spacetimedb-sdk';
+import heroSpriteSheet from '../assets/hero.png';
+
+// Define sprite dimensions (adjust if needed)
+const SPRITE_WIDTH = 48;
+const SPRITE_HEIGHT = 48;
+const PLAYER_RADIUS = 24; // Match sprite size / 2 (or use value from gameConfig if defined there)
+
+// Threshold for considering a player "recently moved" (in milliseconds)
+const MOVEMENT_IDLE_THRESHOLD_MS = 200;
 
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
@@ -16,6 +26,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysPressed = useRef<Set<string>>(new Set());
   const requestIdRef = useRef<number>(0);
+  const heroImageRef = useRef<HTMLImageElement | null>(null);
+  const [animationFrame, setAnimationFrame] = useState(0);
+  const animationIntervalRef = useRef<number | null>(null);
+  // Use a ref for mouse position to avoid state updates on move
+  const mousePosRef = useRef<{x: number | null, y: number | null}>({ x: null, y: null }); 
   
   // Get the local player
   const getLocalPlayer = (): SpacetimeDBPlayer | undefined => {
@@ -91,57 +106,95 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   };
   
+  // Load the spritesheet image
+  useEffect(() => { 
+    const img = new Image();
+    img.src = heroSpriteSheet;
+    img.onload = () => {
+      heroImageRef.current = img;
+      console.log('Hero spritesheet loaded.');
+    };
+    img.onerror = () => {
+      console.error('Failed to load hero spritesheet.');
+    };
+  }, []); // Runs once
+
+  // Effect for setting up the animation timer
+  useEffect(() => {
+    // Always run animation timer
+    animationIntervalRef.current = window.setInterval(() => {
+      setAnimationFrame(frame => (frame + 1) % 4); // Cycle through 4 frames
+    }, 150); // Adjust animation speed (ms)
+
+    // Cleanup timer
+    return () => { 
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current);
+      }
+    };
+  }, []); // Runs once to set up timer
+  
+  // Effect for Mouse Listeners (runs once)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      // Update ref directly
+      mousePosRef.current = {
+        x: (event.clientX - rect.left) * scaleX,
+        y: (event.clientY - rect.top) * scaleY
+      };
+    };
+    canvas.addEventListener('mousemove', handleMouseMove);
+
+    const handleMouseLeave = () => {
+      // Update ref directly
+      mousePosRef.current = { x: null, y: null };
+    };
+    canvas.addEventListener('mouseleave', handleMouseLeave);
+
+    // Cleanup listeners
+    return () => {
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, []); // Empty dependency array - runs once
+
   // Game loop
   const gameLoop = () => {
-    // Get local player position *before* updating based on input
-    // This helps keep the camera centered on the position sent to the server
-    const localPlayer = getLocalPlayer(); 
     updatePlayerBasedOnInput();
-    renderGame(localPlayer); // Pass local player to renderGame
+    // Read current mouse position from ref
+    renderGame(mousePosRef.current); 
     requestIdRef.current = requestAnimationFrame(gameLoop);
   };
   
-  // Draw the game, centered on the local player
-  const renderGame = (localPlayer: SpacetimeDBPlayer | undefined) => {
+  // Draw the game (accepts mouse position object)
+  const renderGame = (currentMousePos: {x: number | null, y: number | null}) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // --- Pre-Camera Rendering --- 
-    // Fill entire canvas with black background (area outside game world)
+    const localPlayerData = localPlayerId ? players.get(localPlayerId) : undefined;
+
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Save the default state (before camera translation)
     ctx.save();
 
-    // Calculate camera translation
     const cameraX = canvas.width / 2;
     const cameraY = canvas.height / 2;
-    if (localPlayer) {
-      ctx.translate(cameraX - localPlayer.positionX, cameraY - localPlayer.positionY);
+    if (localPlayerData) {
+      ctx.translate(cameraX - localPlayerData.positionX, cameraY - localPlayerData.positionY);
     }
     
-    // --- Post-Camera Rendering (World Space) --- 
-
-    // Draw the green game world background
-    ctx.fillStyle = '#8FBC8F'; // Soft grass green (DarkSeaGreen)
-    ctx.fillRect(
-      0, // World origin X
-      0, // World origin Y
-      gameConfig.worldWidth * gameConfig.tileSize, // World width in pixels
-      gameConfig.worldHeight * gameConfig.tileSize // World height in pixels
-    );
-    
-    // Draw grid (on top of green background)
+    ctx.fillStyle = '#8FBC8F'; 
+    ctx.fillRect(0, 0, gameConfig.worldWidth * gameConfig.tileSize, gameConfig.worldHeight * gameConfig.tileSize );
     drawGrid(ctx);
-    
-    // Draw players (on top of green background)
-    drawPlayers(ctx);
-
-    // Restore the default state (removes the translation)
+    drawPlayers(ctx, currentMousePos); 
     ctx.restore();
   };
   
@@ -167,56 +220,95 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   };
   
-  // Draw all players
-  const drawPlayers = (ctx: CanvasRenderingContext2D) => {
-    // Log the players map before drawing
-    console.log('Drawing players:', players); 
-    players.forEach(player => {
-      // Draw player circle
-      ctx.beginPath();
-      ctx.arc(
-        player.positionX,
-        player.positionY,
-        gameConfig.playerRadius,
-        0,
-        Math.PI * 2
-      );
-      ctx.fillStyle = player.color;
-      ctx.fill();
-      
-      // Draw player name
-      ctx.fillStyle = '#000';
-      ctx.textAlign = 'center';
-      ctx.font = '12px Arial';
-      ctx.fillText(
-        player.username,
-        player.positionX,
-        player.positionY - gameConfig.playerRadius - 5
-      );
-      
-      // Highlight local player
-      if (localPlayerId && player.identity.toHexString() === localPlayerId) {
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    });
-  };
-  
-  // Effect for game loop
-  useEffect(() => {
+  // Draw all players (accepts mouse position object)
+  const drawPlayers = (ctx: CanvasRenderingContext2D, currentMousePos: {x: number | null, y: number | null}) => {
+    const img = heroImageRef.current;
+    if (!img) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const localPlayerData = localPlayerId ? players.get(localPlayerId) : undefined;
+
+    let worldMouseX: number | null = null;
+    let worldMouseY: number | null = null;
+    if (currentMousePos.x !== null && currentMousePos.y !== null && localPlayerData) {
+      const cameraOffsetX = canvas.width / 2 - localPlayerData.positionX;
+      const cameraOffsetY = canvas.height / 2 - localPlayerData.positionY;
+      worldMouseX = currentMousePos.x - cameraOffsetX;
+      worldMouseY = currentMousePos.y - cameraOffsetY;
+    }
+
+    const now_ms = Date.now(); 
+
+    players.forEach(player => {
+      let spriteRow = 2; 
+      switch (player.direction) {
+        case 'up':    spriteRow = 0; break; 
+        case 'right': spriteRow = 1; break; 
+        case 'down':  spriteRow = 2; break; 
+        case 'left':  spriteRow = 3; break; 
+        default:      spriteRow = 2; break; 
+      }
+
+      const playerLastUpdate_micros = player.lastUpdate.__timestamp_micros_since_unix_epoch__;
+      const playerLastUpdate_ms = Number(playerLastUpdate_micros / 1000n); 
+      const isPlayerMoving = (now_ms - playerLastUpdate_ms) < MOVEMENT_IDLE_THRESHOLD_MS;
+      
+      const frameIndex = isPlayerMoving ? animationFrame : 1; 
+      const sx = frameIndex * SPRITE_WIDTH;
+      const sy = spriteRow * SPRITE_HEIGHT;
+
+      const dx = player.positionX - SPRITE_WIDTH / 2;
+      const dy = player.positionY - SPRITE_HEIGHT / 2;
+
+      ctx.drawImage(img, sx, sy, SPRITE_WIDTH, SPRITE_HEIGHT, dx, dy, SPRITE_WIDTH, SPRITE_HEIGHT );
+      
+      let isHovering = false;
+      if (worldMouseX !== null && worldMouseY !== null) {
+        const hoverDX = worldMouseX - player.positionX;
+        const hoverDY = worldMouseY - player.positionY;
+        const distSq = hoverDX * hoverDX + hoverDY * hoverDY;
+        if (distSq < (PLAYER_RADIUS * PLAYER_RADIUS)) {
+          isHovering = true;
+        }
+      }
+
+      if (isHovering) {
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        const textWidth = ctx.measureText(player.username).width;
+        const tagPadding = 4;
+        const tagHeight = 16;
+        const tagWidth = textWidth + tagPadding * 2;
+        const tagX = player.positionX - tagWidth / 2; 
+        const tagY = dy - tagHeight - 2; 
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.beginPath();
+        ctx.roundRect(tagX, tagY, tagWidth, tagHeight, 5);
+        ctx.fill();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(player.username, player.positionX, tagY + tagHeight / 2 + 4);
+      }
+    });
+  };
+
+  // useEffect starting game loop (Restore dependencies)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
     // Start the game loop
     requestIdRef.current = requestAnimationFrame(gameLoop);
     
-    // Clean up game loop
+    // Clean up
     return () => {
       cancelAnimationFrame(requestIdRef.current);
     };
-  }, [players, localPlayerId]); // Original dependencies
-  
+  // Restore players/localPlayerId dependency 
+  }, [players, localPlayerId]); 
+
   return (
     <canvas
       ref={canvasRef}

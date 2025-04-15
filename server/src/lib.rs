@@ -14,6 +14,7 @@ pub struct Player {
     pub position_x: f32,
     pub position_y: f32,
     pub color: String, // Hex color code (e.g., "#FF0000" for red)
+    pub direction: String, // "up", "down", "left", "right"
     pub last_update: Timestamp,
 }
 
@@ -58,16 +59,66 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         return Err("Player identity already registered".to_string());
     }
     
-    // Generate a color for the player based on their username
+    // --- Find a valid spawn position --- 
+    let initial_x = 640.0; 
+    let initial_y = 480.0;
+    let mut spawn_x = initial_x;
+    let mut spawn_y = initial_y;
+    let max_attempts = 10; // Prevent infinite loops
+    let offset_step = PLAYER_RADIUS * 2.5; // How far to step when looking for space
+    let mut attempt = 0;
+
+    loop {
+        let mut collision = false;
+        for other_player in players.iter() {
+            let dx = spawn_x - other_player.position_x;
+            let dy = spawn_y - other_player.position_y;
+            if (dx * dx + dy * dy) < PLAYER_DIAMETER_SQUARED {
+                collision = true;
+                break;
+            }
+        }
+
+        if !collision || attempt >= max_attempts {
+            if attempt >= max_attempts {
+                 log::warn!("Could not find clear spawn point for {}, spawning at default.", username);
+                 // Fallback to initial position even if colliding
+                 spawn_x = initial_x;
+                 spawn_y = initial_y;
+            }
+            break; // Found a spot or gave up
+        }
+
+        // Simple offset pattern: move right, down, left, up, then spiral out slightly?
+        // This is basic, could be improved (random, spiral search)
+        match attempt % 4 {
+            0 => spawn_x += offset_step, // Try right
+            1 => spawn_y += offset_step, // Try down
+            2 => spawn_x -= offset_step * 2.0, // Try left (further)
+            3 => spawn_y -= offset_step * 2.0, // Try up (further)
+            _ => {}, // Should not happen
+        }
+        // Reset to center if offset gets too wild after a few attempts (basic safeguard)
+        if attempt == 5 { 
+             spawn_x = initial_x;
+             spawn_y = initial_y;
+             spawn_x += offset_step * 1.5; // Try a different diagonal
+             spawn_y += offset_step * 1.5;
+        }
+
+        attempt += 1;
+    }
+    // --- End spawn position logic ---
+
     let color = random_color(&username);
     
-    // Create a new player with initial position in the center of the map
     let player = Player {
         identity: sender_id,
-        username: username.clone(), // Clone username here
-        position_x: 640.0, // Center of a 20x64 tile world
-        position_y: 480.0, // Center of a 15x64 tile world
+        username: username.clone(), 
+        position_x: spawn_x, // Use the found spawn position
+        position_y: spawn_y, // Use the found spawn position
         color,
+        direction: "down".to_string(), 
         last_update: ctx.timestamp,
     };
     
@@ -127,18 +178,30 @@ pub fn update_player_position(
     }
 
     // Only update if position actually changed and no collision stopped it
-    if (final_x != current_player.position_x || final_y != current_player.position_y) || !collision_detected {
-         // Create updated player data only if needed
+    if (final_x != current_player.position_x || final_y != current_player.position_y) && !collision_detected {
+        // Determine direction based on movement
+        let dx = final_x - current_player.position_x;
+        let dy = final_y - current_player.position_y;
+        let mut direction = current_player.direction.clone(); // Keep old direction if no move
+
+        if dx.abs() > dy.abs() { // Horizontal movement is dominant
+            if dx > 0.0 { direction = "right".to_string(); }
+            else if dx < 0.0 { direction = "left".to_string(); }
+        } else if dy.abs() > dx.abs() { // Vertical movement is dominant
+            if dy > 0.0 { direction = "down".to_string(); }
+            else if dy < 0.0 { direction = "up".to_string(); }
+        } // If dx == dy == 0, direction remains unchanged
+
         let updated_player = Player {
             position_x: final_x,
             position_y: final_y,
+            direction, // Set the calculated direction
             last_update: ctx.timestamp,
-            ..current_player // Clone other fields (identity, username, color)
+            ..current_player // Clone other fields
         };
         
-        // Update player in the database
         players.identity().update(updated_player);
-    } // Else: Do nothing if collision reverted or position didn't change
+    } 
 
     Ok(())
 }
