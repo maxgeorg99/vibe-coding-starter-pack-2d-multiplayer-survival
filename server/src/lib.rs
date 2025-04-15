@@ -10,6 +10,8 @@ mod items;
 mod world_state;
 // Declare the campfire module
 mod campfire;
+// Declare the active_equipment module
+mod active_equipment;
 
 // Use the public items from the module
 use environment::*; 
@@ -19,6 +21,8 @@ use crate::items::*;
 use crate::world_state::*;
 // Use the public items from the campfire module
 use crate::campfire::*;
+// Use the public items from the active_equipment module
+use crate::active_equipment::*;
 // Import generated table traits with aliases to avoid name conflicts
 use crate::campfire::campfire as CampfireTableTrait;
 use crate::world_state::world_state as WorldStateTableTrait;
@@ -418,7 +422,8 @@ pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String
 pub fn update_player_position(
     ctx: &ReducerContext, 
     move_dx: f32, 
-    move_dy: f32  
+    move_dy: f32,  
+    intended_direction: Option<String>
 ) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
@@ -427,9 +432,43 @@ pub fn update_player_position(
     let campfires = ctx.db.campfire(); // Get campfire table
     let world_states = ctx.db.world_state();
 
-    let current_player = players.identity()
+    let mut current_player = players.identity()
         .find(sender_id)
         .ok_or_else(|| "Player not found".to_string())?;
+
+    // --- Update Direction Immediately --- 
+    let mut new_direction = current_player.direction.clone(); // Start with current direction
+    if let Some(dir_str) = intended_direction {
+        // Validate the direction string using direct comparison
+        let dir_slice = dir_str.as_str();
+        if dir_slice == "up" || dir_slice == "down" || dir_slice == "left" || dir_slice == "right" {
+            if new_direction != dir_str { // Log only if direction actually changes
+                log::trace!("Player {:?} intended direction set to: {}", sender_id, dir_str);
+                new_direction = dir_str; // Assign the original String
+            }
+        } else {
+            log::warn!("Player {:?} sent invalid direction: {}", sender_id, dir_str);
+            // Keep the existing direction if the new one is invalid
+        }
+    } else if move_dx == 0.0 && move_dy == 0.0 {
+        // If no direction is explicitly sent AND no movement is attempted,
+        // keep the current direction. (This preserves facing direction when standing still).
+    } else {
+        // Fallback: Determine direction from movement delta if no explicit direction provided
+        // This handles cases where the client might not send the direction yet, 
+        // or if movement occurs without explicit direction keys (e.g., joystick diagonal)
+        if move_dx.abs() > move_dy.abs() {
+            new_direction = if move_dx > 0.0 { "right".to_string() } else { "left".to_string() };
+        } else if move_dy != 0.0 {
+            new_direction = if move_dy > 0.0 { "down".to_string() } else { "up".to_string() };
+        }
+        // If move_dx and move_dy are both 0, and intended_direction was None,
+        // new_direction remains the original value from current_player.direction.clone()
+        if current_player.direction != new_direction {
+            log::trace!("Player {:?} direction inferred from movement: {}", sender_id, new_direction);
+        }
+    }
+    // --- End Direction Update ---
 
     let world_state = world_states.iter().next()
         .ok_or_else(|| "WorldState not found".to_string())?;
@@ -542,6 +581,12 @@ pub fn update_player_position(
         calculated_respawn_at = ctx.timestamp + Duration::from_secs(5).into(); // Set respawn time
         log::warn!("Player {} ({:?}) has died! Will be respawnable at {:?}", 
                  current_player.username, sender_id, calculated_respawn_at);
+        
+        // Unequip item on death
+        match active_equipment::unequip_item(ctx) {
+            Ok(_) => log::info!("Unequipped item for dying player {:?}", sender_id),
+            Err(e) => log::error!("Failed to unequip item for dying player {:?}: {}", sender_id, e),
+        }
     }
 
     // --- Warmth Update ---
@@ -882,21 +927,11 @@ pub fn update_player_position(
     let should_update = player_died || position_changed || health_changed || warmth_changed || elapsed_seconds > 0.1;
 
     if should_update {
-        let mut direction = current_player.direction.clone();
-        if position_changed {
-            if actual_dx.abs() > actual_dy.abs() { 
-                if actual_dx > 0.0 { direction = "right".to_string(); }
-                else if actual_dx < 0.0 { direction = "left".to_string(); }
-            } else if actual_dy.abs() > actual_dx.abs() { 
-                if actual_dy > 0.0 { direction = "down".to_string(); }
-                else if actual_dy < 0.0 { direction = "up".to_string(); }
-            } 
-        }
-
-        let updated_player = Player {
+        let player = Player {
+            identity: sender_id,
             position_x: resolved_x,
             position_y: resolved_y,
-            direction,
+            direction: new_direction,
             last_update: now,
             hunger: new_hunger,
             thirst: new_thirst,
@@ -904,11 +939,11 @@ pub fn update_player_position(
             health: new_health,
             warmth: new_warmth,
             is_sprinting: current_sprinting_state,
-            is_dead: player_died || current_player.is_dead,
+            is_dead: player_died,
             respawn_at: calculated_respawn_at,
             ..current_player
         };
-        players.identity().update(updated_player);
+        players.identity().update(player);
     }
 
     // --- Tick World State ---
@@ -1056,6 +1091,12 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     // --- Apply Player Changes ---
     players.identity().update(player);
     log::info!("Player {:?} respawned at ({:.1}, {:.1}).", sender_id, spawn_x, spawn_y);
+
+    // Unequip item on respawn (ensure clean state)
+    match active_equipment::unequip_item(ctx) {
+        Ok(_) => log::info!("Ensured item is unequipped for respawned player {:?}", sender_id),
+        Err(e) => log::error!("Failed to unequip item for respawned player {:?}: {}", sender_id, e),
+    }
 
     Ok(())
 } 

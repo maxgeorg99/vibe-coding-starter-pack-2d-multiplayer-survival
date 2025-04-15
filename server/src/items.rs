@@ -25,6 +25,7 @@ pub struct ItemDefinition {
     pub damage: Option<u32>,   // Damage dealt (e.g., by tools)
     pub is_stackable: bool,    // Can multiple instances exist in one inventory slot?
     pub stack_size: u32,       // Max number per stack (if stackable)
+    pub is_equippable: bool,   // Can this item be visibly equipped by the player?
 }
 
 // --- Inventory Table ---
@@ -66,6 +67,7 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             damage: None,
             is_stackable: true,
             stack_size: 1000,
+            is_equippable: false, // Materials are not equippable
         },
         ItemDefinition {
             id: 0,
@@ -76,6 +78,7 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             damage: None,
             is_stackable: true,
             stack_size: 1000,
+            is_equippable: false, // Materials are not equippable
         },
         ItemDefinition {
             id: 0,
@@ -86,6 +89,7 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             damage: Some(5),
             is_stackable: false,
             stack_size: 1,
+            is_equippable: true, // Hatchet is equippable
         },
         ItemDefinition {
             id: 0,
@@ -96,6 +100,7 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             damage: Some(5),
             is_stackable: false,
             stack_size: 1,
+            is_equippable: true, // Pickaxe is equippable
         },
         ItemDefinition {
             id: 0,
@@ -106,6 +111,7 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             damage: None,
             is_stackable: false,
             stack_size: 1,
+            is_equippable: false, // Campfire is placeable, not equippable
         },
     ];
 

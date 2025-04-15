@@ -1,0 +1,1 @@
+fn(ReducerContext) -> Result<(), std::string::String> {swing_equipped_item}

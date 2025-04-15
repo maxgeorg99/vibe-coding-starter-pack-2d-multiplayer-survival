@@ -1,0 +1,1 @@
+fn(ReducerContext, u32) -> Result<(), std::string::String> {equip_item}
