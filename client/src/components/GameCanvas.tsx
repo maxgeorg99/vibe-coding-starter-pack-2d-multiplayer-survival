@@ -3,14 +3,10 @@ import { gameConfig } from '../config/gameConfig';
 import { Player as SpacetimeDBPlayer } from '../generated';
 import { Identity as SpacetimeDBIdentity, Timestamp as SpacetimeDBTimestamp } from '@clockworklabs/spacetimedb-sdk';
 import heroSpriteSheet from '../assets/hero.png';
-
-// Define sprite dimensions (adjust if needed)
-const SPRITE_WIDTH = 48;
-const SPRITE_HEIGHT = 48;
-const PLAYER_RADIUS = 24; // Match sprite size / 2 (or use value from gameConfig if defined there)
+import grassTexture from '../assets/tiles/grass.png';
 
 // Threshold for considering a player "recently moved" (in milliseconds)
-const MOVEMENT_IDLE_THRESHOLD_MS = 200;
+const MOVEMENT_IDLE_THRESHOLD_MS = 50;
 
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
@@ -27,10 +23,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const keysPressed = useRef<Set<string>>(new Set());
   const requestIdRef = useRef<number>(0);
   const heroImageRef = useRef<HTMLImageElement | null>(null);
+  const grassImageRef = useRef<HTMLImageElement | null>(null);
   const [animationFrame, setAnimationFrame] = useState(0);
   const animationIntervalRef = useRef<number | null>(null);
-  // Use a ref for mouse position to avoid state updates on move
-  const mousePosRef = useRef<{x: number | null, y: number | null}>({ x: null, y: null }); 
+  const mousePosRef = useRef<{x: number | null, y: number | null}>({ x: null, y: null });
   
   // Get the local player
   const getLocalPlayer = (): SpacetimeDBPlayer | undefined => {
@@ -106,17 +102,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   };
   
-  // Load the spritesheet image
+  // Load images
   useEffect(() => { 
-    const img = new Image();
-    img.src = heroSpriteSheet;
-    img.onload = () => {
-      heroImageRef.current = img;
+    // Remove pattern logic
+    // Load Hero
+    const heroImg = new Image();
+    heroImg.src = heroSpriteSheet;
+    heroImg.onload = () => {
+      heroImageRef.current = heroImg;
       console.log('Hero spritesheet loaded.');
     };
-    img.onerror = () => {
-      console.error('Failed to load hero spritesheet.');
+    heroImg.onerror = () => console.error('Failed to load hero spritesheet.');
+
+    // Load Grass
+    const grassImg = new Image();
+    grassImg.src = grassTexture;
+    grassImg.onload = () => {
+       grassImageRef.current = grassImg; // Store image in ref
+       console.log('Grass texture loaded.');
     };
+    grassImg.onerror = () => console.error('Failed to load grass texture.');
+
   }, []); // Runs once
 
   // Effect for setting up the animation timer
@@ -191,33 +197,51 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.translate(cameraX - localPlayerData.positionX, cameraY - localPlayerData.positionY);
     }
     
-    ctx.fillStyle = '#8FBC8F'; 
-    ctx.fillRect(0, 0, gameConfig.worldWidth * gameConfig.tileSize, gameConfig.worldHeight * gameConfig.tileSize );
+    // Draw grid (which will now include grass tiles)
     drawGrid(ctx);
     drawPlayers(ctx, currentMousePos); 
     ctx.restore();
   };
   
-  // Draw the grid
+  // Draw the grid and grass tiles
   const drawGrid = (ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = '#ddd';
-    ctx.lineWidth = 1;
-    
-    // Draw vertical lines
-    for (let x = 0; x <= gameConfig.worldWidth; x++) {
-      ctx.beginPath();
-      ctx.moveTo(x * gameConfig.tileSize, 0);
-      ctx.lineTo(x * gameConfig.tileSize, gameConfig.canvasHeight);
-      ctx.stroke();
+    const grassImg = grassImageRef.current;
+    const drawGridLines = false; // Set to false to hide grid lines
+
+    for (let y = 0; y < gameConfig.worldHeight; y++) {
+      for (let x = 0; x < gameConfig.worldWidth; x++) {
+        // Draw grass tile first
+        if (grassImg) {
+          ctx.drawImage(
+            grassImg,
+            x * gameConfig.tileSize, 
+            y * gameConfig.tileSize, 
+            gameConfig.tileSize, 
+            gameConfig.tileSize
+          );
+        }
+        
+        // Optionally draw grid line borders for this tile (can be removed)
+        if (drawGridLines) {
+           ctx.strokeStyle = 'rgba(221, 221, 221, 0.5)'; // Lighter grid lines
+           ctx.lineWidth = 1;
+           ctx.strokeRect(
+             x * gameConfig.tileSize, 
+             y * gameConfig.tileSize, 
+             gameConfig.tileSize, 
+             gameConfig.tileSize
+            );
+        }
+      }
     }
-    
-    // Draw horizontal lines
-    for (let y = 0; y <= gameConfig.worldHeight; y++) {
-      ctx.beginPath();
-      ctx.moveTo(0, y * gameConfig.tileSize);
-      ctx.lineTo(gameConfig.canvasWidth, y * gameConfig.tileSize);
-      ctx.stroke();
-    }
+
+    // If not drawing borders per tile, draw the full grid lines (original method)
+    /* if (!drawGridLines) { 
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= gameConfig.worldWidth; x++) { ... }
+        for (let y = 0; y <= gameConfig.worldHeight; y++) { ... }
+    } */
   };
   
   // Draw all players (accepts mouse position object)
@@ -255,20 +279,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const isPlayerMoving = (now_ms - playerLastUpdate_ms) < MOVEMENT_IDLE_THRESHOLD_MS;
       
       const frameIndex = isPlayerMoving ? animationFrame : 1; 
-      const sx = frameIndex * SPRITE_WIDTH;
-      const sy = spriteRow * SPRITE_HEIGHT;
+      // Use dimensions from gameConfig
+      const sx = frameIndex * gameConfig.spriteWidth;
+      const sy = spriteRow * gameConfig.spriteHeight;
 
-      const dx = player.positionX - SPRITE_WIDTH / 2;
-      const dy = player.positionY - SPRITE_HEIGHT / 2;
+      // Calculate destination coordinates (center the *scaled* sprite)
+      const drawWidth = gameConfig.spriteWidth * 2;
+      const drawHeight = gameConfig.spriteHeight * 2;
+      const dx = player.positionX - drawWidth / 2;
+      const dy = player.positionY - drawHeight / 2;
 
-      ctx.drawImage(img, sx, sy, SPRITE_WIDTH, SPRITE_HEIGHT, dx, dy, SPRITE_WIDTH, SPRITE_HEIGHT );
+      // Draw the sprite scaled up
+      ctx.drawImage(
+        img, 
+        sx, sy, gameConfig.spriteWidth, gameConfig.spriteHeight, // Source rect (original size)
+        dx, dy, drawWidth, drawHeight  // Destination rect (scaled size)
+      );
       
       let isHovering = false;
       if (worldMouseX !== null && worldMouseY !== null) {
         const hoverDX = worldMouseX - player.positionX;
         const hoverDY = worldMouseY - player.positionY;
         const distSq = hoverDX * hoverDX + hoverDY * hoverDY;
-        if (distSq < (PLAYER_RADIUS * PLAYER_RADIUS)) {
+        if (distSq < (gameConfig.playerRadius * gameConfig.playerRadius)) { // Use radius from config
           isHovering = true;
         }
       }
@@ -281,7 +314,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const tagHeight = 16;
         const tagWidth = textWidth + tagPadding * 2;
         const tagX = player.positionX - tagWidth / 2; 
-        const tagY = dy - tagHeight - 2; 
+        const tagY = dy - tagHeight - 2; // Position tag above scaled sprite (using dy)
 
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         ctx.beginPath();

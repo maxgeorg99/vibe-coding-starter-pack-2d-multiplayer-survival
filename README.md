@@ -46,7 +46,7 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/VibeSlav/vibe-coding-starter-pack-2d-survival.git
+    git clone https://github.com/SeloSlav/vibe-coding-starter-pack-2d-survival.git
     cd vibe-coding-starter-pack-2d-survival
     ```
 
@@ -133,4 +133,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-Created by VibeSlav
+Created by SeloSlav
