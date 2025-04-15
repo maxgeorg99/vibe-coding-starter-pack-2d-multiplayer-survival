@@ -22,7 +22,7 @@ use crate::world_state::*;
 // Use the public items from the campfire module
 use crate::campfire::*;
 // Use the public items from the active_equipment module
-use crate::active_equipment::*;
+// use crate::active_equipment::*; // Remove this - module accessed via reducers
 // Import generated table traits with aliases to avoid name conflicts
 use crate::campfire::campfire as CampfireTableTrait;
 use crate::world_state::world_state as WorldStateTableTrait;
@@ -432,7 +432,7 @@ pub fn update_player_position(
     let campfires = ctx.db.campfire(); // Get campfire table
     let world_states = ctx.db.world_state();
 
-    let mut current_player = players.identity()
+    let current_player = players.identity()
         .find(sender_id)
         .ok_or_else(|| "Player not found".to_string())?;
 

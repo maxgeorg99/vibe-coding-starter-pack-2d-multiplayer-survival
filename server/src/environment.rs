@@ -1,5 +1,5 @@
 // server/src/environment.rs
-use spacetimedb::{ReducerContext, SpacetimeType, Table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, Timestamp};
 use crate::{WORLD_WIDTH_PX, WORLD_HEIGHT_PX, TILE_SIZE_PX, PLAYER_RADIUS}; // Removed WORLD_WIDTH_TILES, WORLD_HEIGHT_TILES
 use noise::{NoiseFn, Perlin, Fbm};
 use rand::Rng;
@@ -25,7 +25,7 @@ const MIN_TREE_DISTANCE_SQ: f32 = MIN_TREE_DISTANCE_PX * MIN_TREE_DISTANCE_PX; /
 // --- Stone-Specific Constants ---
 pub(crate) const STONE_RADIUS: f32 = 40.0; // Collision radius for stone nodes
 pub(crate) const PLAYER_STONE_COLLISION_DISTANCE_SQUARED: f32 = (PLAYER_RADIUS + STONE_RADIUS) * (PLAYER_RADIUS + STONE_RADIUS);
-pub(crate) const STONE_COLLISION_Y_OFFSET: f32 = 30.0; // Offset the collision check upwards from the root (increased)
+pub(crate) const STONE_COLLISION_Y_OFFSET: f32 = 50.0; // Offset the collision check upwards from the root (reduced)
 const STONE_DENSITY_PERCENT: f32 = TREE_DENSITY_PERCENT / 5.0; // Make stones 2.5x less populous than original (1/5th of trees)
 const MIN_STONE_DISTANCE_PX: f32 = 150.0; // Minimum distance between stone centers
 const MIN_STONE_DISTANCE_SQ: f32 = MIN_STONE_DISTANCE_PX * MIN_STONE_DISTANCE_PX;
@@ -58,6 +58,7 @@ pub struct Tree {
     pub health: u32,
     pub tree_type: TreeType,
     pub state: TreeState,
+    pub last_hit_time: Option<Timestamp>, // Added for shake effect
 }
 
 // --- Stone Struct and Table ---
@@ -70,6 +71,7 @@ pub struct Stone {
     pub pos_x: f32,
     pub pos_y: f32,
     pub health: u32, // Stones just disappear when health is 0
+    pub last_hit_time: Option<Timestamp>, // Added for shake effect
 }
 
 // --- Environment Seeding ---
@@ -163,6 +165,7 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             let tree_type = TreeType::Oak; // Only Oak for now
             match trees.try_insert(Tree {
                 id: 0, pos_x, pos_y, health: 100, tree_type, state: TreeState::Growing,
+                last_hit_time: None, // Initialize the new field
             }) {
                 Ok(_) => {
                     spawned_tree_count += 1;
@@ -229,6 +232,7 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             // Spawn the stone
             match stones.try_insert(Stone {
                 id: 0, pos_x, pos_y, health: 100, // Initial health
+                last_hit_time: None, // Initialize the new field
             }) {
                 Ok(_) => {
                     spawned_stone_count += 1;
