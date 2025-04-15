@@ -13,16 +13,22 @@ import { drawMinimapOntoCanvas, MINIMAP_DIMENSIONS } from './Minimap';
 const MOVEMENT_IDLE_THRESHOLD_MS = 200;
 const ANIMATION_INTERVAL_MS = 150;
 
+// --- Jump Constants ---
+const JUMP_DURATION_MS = 400; // Total duration of the jump animation
+const JUMP_HEIGHT_PX = 40; // Maximum height the player reaches
+
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
   localPlayerId?: string;
   updatePlayerPosition: (x: number, y: number) => void;
+  callJumpReducer: () => void;
 }
 
 const GameCanvas: React.FC<GameCanvasProps> = ({ 
   players, 
   localPlayerId,
-  updatePlayerPosition 
+  updatePlayerPosition,
+  callJumpReducer
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -43,9 +49,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      keysPressed.current.add(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      keysPressed.current.add(key);
+
+      // Handle jump on Spacebar press
+      if (key === ' ' && !e.repeat) {
+        const localPlayer = getLocalPlayer();
+        if (localPlayer) {
+          callJumpReducer(); // Call the passed-in reducer function
+        }
+      }
+
       // Toggle minimap on 'g' press
-      if (e.key.toLowerCase() === 'g' && !e.repeat) { // Prevent toggle spam on hold
+      if (key === 'g' && !e.repeat) { // Prevent toggle spam on hold
         setIsMinimapOpen(prev => !prev);
       }
     };
@@ -61,7 +77,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [getLocalPlayer, callJumpReducer]);
   
   const updatePlayerBasedOnInput = useCallback(() => {
     const localPlayer = getLocalPlayer();
@@ -217,18 +233,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, []);
 
-  const drawPlayers = useCallback((ctx: CanvasRenderingContext2D, currentMousePos: {x: number | null, y: number | null}) => {
+  // Updated drawPlayers to include jump calculation
+  const drawPlayersWithJump = useCallback((ctx: CanvasRenderingContext2D, currentMousePos: {x: number | null, y: number | null}) => {
     const heroImg = heroImageRef.current;
-    if (!heroImg) return; // Need image loaded to pass to renderPlayer
+    if (!heroImg) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const localPlayerData = getLocalPlayer();
-    
+
     let worldMouseX: number | null = null;
     let worldMouseY: number | null = null;
+    // Use state for canvas dimensions when calculating world mouse position
     if (currentMousePos.x !== null && currentMousePos.y !== null && localPlayerData) {
-        const cameraOffsetX = canvas.width / 2 - localPlayerData.positionX;
-        const cameraOffsetY = canvas.height / 2 - localPlayerData.positionY;
+        const cameraOffsetX = canvasSize.width / 2 - localPlayerData.positionX;
+        const cameraOffsetY = canvasSize.height / 2 - localPlayerData.positionY;
         worldMouseX = currentMousePos.x - cameraOffsetX;
         worldMouseY = currentMousePos.y - cameraOffsetY;
     }
@@ -237,17 +255,36 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     players.forEach(player => {
       // Determine movement state
-      const playerLastUpdate_micros = player.lastUpdate.__timestamp_micros_since_unix_epoch__;
-      const playerLastUpdate_ms = Number(playerLastUpdate_micros / 1000n); 
+      // Use last_update from SpacetimeDB timestamp for movement idle check
+      const playerLastUpdate_micros = player.lastUpdate.microsSinceUnixEpoch;
+      const playerLastUpdate_ms = Number(playerLastUpdate_micros / 1000n); // Use BigInt division
       const isPlayerMoving = (now_ms - playerLastUpdate_ms) < MOVEMENT_IDLE_THRESHOLD_MS;
       
+      // --- Jump Calculation ---
+      let jumpOffset = 0;
+      const jumpStartTime = player.jumpStartTimeMs;
+      if (jumpStartTime > 0) {
+          const elapsedJumpTime = now_ms - Number(jumpStartTime); // Convert BigInt to number
+          if (elapsedJumpTime < JUMP_DURATION_MS) {
+              // Simple parabolic curve: y = -4h/d^2 * x * (x - d)
+              // where h=height, d=duration, x=elapsed time
+              const d = JUMP_DURATION_MS;
+              const h = JUMP_HEIGHT_PX;
+              const x = elapsedJumpTime;
+              jumpOffset = (-4 * h / (d * d)) * x * (x - d);
+          } 
+          // No need to explicitly reset jump_start_time_ms here, server state handles it.
+          // If jumpStartTime is still > 0 but elapsed > duration, offset remains 0.
+      }
+      // --- End Jump Calculation ---
+
       // Check hover state
-      const hovered = isPlayerHovered(worldMouseX, worldMouseY, player); // Use util
+      const hovered = isPlayerHovered(worldMouseX, worldMouseY, player);
       
-      // Call the unified renderPlayer function
-      renderPlayer(ctx, player, heroImg, isPlayerMoving, hovered, animationFrame); 
+      // Call the unified renderPlayer function, passing the jump offset
+      renderPlayer(ctx, player, heroImg, isPlayerMoving, hovered, animationFrame, jumpOffset); 
     });
-  }, [players, animationFrame, getLocalPlayer]);
+  }, [players, animationFrame, getLocalPlayer, canvasSize.width, canvasSize.height]);
 
   const renderGame = useCallback((currentMousePos: {x: number | null, y: number | null}) => {
     const canvas = canvasRef.current;
@@ -273,7 +310,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     
     drawWorldBackground(ctx);
-    drawPlayers(ctx, currentMousePos); 
+    drawPlayersWithJump(ctx, currentMousePos); 
     ctx.restore();
 
     // Draw minimap if open (drawn in screen space, after restoring transform)
@@ -288,7 +325,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         isMouseOverMinimap
       );
     }
-  }, [getLocalPlayer, drawWorldBackground, drawPlayers, isMinimapOpen, players, localPlayerId, isMouseOverMinimap, canvasSize.width, canvasSize.height]); // Added canvas size dependencies
+  }, [getLocalPlayer, drawWorldBackground, drawPlayersWithJump, isMinimapOpen, players, localPlayerId, isMouseOverMinimap, canvasSize.width, canvasSize.height]); // Use drawPlayersWithJump
 
   const gameLoop = useCallback(() => {
     updatePlayerBasedOnInput();

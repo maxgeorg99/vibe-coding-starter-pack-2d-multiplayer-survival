@@ -179,6 +179,19 @@ function App() {
     }
   };
   
+  // --- Jump Reducer Call ---
+  const callJumpReducer = () => {
+    if (connection) {
+      try {
+        // Call the actual SpacetimeDB reducer using camelCase
+        connection.reducers.jump();
+      } catch (err) {
+        console.error('Failed to call jump reducer:', err);
+        // Optionally set an error state here
+      }
+    }
+  };
+  
   return (
     <div className="App">
       {error && <div className="error-message">{error}</div>}
@@ -205,6 +218,7 @@ function App() {
             players={players}
             localPlayerId={connection?.identity?.toHexString()}
             updatePlayerPosition={updatePlayerPosition}
+            callJumpReducer={callJumpReducer}
           />
         </div>
       )}

@@ -70,14 +70,15 @@ export const renderPlayer = (
   heroImg: CanvasImageSource, // Use CanvasImageSource type
   isMoving: boolean,
   isHovered: boolean,
-  currentAnimationFrame: number
+  currentAnimationFrame: number,
+  jumpOffsetY: number = 0 // Default to 0 if not provided
 ) => {
   const { sx, sy } = getSpriteCoordinates(player, isMoving, currentAnimationFrame);
   
   const drawWidth = gameConfig.spriteWidth * 2;
   const drawHeight = gameConfig.spriteHeight * 2;
   const dx = player.positionX - drawWidth / 2;
-  const dy = player.positionY - drawHeight / 2;
+  const dy = player.positionY - drawHeight / 2 - jumpOffsetY;
 
   // Draw the sprite
   ctx.drawImage(
@@ -86,7 +87,7 @@ export const renderPlayer = (
     dx, dy, drawWidth, drawHeight // Destination
   );
 
-  // Draw name tag if hovered
+  // Draw name tag if hovered (position based on potentially offset dy)
   if (isHovered) {
     drawNameTag(ctx, player, dy);
   }

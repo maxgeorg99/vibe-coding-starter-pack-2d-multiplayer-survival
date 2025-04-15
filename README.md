@@ -131,6 +131,17 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## ⚙️ Client Configuration (`client/src/config/gameConfig.ts`)
+
+This file centralizes various client-side game parameters. Modify these values to tweak game behavior:
+
+*   `tileSize`: The width and height of each world tile in pixels.
+*   `worldWidth`, `worldHeight`: The dimensions of the game world, measured in tiles.
+*   `playerRadius`: The radius used for simple collision detection and mouse hover checks, typically half the sprite width.
+*   `playerSpeed`: How many pixels the player moves per frame when input is detected.
+*   `spriteWidth`, `spriteHeight`: The dimensions of a single frame within the player's spritesheet.
+*   `fps`: The target frames per second; primarily informational as the game loop uses `requestAnimationFrame`.
+
 ---
 
 Created by SeloSlav

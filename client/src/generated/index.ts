@@ -36,6 +36,8 @@ import { IdentityConnected } from "./identity_connected_reducer.ts";
 export { IdentityConnected };
 import { IdentityDisconnected } from "./identity_disconnected_reducer.ts";
 export { IdentityDisconnected };
+import { Jump } from "./jump_reducer.ts";
+export { Jump };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
 import { UpdatePlayerPosition } from "./update_player_position_reducer.ts";
@@ -65,6 +67,10 @@ const REMOTE_MODULE = {
     identity_disconnected: {
       reducerName: "identity_disconnected",
       argsType: IdentityDisconnected.getTypeScriptAlgebraicType(),
+    },
+    jump: {
+      reducerName: "jump",
+      argsType: Jump.getTypeScriptAlgebraicType(),
     },
     register_player: {
       reducerName: "register_player",
@@ -103,6 +109,7 @@ const REMOTE_MODULE = {
 export type Reducer = never
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
+| { name: "Jump", args: Jump }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "UpdatePlayerPosition", args: UpdatePlayerPosition }
 ;
@@ -128,6 +135,18 @@ export class RemoteReducers {
 
   removeOnIdentityDisconnected(callback: (ctx: ReducerEventContext) => void) {
     this.connection.offReducer("identity_disconnected", callback);
+  }
+
+  jump() {
+    this.connection.callReducer("jump", new Uint8Array(0), this.setCallReducerFlags.jumpFlags);
+  }
+
+  onJump(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("jump", callback);
+  }
+
+  removeOnJump(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("jump", callback);
   }
 
   registerPlayer(username: string) {
@@ -168,6 +187,11 @@ export class SetReducerFlags {
   identityConnectedFlags: CallReducerFlags = 'FullUpdate';
   identityConnected(flags: CallReducerFlags) {
     this.identityConnectedFlags = flags;
+  }
+
+  jumpFlags: CallReducerFlags = 'FullUpdate';
+  jump(flags: CallReducerFlags) {
+    this.jumpFlags = flags;
   }
 
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';

@@ -38,6 +38,7 @@ export type Player = {
   color: string,
   direction: string,
   lastUpdate: Timestamp,
+  jumpStartTimeMs: bigint,
 };
 
 /**
@@ -57,6 +58,7 @@ export namespace Player {
       new ProductTypeElement("color", AlgebraicType.createStringType()),
       new ProductTypeElement("direction", AlgebraicType.createStringType()),
       new ProductTypeElement("lastUpdate", AlgebraicType.createTimestampType()),
+      new ProductTypeElement("jumpStartTimeMs", AlgebraicType.createU64Type()),
     ]);
   }
 

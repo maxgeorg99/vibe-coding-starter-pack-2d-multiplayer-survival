@@ -12,10 +12,6 @@ export const gameConfig = {
   spriteWidth: 48, // Intrinsic width of one sprite frame
   spriteHeight: 48, // Intrinsic height of one sprite frame
   
-  // Viewport/Canvas size (fixed resolution)
-  viewWidth: 800,  // Desired visible width in pixels
-  viewHeight: 600, // Desired visible height in pixels
-  
   // Game settings
   fps: 60,
 }; 

@@ -16,6 +16,7 @@ pub struct Player {
     pub color: String, // Hex color code (e.g., "#FF0000" for red)
     pub direction: String, // "up", "down", "left", "right"
     pub last_update: Timestamp,
+    pub jump_start_time_ms: u64, // Timestamp when the jump started (0 if not jumping)
 }
 
 // When a client connects, we need to create a player for them
@@ -120,6 +121,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         color,
         direction: "down".to_string(), 
         last_update: ctx.timestamp,
+        jump_start_time_ms: 0, // Initialize as not jumping
     };
     
     // Insert the new player
@@ -197,7 +199,7 @@ pub fn update_player_position(
             position_y: final_y,
             direction, // Set the calculated direction
             last_update: ctx.timestamp,
-            ..current_player // Clone other fields
+            ..current_player // Clone other fields (including the existing jump_start_time_ms)
         };
         
         players.identity().update(updated_player);
@@ -226,4 +228,25 @@ fn random_color(username: &str) -> String {
     let color_index = (sum_of_bytes % colors.len() as u64) as usize;
     
     colors[color_index].to_string()
+}
+
+// Reducer called by the client to initiate a jump.
+#[spacetimedb::reducer]
+pub fn jump(ctx: &ReducerContext) -> Result<(), String> {
+   let identity = ctx.sender;
+   let players = ctx.db.player();
+
+   if let Some(mut player) = players.identity().find(&identity) {
+       // Get microseconds since epoch and convert to milliseconds u64
+       let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
+       let now_ms = (now_micros / 1000) as u64;
+
+       player.jump_start_time_ms = now_ms;
+       player.last_update = ctx.timestamp;
+
+       players.identity().update(player);
+       Ok(())
+   } else {
+       Err("Player not found".to_string())
+   }
 } 
