@@ -3,8 +3,17 @@ use log;
 
 // Declare the module
 mod environment;
+// Declare the items module
+mod items;
+// Declare the world_state module
+mod world_state;
+
 // Use the public items from the module
 use environment::*; 
+// Use the public items from the items module
+use crate::items::*; 
+// Use the public items from the world_state module
+use crate::world_state::*;
 
 // --- World/Player Constants --- 
 pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
@@ -55,9 +64,11 @@ pub struct Player {
 
 // When a client connects, we need to create a player for them
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(_ctx: &ReducerContext) -> Result<(), String> {
-    // Call the seed_trees function from the environment module
-    environment::seed_environment(_ctx)?;
+pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
+    // Call seeders
+    environment::seed_environment(ctx)?; // Call the updated seeder
+    items::seed_items(ctx)?; // Call the item seeder
+    world_state::seed_world_state(ctx)?; // Call the world state seeder
     Ok(())
 }
 
@@ -197,7 +208,39 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     // Insert the new player
     match players.try_insert(player) {
         Ok(_) => {
-            log::info!("Player registered: {}", username);
+            log::info!("Player registered: {}. Granting starting items...", username);
+
+            // --- Grant Starting Items --- 
+            let item_defs = ctx.db.item_definition();
+            let inventory = ctx.db.inventory_item();
+
+            let starting_items = [
+                ("Stone Hatchet", 1, 0u8), // name, quantity, hotbar slot
+                ("Stone Pickaxe", 1, 1u8),
+                ("Wood", 500, 2u8),
+                ("Stone", 500, 3u8),
+                ("Camp Fire", 1, 4u8),
+            ];
+
+            for (item_name, quantity, slot) in starting_items.iter() {
+                // Find the item definition by name
+                if let Some(item_def) = item_defs.iter().find(|def| def.name == *item_name) {
+                    match inventory.try_insert(items::InventoryItem {
+                        instance_id: 0, // Auto-incremented
+                        player_identity: sender_id,
+                        item_def_id: item_def.id,
+                        quantity: *quantity,
+                        hotbar_slot: Some(*slot),
+                    }) {
+                        Ok(_) => log::info!("Granted {} {} (slot {}) to player {}", quantity, item_name, slot, username),
+                        Err(e) => log::error!("Failed to grant starting item {} to player {}: {}", item_name, username, e),
+                    }
+                } else {
+                    log::error!("Could not find item definition for starting item: {}", item_name);
+                }
+            }
+            // --- End Grant Starting Items ---
+
             Ok(())
         },
         Err(e) => {
@@ -458,7 +501,7 @@ pub fn update_player_position(
             if dist_sq < min_dist_sq && dist_sq > 0.0 {
                 overlap_found_in_iter = true;
                 let distance = dist_sq.sqrt();
-                let overlap = (min_dist - distance); 
+                let overlap = min_dist - distance;
                 // Push each player half the overlap distance + epsilon
                 let push_amount = (overlap / 2.0) + epsilon;
                 let push_x = (dx / distance) * push_amount;
@@ -558,6 +601,14 @@ pub fn update_player_position(
         };
         players.identity().update(updated_player);
     }
+
+    // --- TEMPORARY: Call tick_world_state to advance time on player move --- 
+    // We pass the current context and its timestamp
+    match world_state::tick_world_state(ctx, ctx.timestamp) {
+        Ok(_) => { /* Time ticked successfully (or no update needed) */ }
+        Err(e) => log::error!("Error ticking world state: {}", e),
+    }
+    // --- END TEMPORARY --- 
 
     Ok(())
 }

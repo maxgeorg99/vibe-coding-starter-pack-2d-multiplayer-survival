@@ -9,7 +9,7 @@ use log;
 // --- Tree-Specific Constants ---
 
 // Tree Collision settings
-pub(crate) const TREE_TRUNK_RADIUS: f32 = 12.0; // Reduced radius for trunk base (was 20.0)
+pub(crate) const TREE_TRUNK_RADIUS: f32 = 30.0; // Reduced radius for trunk base (was 20.0)
 pub(crate) const TREE_COLLISION_Y_OFFSET: f32 = 20.0; // Offset the collision check upwards from the root
 pub(crate) const PLAYER_TREE_COLLISION_DISTANCE_SQUARED: f32 = (PLAYER_RADIUS + TREE_TRUNK_RADIUS) * (PLAYER_RADIUS + TREE_TRUNK_RADIUS);
 
@@ -23,7 +23,7 @@ const MIN_TREE_DISTANCE_PX: f32 = 200.0; // Minimum distance between tree center
 const MIN_TREE_DISTANCE_SQ: f32 = MIN_TREE_DISTANCE_PX * MIN_TREE_DISTANCE_PX; // Squared for comparison
 
 // --- Stone-Specific Constants ---
-pub(crate) const STONE_RADIUS: f32 = 30.0; // Collision radius for stone nodes
+pub(crate) const STONE_RADIUS: f32 = 40.0; // Collision radius for stone nodes
 pub(crate) const PLAYER_STONE_COLLISION_DISTANCE_SQUARED: f32 = (PLAYER_RADIUS + STONE_RADIUS) * (PLAYER_RADIUS + STONE_RADIUS);
 pub(crate) const STONE_COLLISION_Y_OFFSET: f32 = 30.0; // Offset the collision check upwards from the root (increased)
 const STONE_DENSITY_PERCENT: f32 = TREE_DENSITY_PERCENT / 5.0; // Make stones 2.5x less populous than original (1/5th of trees)
