@@ -46,14 +46,20 @@ pub fn equip_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), Str
     let item_def = item_defs.id().find(item_to_equip.item_def_id)
         .ok_or_else(|| format!("Item definition {} not found.", item_to_equip.item_def_id))?;
 
+    // --- Explicitly delete existing equipment first ---
+    // Regardless of whether the new item is equippable or not, if we are changing
+    // equipment selection, the old one should be removed.
+    if active_equipments.player_identity().find(sender_id).is_some() {
+        log::debug!("Player {:?} - Removing existing equipment before equipping new item (or unequipping).", sender_id);
+        active_equipments.player_identity().delete(sender_id);
+    }
+
     // Check if item is actually equippable using the field from ItemDefinition
     if !item_def.is_equippable {
-         // If not equippable, effectively unequip anything currently held
-        if active_equipments.player_identity().find(sender_id).is_some() {
-            active_equipments.player_identity().delete(sender_id);
-            log::info!("Player {:?} unequipped item by selecting non-equippable item {}.", sender_id, item_def.name);
-        }
-        return Ok(()); // Not an error, just means nothing visible is equipped
+         // If not equippable, we already deleted the old entry above.
+         // Just log and return Ok.
+        log::info!("Player {:?} selected non-equippable item {}. Nothing equipped.", sender_id, item_def.name);
+        return Ok(());
     }
 
     // Update or insert the active equipment entry
@@ -64,6 +70,7 @@ pub fn equip_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), Str
         swing_start_time_ms: 0, // Reset swing state when equipping
     };
 
+    // Now insert the new equipment, knowing any old entry is gone.
     active_equipments.insert(new_equipment);
     log::info!("Player {:?} equipped item: {} (Instance ID: {})", sender_id, item_def.name, item_instance_id);
 
