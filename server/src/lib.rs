@@ -1,56 +1,36 @@
-use spacetimedb::{Identity, Timestamp, ReducerContext, Table, SpacetimeType};
+use spacetimedb::{Identity, Timestamp, ReducerContext, Table};
 use log;
-use rand::Rng; // Import for random tree type
-use noise::{NoiseFn, Perlin, Seedable, Fbm}; // Import noise functions, Seedable, and Fbm
-use std::collections::HashSet; // For tracking spawned locations
 
-// World dimensions (in tiles)
-const WORLD_WIDTH_TILES: u32 = 100;
-const WORLD_HEIGHT_TILES: u32 = 100;
-// Tile settings
-const TILE_SIZE_PX: u32 = 48;
+// Declare the module
+mod environment;
+// Use the public items from the module
+use environment::*; 
 
-// Calculated world dimensions (in pixels)
-const WORLD_WIDTH_PX: f32 = (WORLD_WIDTH_TILES * TILE_SIZE_PX) as f32;
-const WORLD_HEIGHT_PX: f32 = (WORLD_HEIGHT_TILES * TILE_SIZE_PX) as f32;
-
-const PLAYER_RADIUS: f32 = 24.0;
+// --- World/Player Constants --- 
+pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
+pub(crate) const WORLD_HEIGHT_TILES: u32 = 100;
+pub(crate) const TILE_SIZE_PX: u32 = 48;
+pub(crate) const WORLD_WIDTH_PX: f32 = (WORLD_WIDTH_TILES * TILE_SIZE_PX) as f32;
+pub(crate) const WORLD_HEIGHT_PX: f32 = (WORLD_HEIGHT_TILES * TILE_SIZE_PX) as f32;
+pub(crate) const PLAYER_RADIUS: f32 = 24.0;
 const PLAYER_DIAMETER_SQUARED: f32 = (PLAYER_RADIUS * 2.0) * (PLAYER_RADIUS * 2.0);
 
-// Tree Collision settings
-const TREE_TRUNK_RADIUS: f32 = 12.0; // Reduced radius for trunk base (was 20.0)
-const TREE_COLLISION_Y_OFFSET: f32 = 20.0; // Offset the collision check upwards from the root
-const PLAYER_TREE_COLLISION_DISTANCE_SQUARED: f32 = (PLAYER_RADIUS + TREE_TRUNK_RADIUS) * (PLAYER_RADIUS + TREE_TRUNK_RADIUS);
-
 // Passive Stat Drain Rates
-const HUNGER_DRAIN_PER_SECOND: f32 = 100.0 / (30.0 * 60.0); // 100 hunger over 30 mins
-const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0); // 100 thirst over 20 mins
-const STAMINA_DRAIN_PER_SECOND: f32 = 20.0; // Stamina drains fast while sprinting
-const STAMINA_RECOVERY_PER_SECOND: f32 = 5.0;  // Stamina recovers slower
-const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;     // 50% faster sprint
+const HUNGER_DRAIN_PER_SECOND: f32 = 100.0 / (30.0 * 60.0); 
+const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0); 
+const STAMINA_DRAIN_PER_SECOND: f32 = 20.0; 
+const STAMINA_RECOVERY_PER_SECOND: f32 = 5.0;  
+const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;     
 
-// Tree Spawning Parameters
-const TREE_DENSITY_PERCENT: f32 = 0.01; // Target 1% of map tiles (was 0.05)
-const TREE_SPAWN_NOISE_FREQUENCY: f64 = 8.0; // Keep noise frequency moderate for filtering
-const TREE_SPAWN_NOISE_THRESHOLD: f64 = 0.7; // Increased threshold significantly (was 0.55)
-const TREE_SPAWN_WORLD_MARGIN_TILES: u32 = 3; // Don't spawn in the outer 3 tiles (margin in tiles)
-const MAX_TREE_SEEDING_ATTEMPTS_FACTOR: u32 = 5; // Try up to 5x the target number of trees
-const MIN_TREE_DISTANCE_PX: f32 = 200.0; // Minimum distance between tree centers
-const MIN_TREE_DISTANCE_SQ: f32 = MIN_TREE_DISTANCE_PX * MIN_TREE_DISTANCE_PX; // Squared for comparison
-
-// Define the different types of trees
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, SpacetimeType)]
-pub enum TreeType {
-    Oak, // Represents tree.png
-    // Pine, // Represents tree2.png - REMOVED
-}
-
-// Define the state of the tree
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, SpacetimeType)]
-pub enum TreeState {
-    Growing,
-    Stump,
-}
+// Status Effect Constants
+const LOW_NEED_THRESHOLD: f32 = 20.0;         
+const LOW_THIRST_SPEED_PENALTY: f32 = 0.75; 
+const HEALTH_LOSS_PER_SEC_LOW_THIRST: f32 = 0.5; 
+const HEALTH_LOSS_PER_SEC_LOW_HUNGER: f32 = 0.4; 
+const HEALTH_LOSS_MULTIPLIER_AT_ZERO: f32 = 2.0; 
+const HEALTH_RECOVERY_THRESHOLD: f32 = 80.0;    
+const HEALTH_RECOVERY_PER_SEC: f32 = 1.0;      
+const MIN_HEALTH_FROM_NEEDS: f32 = 1.0;       
 
 // Player table to store position and color
 #[spacetimedb::table(name = player, public)]
@@ -61,43 +41,23 @@ pub struct Player {
     pub username: String,
     pub position_x: f32,
     pub position_y: f32,
-    pub color: String, // Hex color code (e.g., "#FF0000" for red)
-    pub direction: String, // "up", "down", "left", "right"
+    pub color: String,
+    pub direction: String,
     pub last_update: Timestamp,
-    pub jump_start_time_ms: u64, // Timestamp when the jump started (0 if not jumping)
-    // New status fields
+    pub jump_start_time_ms: u64,
     pub health: f32,
     pub stamina: f32,
     pub thirst: f32,
     pub hunger: f32,
     pub warmth: f32,
-    pub is_sprinting: bool, // Is the player currently trying to sprint?
-}
-
-#[spacetimedb::table(name = tree, public)]
-#[derive(Clone)]
-pub struct Tree {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    pub pos_x: f32,
-    pub pos_y: f32,
-    pub health: u32,
-    pub tree_type: TreeType,
-    pub state: TreeState,
-    // pub respawn_at: u64, // We can add this later for respawning logic
+    pub is_sprinting: bool,
 }
 
 // When a client connects, we need to create a player for them
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
-    // Ensure trees are seeded when the first player connects (or on server start implicitly)
-    // Note: This might run multiple times if players connect before the first check completes,
-    // but the `seed_trees` function itself prevents reseeding.
-    seed_trees(ctx)?;
-
-    // Player creation is handled elsewhere
-
+pub fn identity_connected(_ctx: &ReducerContext) -> Result<(), String> {
+    // Call the seed_trees function from the environment module
+    environment::seed_environment(_ctx)?;
     Ok(())
 }
 
@@ -121,7 +81,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     log::info!("register_player called by {:?} with username: {}", ctx.sender, username);
     let sender_id = ctx.sender;
     let players = ctx.db.player();
-    let trees = ctx.db.tree(); // Get tree table instance
+    let trees = ctx.db.tree();
+    let stones = ctx.db.stone();
     
     // Check if username is already taken by *any* player
     let username_taken = players.iter().any(|p| p.username == username);
@@ -141,8 +102,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     let initial_y = 480.0;
     let mut spawn_x = initial_x;
     let mut spawn_y = initial_y;
-    let max_attempts = 10; // Prevent infinite loops
-    let offset_step = PLAYER_RADIUS * 2.5; // How far to step when looking for space
+    let max_attempts = 10;
+    let offset_step = PLAYER_RADIUS * 2.5;
     let mut attempt = 0;
 
     loop {
@@ -162,9 +123,22 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         if !collision {
             for tree in trees.iter() {
                 let dx = spawn_x - tree.pos_x;
-                let dy = spawn_y - (tree.pos_y - TREE_COLLISION_Y_OFFSET); // Use offset
+                let dy = spawn_y - (tree.pos_y - environment::TREE_COLLISION_Y_OFFSET);
                 let dist_sq = dx * dx + dy * dy;
-                if dist_sq < PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
+                if dist_sq < environment::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
+                    collision = true;
+                    break;
+                }
+            }
+        }
+
+        // 2.5 Check Player-Stone Collision (if no player/tree collision)
+        if !collision {
+            for stone in stones.iter() {
+                let dx = spawn_x - stone.pos_x;
+                let dy = spawn_y - (stone.pos_y - environment::STONE_COLLISION_Y_OFFSET);
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq < environment::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
                     collision = true;
                     break;
                 }
@@ -173,31 +147,30 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
 
         // 3. Decide if position is valid or max attempts reached
         if !collision || attempt >= max_attempts {
-            if attempt >= max_attempts && collision { // Check if we hit max attempts AND were colliding
+            if attempt >= max_attempts && collision { 
                  log::warn!("Could not find clear spawn point for {}, spawning at default (may collide).", username);
                  spawn_x = initial_x;
                  spawn_y = initial_y;
             }
-            break; // Found a spot or gave up
+            break;
         }
 
         // Simple offset pattern: move right, down, left, up, then spiral out slightly?
         // This is basic, could be improved (random, spiral search)
         match attempt % 4 {
-            0 => spawn_x += offset_step, // Try right
-            1 => spawn_y += offset_step, // Try down
-            2 => spawn_x -= offset_step * 2.0, // Try left (further)
-            3 => spawn_y -= offset_step * 2.0, // Try up (further)
-            _ => {}, // Should not happen
+            0 => spawn_x += offset_step, 
+            1 => spawn_y += offset_step, 
+            2 => spawn_x -= offset_step * 2.0, 
+            3 => spawn_y -= offset_step * 2.0, 
+            _ => {}, 
         }
         // Reset to center if offset gets too wild after a few attempts (basic safeguard)
         if attempt == 5 { 
              spawn_x = initial_x;
              spawn_y = initial_y;
-             spawn_x += offset_step * 1.5; // Try a different diagonal
+             spawn_x += offset_step * 1.5; 
              spawn_y += offset_step * 1.5;
         }
-
         attempt += 1;
     }
     // --- End spawn position logic ---
@@ -207,19 +180,18 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     let player = Player {
         identity: sender_id,
         username: username.clone(), 
-        position_x: spawn_x, // Use the found spawn position
-        position_y: spawn_y, // Use the found spawn position
+        position_x: spawn_x, 
+        position_y: spawn_y, 
         color,
         direction: "down".to_string(), 
         last_update: ctx.timestamp,
-        jump_start_time_ms: 0, // Initialize as not jumping
-        // Initialize new status fields
+        jump_start_time_ms: 0, 
         health: 100.0,
         stamina: 100.0,
         thirst: 100.0,
         hunger: 100.0,
         warmth: 100.0,
-        is_sprinting: false, // Initialize sprint state
+        is_sprinting: false,
     };
     
     // Insert the new player
@@ -244,7 +216,6 @@ pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String
         // Only update if the state is actually changing
         if player.is_sprinting != sprinting {
             player.is_sprinting = sprinting;
-            // Also update last_update time so stamina regen/drain calculation is accurate on next movement
             player.last_update = ctx.timestamp; 
             players.identity().update(player);
             log::debug!("Player {:?} set sprinting to {}", sender_id, sprinting);
@@ -259,12 +230,13 @@ pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String
 #[spacetimedb::reducer]
 pub fn update_player_position(
     ctx: &ReducerContext, 
-    move_dx: f32, // Delta X requested by client (based on base speed)
-    move_dy: f32  // Delta Y requested by client (based on base speed)
+    move_dx: f32, 
+    move_dy: f32  
 ) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
-    let trees = ctx.db.tree(); // Get tree table
+    let trees = ctx.db.tree();
+    let stones = ctx.db.stone();
 
     let current_player = players.identity()
         .find(sender_id)
@@ -274,46 +246,67 @@ pub fn update_player_position(
     let last_update_time = current_player.last_update;
     let elapsed_micros = now.to_micros_since_unix_epoch().saturating_sub(last_update_time.to_micros_since_unix_epoch());
     let elapsed_seconds = (elapsed_micros as f64 / 1_000_000.0) as f32;
-
-    // --- Calculate Stat Changes --- 
     let new_hunger = (current_player.hunger - (elapsed_seconds * HUNGER_DRAIN_PER_SECOND)).max(0.0);
     let new_thirst = (current_player.thirst - (elapsed_seconds * THIRST_DRAIN_PER_SECOND)).max(0.0);
-    
     let mut new_stamina = current_player.stamina;
-    let mut actual_speed_multiplier = 1.0;
+    let mut base_speed_multiplier = 1.0;
     let mut current_sprinting_state = current_player.is_sprinting;
     let is_moving = move_dx != 0.0 || move_dy != 0.0;
-
     if current_sprinting_state && is_moving && new_stamina > 0.0 {
-        // Drain stamina if sprinting, moving, and has stamina
         new_stamina = (new_stamina - (elapsed_seconds * STAMINA_DRAIN_PER_SECOND)).max(0.0);
-        if new_stamina > 0.0 { // Can still sprint
-            actual_speed_multiplier = SPRINT_SPEED_MULTIPLIER;
-        } else { // Ran out of stamina
-            current_sprinting_state = false; // Force stop sprinting this update cycle
+        if new_stamina > 0.0 { 
+            base_speed_multiplier = SPRINT_SPEED_MULTIPLIER;
+        } else { 
+            current_sprinting_state = false;
             log::debug!("Player {:?} ran out of stamina.", sender_id);
         }
     } else if !current_sprinting_state {
-        // Recover stamina if not trying to sprint
         new_stamina = (new_stamina + (elapsed_seconds * STAMINA_RECOVERY_PER_SECOND)).min(100.0);
     }
-    // Note: If player stops moving while holding sprint, stamina doesn't drain but also doesn't recover here.
-    // It will recover on the next update where is_sprinting is false or is_moving is false.
+    let mut final_speed_multiplier = base_speed_multiplier;
+    if new_thirst < LOW_NEED_THRESHOLD {
+        final_speed_multiplier *= LOW_THIRST_SPEED_PENALTY;
+        if is_moving { 
+             log::debug!("Player {:?} has low thirst. Applying speed penalty.", sender_id);
+        }
+    }
+    let mut health_change_per_sec: f32 = 0.0;
+    if new_thirst <= 0.0 {
+        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_THIRST * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
+        log::debug!("Player {:?} health decreasing rapidly due to zero thirst.", sender_id);
+    } else if new_thirst < LOW_NEED_THRESHOLD {
+        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_THIRST;
+        log::debug!("Player {:?} health decreasing due to low thirst.", sender_id);
+    }
+    if new_hunger <= 0.0 {
+        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_HUNGER * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
+        log::debug!("Player {:?} health decreasing rapidly due to zero hunger.", sender_id);
+    } else if new_hunger < LOW_NEED_THRESHOLD {
+        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_HUNGER;
+        log::debug!("Player {:?} health decreasing due to low hunger.", sender_id);
+    }
+    if health_change_per_sec == 0.0 && 
+       new_hunger >= HEALTH_RECOVERY_THRESHOLD && 
+       new_thirst >= HEALTH_RECOVERY_THRESHOLD {
+        health_change_per_sec += HEALTH_RECOVERY_PER_SEC;
+        log::debug!("Player {:?} health recovering.", sender_id);
+    }
+    let new_health = (current_player.health + (health_change_per_sec * elapsed_seconds))
+                     .max(MIN_HEALTH_FROM_NEEDS)
+                     .min(100.0);
+    let health_changed = (new_health - current_player.health).abs() > 0.01;
 
-    // --- Calculate Target Position --- 
-    let proposed_x = current_player.position_x + move_dx * actual_speed_multiplier;
-    let proposed_y = current_player.position_y + move_dy * actual_speed_multiplier;
+    let proposed_x = current_player.position_x + move_dx * final_speed_multiplier;
+    let proposed_y = current_player.position_y + move_dy * final_speed_multiplier;
 
-    // --- Clamp Target Position to World Boundaries --- 
     let clamped_x = proposed_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
     let clamped_y = proposed_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
 
-    // --- Collision Detection (using clamped position) --- 
     let mut final_x = clamped_x;
     let mut final_y = clamped_y;
-    let mut collided = false; // Flag to check if any collision occurred
+    let mut collision_handled = false;
 
-    // 1. Player-Player Collision
+    // Check Player-Player Collision
     for other_player in players.iter() {
         if other_player.identity == sender_id {
             continue;
@@ -321,43 +314,227 @@ pub fn update_player_position(
         let dx = clamped_x - other_player.position_x;
         let dy = clamped_y - other_player.position_y;
         let dist_sq = dx * dx + dy * dy;
+
         if dist_sq < PLAYER_DIAMETER_SQUARED {
-            final_x = current_player.position_x;
-            final_y = current_player.position_y;
-            collided = true;
-            log::debug!("Player-Player collision detected between {:?} and {:?}. Movement reverted.", sender_id, other_player.identity);
-            break; // Exit player loop if collision found
+            log::debug!("Player-Player collision detected between {:?} and {:?}. Calculating slide.", sender_id, other_player.identity);
+
+            // Calculate slide vector
+            let intended_dx = clamped_x - current_player.position_x;
+            let intended_dy = clamped_y - current_player.position_y;
+            let collision_normal_x = dx;
+            let collision_normal_y = dy;
+            let normal_mag_sq = dist_sq;
+
+            if normal_mag_sq > 0.0 {
+                let normal_mag = normal_mag_sq.sqrt();
+                let norm_x = collision_normal_x / normal_mag;
+                let norm_y = collision_normal_y / normal_mag;
+
+                let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+
+                // Project intended movement onto the normal
+                let projection_x = dot_product * norm_x;
+                let projection_y = dot_product * norm_y;
+
+                // Subtract projection to get the slide vector (tangential movement)
+                let slide_dx = intended_dx - projection_x;
+                let slide_dy = intended_dy - projection_y;
+
+                // Apply slide to the *original* position
+                final_x = current_player.position_x + slide_dx;
+                final_y = current_player.position_y + slide_dy;
+
+                // Re-clamp to world boundaries after sliding
+                final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+            } else {
+                // Fallback: If somehow distance is zero, just revert
+                final_x = current_player.position_x;
+                final_y = current_player.position_y;
+            }
+            collision_handled = true;
+            break; // Handle first player collision
         }
     }
 
-    // 2. Player-Tree Collision (only if no player collision occurred)
-    if !collided {
+    // Only check trees if no player collision was handled
+    if !collision_handled {
         for tree in trees.iter() {
-            // Collide with both growing trees and stumps
+            let tree_collision_y = tree.pos_y - environment::TREE_COLLISION_Y_OFFSET;
             let dx = clamped_x - tree.pos_x;
-            // Check against the offset Y position for collision
-            let dy = clamped_y - (tree.pos_y - TREE_COLLISION_Y_OFFSET);
+            let dy = clamped_y - tree_collision_y;
             let dist_sq = dx * dx + dy * dy;
-            if dist_sq < PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
-                final_x = current_player.position_x;
-                final_y = current_player.position_y;
-                collided = true; // Set flag
-                log::debug!("Player-Tree collision detected between {:?} and tree {}. Movement reverted.", sender_id, tree.id);
-                break; // Exit tree loop if collision found
+
+            if dist_sq < environment::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
+                log::debug!("Player-Tree collision detected between {:?} and tree {}. Calculating slide.", sender_id, tree.id);
+
+                let intended_dx = clamped_x - current_player.position_x;
+                let intended_dy = clamped_y - current_player.position_y;
+                let collision_normal_x = dx;
+                let collision_normal_y = dy;
+                let normal_mag_sq = dist_sq;
+
+                if normal_mag_sq > 0.0 {
+                    let normal_mag = normal_mag_sq.sqrt();
+                    let norm_x = collision_normal_x / normal_mag;
+                    let norm_y = collision_normal_y / normal_mag;
+                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                    let projection_x = dot_product * norm_x;
+                    let projection_y = dot_product * norm_y;
+                    let slide_dx = intended_dx - projection_x;
+                    let slide_dy = intended_dy - projection_y;
+                    final_x = current_player.position_x + slide_dx;
+                    final_y = current_player.position_y + slide_dy;
+                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                } else {
+                    final_x = current_player.position_x;
+                    final_y = current_player.position_y;
+                }
+                collision_handled = true;
+                break; // Handle first tree collision
             }
         }
     }
 
-    // --- Determine Update & Final State --- 
-    let actual_dx = final_x - current_player.position_x;
-    let actual_dy = final_y - current_player.position_y;
+    // Only check stones if no player or tree collision was handled
+    if !collision_handled {
+        for stone in stones.iter() {
+            let stone_collision_y = stone.pos_y - environment::STONE_COLLISION_Y_OFFSET;
+            let dx = clamped_x - stone.pos_x;
+            let dy = clamped_y - stone_collision_y;
+            let dist_sq = dx * dx + dy * dy;
+
+            if dist_sq < environment::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
+                log::debug!("Player-Stone collision detected between {:?} and stone {}. Calculating slide.", sender_id, stone.id);
+
+                let intended_dx = clamped_x - current_player.position_x;
+                let intended_dy = clamped_y - current_player.position_y;
+                let collision_normal_x = dx;
+                let collision_normal_y = dy;
+                let normal_mag_sq = dist_sq;
+
+                if normal_mag_sq > 0.0 {
+                    let normal_mag = normal_mag_sq.sqrt();
+                    let norm_x = collision_normal_x / normal_mag;
+                    let norm_y = collision_normal_y / normal_mag;
+                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                    let projection_x = dot_product * norm_x;
+                    let projection_y = dot_product * norm_y;
+                    let slide_dx = intended_dx - projection_x;
+                    let slide_dy = intended_dy - projection_y;
+                    final_x = current_player.position_x + slide_dx;
+                    final_y = current_player.position_y + slide_dy;
+                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                } else {
+                    final_x = current_player.position_x;
+                    final_y = current_player.position_y;
+                }
+                // No need to set collision_handled=true here if it's the last check
+                break; // Handle first stone collision
+            }
+        }
+    }
+
+    // --- Iterative Collision Resolution (Push-out) ---
+    let mut resolved_x = final_x;
+    let mut resolved_y = final_y;
+    let resolution_iterations = 5; // Max iterations to prevent infinite loops
+    let epsilon = 0.01; // Tiny value to push slightly beyond contact
+
+    for _iter in 0..resolution_iterations {
+        let mut overlap_found_in_iter = false;
+
+        // Check Player-Player Overlap
+        for other_player in players.iter() {
+            if other_player.identity == sender_id { continue; }
+            let dx = resolved_x - other_player.position_x;
+            let dy = resolved_y - other_player.position_y;
+            let dist_sq = dx * dx + dy * dy;
+            let min_dist = PLAYER_RADIUS * 2.0;
+            let min_dist_sq = min_dist * min_dist;
+
+            if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                overlap_found_in_iter = true;
+                let distance = dist_sq.sqrt();
+                let overlap = (min_dist - distance); 
+                // Push each player half the overlap distance + epsilon
+                let push_amount = (overlap / 2.0) + epsilon;
+                let push_x = (dx / distance) * push_amount;
+                let push_y = (dy / distance) * push_amount;
+                resolved_x += push_x;
+                resolved_y += push_y;
+                // Note: Ideally, push other_player by -push_x, -push_y, but requires mutable access or separate update mechanism.
+                // For now, only pushing the current player.
+                log::trace!("Resolving player-player overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+            }
+        }
+
+        // Check Player-Tree Overlap
+        for tree in trees.iter() {
+            let tree_collision_y = tree.pos_y - environment::TREE_COLLISION_Y_OFFSET;
+            let dx = resolved_x - tree.pos_x;
+            let dy = resolved_y - tree_collision_y;
+            let dist_sq = dx * dx + dy * dy;
+            let min_dist = PLAYER_RADIUS + environment::TREE_TRUNK_RADIUS;
+            let min_dist_sq = min_dist * min_dist;
+
+            if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                 overlap_found_in_iter = true;
+                 let distance = dist_sq.sqrt();
+                 let overlap = (min_dist - distance) + epsilon;
+                 let push_x = (dx / distance) * overlap;
+                 let push_y = (dy / distance) * overlap;
+                 resolved_x += push_x;
+                 resolved_y += push_y;
+                 log::trace!("Resolving player-tree overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+            }
+        }
+
+        // Check Player-Stone Overlap
+        for stone in stones.iter() {
+            let stone_collision_y = stone.pos_y - environment::STONE_COLLISION_Y_OFFSET;
+            let dx = resolved_x - stone.pos_x;
+            let dy = resolved_y - stone_collision_y;
+            let dist_sq = dx * dx + dy * dy;
+            let min_dist = PLAYER_RADIUS + environment::STONE_RADIUS;
+            let min_dist_sq = min_dist * min_dist;
+
+            if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                overlap_found_in_iter = true;
+                let distance = dist_sq.sqrt();
+                let overlap = (min_dist - distance) + epsilon;
+                let push_x = (dx / distance) * overlap;
+                let push_y = (dy / distance) * overlap;
+                resolved_x += push_x;
+                resolved_y += push_y;
+                log::trace!("Resolving player-stone overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+            }
+        }
+
+        // Re-clamp final resolved position to world boundaries after each iteration
+        resolved_x = resolved_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+        resolved_y = resolved_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+
+        if !overlap_found_in_iter {
+            log::trace!("Overlap resolution complete after {} iterations.", _iter + 1);
+            break; // Exit iterations if no overlaps were found in this pass
+        }
+        if _iter == resolution_iterations - 1 {
+             log::warn!("Overlap resolution reached max iterations ({}) for player {:?}. Position might still overlap slightly.", resolution_iterations, sender_id);
+        }
+    }
+
+    // Determine final direction based on actual movement
+    let actual_dx = resolved_x - current_player.position_x;
+    let actual_dy = resolved_y - current_player.position_y;
     let position_changed = actual_dx != 0.0 || actual_dy != 0.0;
-    // Update if position changed, or if enough time passed for passive drains/regen
-    let should_update = position_changed || elapsed_seconds > 0.1;
+    let should_update = position_changed || health_changed || elapsed_seconds > 0.1;
 
     if should_update {
         let mut direction = current_player.direction.clone();
-        if position_changed { // Only update direction if actual movement occurred
+        if position_changed {
             if actual_dx.abs() > actual_dy.abs() { 
                 if actual_dx > 0.0 { direction = "right".to_string(); }
                 else if actual_dx < 0.0 { direction = "left".to_string(); }
@@ -368,19 +545,19 @@ pub fn update_player_position(
         }
 
         let updated_player = Player {
-            position_x: final_x, // Use the final clamped/collision-adjusted position
-            position_y: final_y, // Use the final clamped/collision-adjusted position
+            position_x: resolved_x,
+            position_y: resolved_y,
             direction,
             last_update: now,
             hunger: new_hunger,
             thirst: new_thirst,
             stamina: new_stamina,
+            health: new_health,
             is_sprinting: current_sprinting_state,
             ..current_player
         };
-        
         players.identity().update(updated_player);
-    } 
+    }
 
     Ok(())
 }
@@ -397,13 +574,9 @@ fn random_color(username: &str) -> String {
         "#FF8000", // Orange
         "#8000FF", // Purple
     ];
-    
-    // Use the username bytes to select a color
-    // Sum the bytes and take modulo of the number of colors
     let username_bytes = username.as_bytes();
     let sum_of_bytes: u64 = username_bytes.iter().map(|&byte| byte as u64).sum();
     let color_index = (sum_of_bytes % colors.len() as u64) as usize;
-    
     colors[color_index].to_string()
 }
 
@@ -412,121 +585,14 @@ fn random_color(username: &str) -> String {
 pub fn jump(ctx: &ReducerContext) -> Result<(), String> {
    let identity = ctx.sender;
    let players = ctx.db.player();
-
    if let Some(mut player) = players.identity().find(&identity) {
-       // Get microseconds since epoch and convert to milliseconds u64
        let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
        let now_ms = (now_micros / 1000) as u64;
-
        player.jump_start_time_ms = now_ms;
        player.last_update = ctx.timestamp;
-
        players.identity().update(player);
        Ok(())
    } else {
        Err("Player not found".to_string())
    }
-}
-
-// Reducer to seed trees if none exist based on density and noise filter
-#[spacetimedb::reducer]
-pub fn seed_trees(ctx: &ReducerContext) -> Result<(), String> {
-    let trees = ctx.db.tree();
-    if trees.iter().count() > 0 {
-        return Ok(());
-    }
-
-    log::info!("Seeding trees based on density, noise filter, and min distance...");
-
-    let fbm = Fbm::<Perlin>::new(ctx.rng().gen());
-    let mut rng = ctx.rng();
-
-    // Calculate target number of trees
-    let total_tiles = WORLD_WIDTH_TILES * WORLD_HEIGHT_TILES;
-    let target_tree_count = (total_tiles as f32 * TREE_DENSITY_PERCENT) as u32;
-    let max_attempts = target_tree_count * MAX_TREE_SEEDING_ATTEMPTS_FACTOR;
-
-    log::info!(
-        "Calculated tree spawning parameters: Total Tiles={}, Target Density={:.2}%, Target Count={}, Max Attempts={}",
-        total_tiles, TREE_DENSITY_PERCENT * 100.0, target_tree_count, max_attempts
-    );
-
-    // Define spawn boundaries in tile coordinates
-    let min_tile_x = TREE_SPAWN_WORLD_MARGIN_TILES;
-    let max_tile_x = WORLD_WIDTH_TILES - TREE_SPAWN_WORLD_MARGIN_TILES;
-    let min_tile_y = TREE_SPAWN_WORLD_MARGIN_TILES;
-    let max_tile_y = WORLD_HEIGHT_TILES - TREE_SPAWN_WORLD_MARGIN_TILES;
-
-    let mut spawned_tree_count = 0;
-    let mut attempts = 0;
-    let mut occupied_tiles = HashSet::<(u32, u32)>::new();
-    let mut spawned_tree_positions = Vec::<(f32, f32)>::new(); // Store positions of spawned trees
-
-    while spawned_tree_count < target_tree_count && attempts < max_attempts {
-        attempts += 1;
-
-        // 1. Select random tile & check if occupied
-        let tile_x = rng.gen_range(min_tile_x..max_tile_x);
-        let tile_y = rng.gen_range(min_tile_y..max_tile_y);
-        if occupied_tiles.contains(&(tile_x, tile_y)) {
-            continue;
-        }
-
-        // 2. Calculate world position
-        let pos_x = (tile_x as f32 + 0.5) * TILE_SIZE_PX as f32;
-        let pos_y = (tile_y as f32 + 0.5) * TILE_SIZE_PX as f32;
-
-        // 3. Check noise threshold
-        let noise_val = fbm.get([
-            (pos_x as f64 / WORLD_WIDTH_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
-            (pos_y as f64 / WORLD_HEIGHT_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
-        ]);
-        let normalized_noise = (noise_val + 1.0) / 2.0;
-
-        if normalized_noise > TREE_SPAWN_NOISE_THRESHOLD {
-            // 4. Check minimum distance from existing trees
-            let mut too_close = false;
-            for (existing_x, existing_y) in &spawned_tree_positions {
-                let dx = pos_x - existing_x;
-                let dy = pos_y - existing_y;
-                let dist_sq = dx * dx + dy * dy;
-                if dist_sq < MIN_TREE_DISTANCE_SQ {
-                    too_close = true;
-                    break;
-                }
-            }
-
-            if too_close {
-                continue; // Too close, try another spot
-            }
-
-            // 5. Spawn tree if noise is high enough AND not too close
-            let tree_type = TreeType::Oak;
-            match trees.try_insert(Tree {
-                id: 0,
-                pos_x,
-                pos_y,
-                health: 100,
-                tree_type,
-                state: TreeState::Growing,
-            }) {
-                Ok(_) => {
-                    spawned_tree_count += 1;
-                    occupied_tiles.insert((tile_x, tile_y));
-                    spawned_tree_positions.push((pos_x, pos_y)); // Store position
-                }
-                Err(e) => {
-                    log::error!("Failed to insert tree during density/distance seeding: {}", e);
-                }
-            }
-        }
-    }
-
-    log::info!(
-        "Finished seeding {} trees (target: {}, attempts: {}).",
-        spawned_tree_count,
-        target_tree_count,
-        attempts
-    );
-    Ok(())
 } 
