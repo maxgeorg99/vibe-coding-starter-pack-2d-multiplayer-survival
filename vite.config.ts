@@ -7,4 +7,9 @@ export default defineConfig({
   server: {
     port: 3008,
   },
+  root: '.',
+  publicDir: 'public',
+  build: {
+    outDir: 'dist',
+  }
 })

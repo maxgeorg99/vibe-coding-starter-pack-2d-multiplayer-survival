@@ -40,68 +40,68 @@ vibe-coding-starter-pack-2d-survival/
 └── LICENSE
 ```
 
-## 🚀 Quick Start
+## 🚀 Running the Project Locally
 
-### Prerequisites
+This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and the SpacetimeDB CLI.
 
-- [Node.js](https://nodejs.org/) v22+ 
-- [Rust](https://www.rust-lang.org/tools/install) latest stable
-- [SpacetimeDB CLI](https://spacetimedb.com/docs/getting-started/installation)
+1.  **Clone the Repository:**
+    ```bash
+    git clone https://github.com/VibeSlav/vibe-coding-starter-pack-2d-survival.git
+    cd vibe-coding-starter-pack-2d-survival
+    ```
 
-### One-Command Setup
+2.  **Install Client Dependencies:**
+    ```bash
+    # From the project root directory
+    npm install
+    ```
 
-```bash
-# Clone and setup the project
-git clone https://github.com/your-username/vibe-coding-starter-pack-2d-survival.git
-cd vibe-coding-starter-pack-2d-survival
-npm install
-npm run dev  # Server will start on port 3008
-```
+3.  **Start Local SpacetimeDB Server:**
+    Open a **separate terminal** window and run:
+    ```bash
+    spacetime start
+    ```
+    Keep this terminal running in the background. It hosts your local game database.
 
-## 📋 Detailed Setup Instructions
+4.  **Build, Publish Server Module & Generate Client Bindings:**
+    Open **another terminal** window, navigate to the `server` directory, and run these commands:
+    ```bash
+    cd server
+    spacetime publish vibe-survival-game
+    spacetime generate --lang typescript --out-dir ../client/src/generated
+    ```
+    *   **Note:** You need to re-run these two commands *every time* you change the server schema (e.g., modify tables or reducers in `server/src/lib.rs`).
 
-### 1. Environment Setup
+5.  **Run the Client:**
+    In the **same terminal** as step 4 (or a new one, just make sure you are in the project root directory `vibe-coding-starter-pack-2d-survival`), run:
+    ```bash
+    npm run dev
+    ```
 
-```bash
-# Install Rust (if not installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
+6.  **Access the Game:**
+    Open your browser and navigate to the local address provided by Vite (usually `http://localhost:5173` or similar).
 
-# Add WebAssembly target
-rustup target add wasm32-unknown-unknown
+## 🔧 Troubleshooting Local Setup
 
-# Install Node.js via nvm (if not installed)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm install 22
-```
-
-### 2. SpacetimeDB Setup
-
-```bash
-# Install SpacetimeDB CLI
-curl -sSf https://install.spacetimedb.com | sh
-
-# Add to PATH if needed
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-### 3. Running the Project
-
-```bash
-# Terminal 1: Build and run the server
-cd server
-spacetime build
-spacetime dev
-
-# Terminal 2: Run the client
-cd client
-npm install
-npm run dev
-```
-
-The client will be available at http://localhost:3008
+*   **`Cannot find module './generated'` error in client:**
+    *   Ensure you ran `spacetime generate --lang typescript --out-dir ../client/src/generated` from the `server` directory *after* the last `spacetime publish`.
+    *   Make sure the `client/src/generated` folder was actually created and contains `.ts` files.
+    *   Restart the Vite dev server (`npm run dev`).
+*   **Client connects but game doesn't load / players don't appear:**
+    *   Check the browser console for errors (e.g., subscription failures).
+    *   Check the terminal running `spacetime start` for server-side errors (e.g., reducer panics).
+*   **Old players still appearing after disconnect/refresh:**
+    *   The disconnect logic might not be removing them correctly. The most reliable way to ensure a clean state is to delete and recreate the local database:
+        ```bash
+        # Stop spacetime start (Ctrl+C)
+        spacetime delete vibe-survival-game # Run from any directory
+        spacetime start # Restart the server
+        # Then re-publish and re-generate (Step 4 above)
+        ```
+*   **`spacetime publish` tries to publish to Maincloud instead of local:**
+    *   Ensure you are logged out: `spacetime logout`.
+    *   Ensure the `spacetime start` server is running *before* you publish.
+    *   Check your SpacetimeDB config file (`%LOCALAPPDATA%/SpacetimeDB/config/cli.toml` on Windows, `~/.local/share/spacetime/config/cli.toml` on Linux/macOS) and make sure `default_server` is set to `local` (or comment it out).
 
 ## 🔄 Development Workflow
 
@@ -133,4 +133,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-_Built with ❤️ by [Your Name/Team]_
+Created by VibeSlav

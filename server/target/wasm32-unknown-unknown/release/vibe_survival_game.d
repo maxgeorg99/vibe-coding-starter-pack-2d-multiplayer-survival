@@ -1,0 +1,1 @@
+C:\Users\Asus\OneDrive\Documents\WebProjects\vibe-coding-starter-pack-2d-survival\server\target\wasm32-unknown-unknown\release\vibe_survival_game.wasm: C:\Users\Asus\OneDrive\Documents\WebProjects\vibe-coding-starter-pack-2d-survival\server\src\lib.rs
