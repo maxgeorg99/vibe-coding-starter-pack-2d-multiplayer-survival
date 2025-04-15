@@ -11,7 +11,14 @@ const FULL_CYCLE_DURATION_SECONDS: f32 = DAY_DURATION_SECONDS + NIGHT_DURATION_S
 const FULL_MOON_CYCLE_INTERVAL: u32 = 3;
 
 // Update interval for the tick reducer (e.g., every 5 seconds)
-const TICK_INTERVAL_SECONDS: u64 = 5;
+// const TICK_INTERVAL_SECONDS: u64 = 5; // We are currently ticking on player move
+
+// Base warmth drain rate per second
+pub(crate) const BASE_WARMTH_DRAIN_PER_SECOND: f32 = 0.5; 
+// Multipliers for warmth drain based on time of day
+pub(crate) const WARMTH_DRAIN_MULTIPLIER_NIGHT: f32 = 2.0;
+pub(crate) const WARMTH_DRAIN_MULTIPLIER_MIDNIGHT: f32 = 3.0;
+pub(crate) const WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK: f32 = 1.5;
 
 #[derive(Clone, Debug, PartialEq, spacetimedb::SpacetimeType)]
 pub enum TimeOfDay {

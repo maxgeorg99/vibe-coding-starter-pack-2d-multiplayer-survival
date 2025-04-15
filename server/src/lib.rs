@@ -7,6 +7,8 @@ mod environment;
 mod items;
 // Declare the world_state module
 mod world_state;
+// Declare the campfire module
+mod campfire;
 
 // Use the public items from the module
 use environment::*; 
@@ -14,6 +16,11 @@ use environment::*;
 use crate::items::*; 
 // Use the public items from the world_state module
 use crate::world_state::*;
+// Use the public items from the campfire module
+use crate::campfire::*;
+// Import generated table traits with aliases to avoid name conflicts
+use crate::campfire::campfire as CampfireTableTrait;
+use crate::world_state::world_state as WorldStateTableTrait;
 
 // --- World/Player Constants --- 
 pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
@@ -69,6 +76,7 @@ pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
     environment::seed_environment(ctx)?; // Call the updated seeder
     items::seed_items(ctx)?; // Call the item seeder
     world_state::seed_world_state(ctx)?; // Call the world state seeder
+    // No seeder needed for Campfire yet, table will be empty initially
     Ok(())
 }
 
@@ -94,6 +102,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     let players = ctx.db.player();
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
+    let campfires = ctx.db.campfire(); // Get campfire table
     
     // Check if username is already taken by *any* player
     let username_taken = players.iter().any(|p| p.username == username);
@@ -150,6 +159,20 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
                 let dy = spawn_y - (stone.pos_y - environment::STONE_COLLISION_Y_OFFSET);
                 let dist_sq = dx * dx + dy * dy;
                 if dist_sq < environment::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
+                    collision = true;
+                    break;
+                }
+            }
+        }
+
+        // 2.7 Check Player-Campfire Collision
+        if !collision {
+            for fire in campfires.iter() {
+                let dx = spawn_x - fire.pos_x;
+                let dy = spawn_y - (fire.pos_y - CAMPFIRE_COLLISION_Y_OFFSET);
+                let dist_sq = dx * dx + dy * dy;
+                // Use specific player-campfire collision check distance
+                if dist_sq < PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
                     collision = true;
                     break;
                 }
@@ -249,6 +272,112 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     }
 }
 
+// Reducer to place a campfire
+#[spacetimedb::reducer]
+pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let players = ctx.db.player();
+    let inventory_items = ctx.db.inventory_item();
+    let item_defs = ctx.db.item_definition();
+    let campfires = ctx.db.campfire();
+    let trees = ctx.db.tree();
+    let stones = ctx.db.stone();
+
+    // --- 1. Check if player exists ---
+    let player = players.identity().find(sender_id)
+        .ok_or_else(|| "Player not found".to_string())?;
+
+    // --- 2. Find the "Camp Fire" item definition ---
+    let campfire_def = item_defs.iter()
+        .find(|def| def.name == "Camp Fire")
+        .ok_or_else(|| "Camp Fire item definition not found".to_string())?;
+
+    // --- 3. Check if player has a Camp Fire item ---
+    let campfire_item_stack = inventory_items.iter()
+        .find(|item| item.player_identity == sender_id && item.item_def_id == campfire_def.id && item.quantity > 0);
+
+    if campfire_item_stack.is_none() {
+        return Err("You do not have a Camp Fire item".to_string());
+    }
+    let mut campfire_item = campfire_item_stack.unwrap(); // Safe to unwrap here
+
+    // --- 4. Validate Placement Position ---
+    // World boundaries
+    if target_x < CAMPFIRE_COLLISION_RADIUS || target_x > WORLD_WIDTH_PX - CAMPFIRE_COLLISION_RADIUS ||
+       target_y < CAMPFIRE_COLLISION_RADIUS || target_y > WORLD_HEIGHT_PX - CAMPFIRE_COLLISION_RADIUS {
+        return Err("Cannot place campfire outside world boundaries".to_string());
+    }
+
+    // Collision with other Campfires
+    for other_fire in campfires.iter() {
+        let dx = target_x - other_fire.pos_x;
+        let dy = target_y - other_fire.pos_y; // No Y offset needed for fire-fire check
+        if (dx * dx + dy * dy) < CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
+            return Err("Cannot place campfire too close to another campfire".to_string());
+        }
+    }
+
+    // Collision with Trees
+    for tree in trees.iter() {
+        let dx = target_x - tree.pos_x;
+        let dy = target_y - (tree.pos_y - TREE_COLLISION_Y_OFFSET); // Use tree's collision offset
+        // Check if campfire placement overlaps tree collision area
+        // Use a combined radius check (tree trunk + campfire radius)
+        let combined_radius = TREE_TRUNK_RADIUS + CAMPFIRE_COLLISION_RADIUS;
+        if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
+             return Err("Cannot place campfire too close to a tree".to_string());
+        }
+    }
+
+    // Collision with Stones
+    for stone in stones.iter() {
+        let dx = target_x - stone.pos_x;
+        let dy = target_y - (stone.pos_y - STONE_COLLISION_Y_OFFSET); // Use stone's collision offset
+        let combined_radius = STONE_RADIUS + CAMPFIRE_COLLISION_RADIUS;
+        if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
+            return Err("Cannot place campfire too close to a stone".to_string());
+        }
+    }
+
+    // Collision with Players (check against all players, including self if needed, though less critical for placement)
+    for other_player in players.iter() {
+        let dx = target_x - other_player.position_x;
+        let dy = target_y - other_player.position_y; // Use player's center
+        let combined_radius = PLAYER_RADIUS + CAMPFIRE_COLLISION_RADIUS;
+        if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
+             return Err("Cannot place campfire too close to a player".to_string());
+        }
+    }
+
+    // --- 5. Consume Item ---
+    campfire_item.quantity -= 1;
+    let remaining_quantity = campfire_item.quantity; // Read quantity BEFORE the potential move
+
+    if remaining_quantity == 0 {
+        // If stack is empty, remove the item
+        inventory_items.instance_id().delete(campfire_item.instance_id);
+        log::info!("Player {} consumed last Camp Fire item (instance {}).", player.username, campfire_item.instance_id);
+    } else {
+        // Otherwise, update the quantity
+        inventory_items.instance_id().update(campfire_item);
+        log::info!("Player {} consumed one Camp Fire item. {} remaining.", player.username, remaining_quantity);
+    }
+
+    // --- 6. Create Campfire Entity ---
+    let new_campfire = Campfire {
+        id: 0, // Auto-incremented
+        pos_x: target_x,
+        pos_y: target_y,
+        placed_by: sender_id,
+        placed_at: ctx.timestamp,
+    };
+
+    campfires.try_insert(new_campfire)?;
+    log::info!("Player {} placed a campfire at ({:.1}, {:.1}).", player.username, target_x, target_y);
+
+    Ok(())
+}
+
 // NEW Reducer: Called by the client to set the sprinting state
 #[spacetimedb::reducer]
 pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String> {
@@ -280,10 +409,15 @@ pub fn update_player_position(
     let players = ctx.db.player();
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
+    let campfires = ctx.db.campfire(); // Get campfire table
+    let world_states = ctx.db.world_state();
 
     let current_player = players.identity()
         .find(sender_id)
         .ok_or_else(|| "Player not found".to_string())?;
+
+    let world_state = world_states.iter().next()
+        .ok_or_else(|| "WorldState not found".to_string())?;
 
     let now = ctx.timestamp;
     let last_update_time = current_player.last_update;
@@ -339,6 +473,41 @@ pub fn update_player_position(
                      .min(100.0);
     let health_changed = (new_health - current_player.health).abs() > 0.01;
 
+    // --- Warmth Update ---
+    let mut warmth_change_per_sec: f32 = 0.0;
+
+    // 1. Warmth Drain based on Time of Day
+    let drain_multiplier = match world_state.time_of_day {
+        TimeOfDay::Night => WARMTH_DRAIN_MULTIPLIER_NIGHT,
+        TimeOfDay::Midnight => WARMTH_DRAIN_MULTIPLIER_MIDNIGHT,
+        TimeOfDay::Dawn | TimeOfDay::Dusk => WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK,
+        _ => 1.0, // Default multiplier for Morning, Noon, Afternoon
+    };
+    warmth_change_per_sec -= BASE_WARMTH_DRAIN_PER_SECOND * drain_multiplier;
+
+    // 2. Warmth Gain from nearby Campfires
+    for fire in campfires.iter() {
+        let dx = current_player.position_x - fire.pos_x;
+        let dy = current_player.position_y - fire.pos_y;
+        if (dx * dx + dy * dy) < WARMTH_RADIUS_SQUARED {
+            // Player is within warmth radius
+            warmth_change_per_sec += WARMTH_PER_SECOND;
+            log::trace!("Player {:?} gaining warmth from campfire {}", sender_id, fire.id);
+            // Optional: could break here if only one fire should affect,
+            // but summing allows multiple fires to have additive effect.
+        }
+    }
+
+    let new_warmth = (current_player.warmth + (warmth_change_per_sec * elapsed_seconds))
+                     .max(0.0) // Clamp between 0 and 100
+                     .min(100.0);
+    let warmth_changed = (new_warmth - current_player.warmth).abs() > 0.01;
+    if warmth_changed {
+        log::debug!("Player {:?} warmth updated to {:.1}", sender_id, new_warmth);
+    }
+    // TODO: Add effects for low warmth (e.g., health loss, slower movement) later
+
+    // --- Movement Calculation ---
     let proposed_x = current_player.position_x + move_dx * final_speed_multiplier;
     let proposed_y = current_player.position_y + move_dy * final_speed_multiplier;
 
@@ -349,6 +518,7 @@ pub fn update_player_position(
     let mut final_y = clamped_y;
     let mut collision_handled = false;
 
+    // --- Sliding Collision Checks ---
     // Check Player-Player Collision
     for other_player in players.iter() {
         if other_player.identity == sender_id {
@@ -474,8 +644,49 @@ pub fn update_player_position(
                     final_x = current_player.position_x;
                     final_y = current_player.position_y;
                 }
+                collision_handled = true;
                 // No need to set collision_handled=true here if it's the last check
                 break; // Handle first stone collision
+            }
+        }
+    }
+
+    // Check Player-Campfire Collision
+    if !collision_handled {
+        for fire in campfires.iter() {
+            let fire_collision_y = fire.pos_y - CAMPFIRE_COLLISION_Y_OFFSET;
+            let dx = clamped_x - fire.pos_x;
+            let dy = clamped_y - fire_collision_y;
+            let dist_sq = dx * dx + dy * dy;
+
+            if dist_sq < PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
+                log::debug!("Player-Campfire collision detected between {:?} and fire {}. Calculating slide.", sender_id, fire.id);
+
+                let intended_dx = clamped_x - current_player.position_x;
+                let intended_dy = clamped_y - current_player.position_y;
+                let collision_normal_x = dx;
+                let collision_normal_y = dy;
+                let normal_mag_sq = dist_sq;
+
+                if normal_mag_sq > 0.0 {
+                    let normal_mag = normal_mag_sq.sqrt();
+                    let norm_x = collision_normal_x / normal_mag;
+                    let norm_y = collision_normal_y / normal_mag;
+                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                    let projection_x = dot_product * norm_x;
+                    let projection_y = dot_product * norm_y;
+                    let slide_dx = intended_dx - projection_x;
+                    let slide_dy = intended_dy - projection_y;
+                    final_x = current_player.position_x + slide_dx;
+                    final_y = current_player.position_y + slide_dy;
+                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                } else {
+                    final_x = current_player.position_x;
+                    final_y = current_player.position_y;
+                }
+                // No need to set collision_handled=true here if it's the last check
+                break; // Handle first campfire collision
             }
         }
     }
@@ -556,6 +767,27 @@ pub fn update_player_position(
             }
         }
 
+        // Check Player-Campfire Overlap
+        for fire in campfires.iter() {
+            let fire_collision_y = fire.pos_y - CAMPFIRE_COLLISION_Y_OFFSET;
+            let dx = resolved_x - fire.pos_x;
+            let dy = resolved_y - fire_collision_y;
+            let dist_sq = dx * dx + dy * dy;
+            let min_dist = PLAYER_RADIUS + CAMPFIRE_COLLISION_RADIUS; // Use campfire radius
+            let min_dist_sq = min_dist * min_dist;
+
+            if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                overlap_found_in_iter = true;
+                let distance = dist_sq.sqrt();
+                let overlap = (min_dist - distance) + epsilon;
+                let push_x = (dx / distance) * overlap;
+                let push_y = (dy / distance) * overlap;
+                resolved_x += push_x;
+                resolved_y += push_y;
+                log::trace!("Resolving player-campfire overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+            }
+        }
+
         // Re-clamp final resolved position to world boundaries after each iteration
         resolved_x = resolved_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
         resolved_y = resolved_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
@@ -569,11 +801,13 @@ pub fn update_player_position(
         }
     }
 
+    // --- Final Update ---
     // Determine final direction based on actual movement
     let actual_dx = resolved_x - current_player.position_x;
     let actual_dy = resolved_y - current_player.position_y;
     let position_changed = actual_dx != 0.0 || actual_dy != 0.0;
-    let should_update = position_changed || health_changed || elapsed_seconds > 0.1;
+    // Update if position, health, or warmth changed, or if enough time passed
+    let should_update = position_changed || health_changed || warmth_changed || elapsed_seconds > 0.1;
 
     if should_update {
         let mut direction = current_player.direction.clone();
@@ -596,19 +830,19 @@ pub fn update_player_position(
             thirst: new_thirst,
             stamina: new_stamina,
             health: new_health,
+            warmth: new_warmth,
             is_sprinting: current_sprinting_state,
             ..current_player
         };
         players.identity().update(updated_player);
     }
 
-    // --- TEMPORARY: Call tick_world_state to advance time on player move --- 
+    // --- Tick World State ---
     // We pass the current context and its timestamp
     match world_state::tick_world_state(ctx, ctx.timestamp) {
         Ok(_) => { /* Time ticked successfully (or no update needed) */ }
         Err(e) => log::error!("Error ticking world state: {}", e),
     }
-    // --- END TEMPORARY --- 
 
     Ok(())
 }
