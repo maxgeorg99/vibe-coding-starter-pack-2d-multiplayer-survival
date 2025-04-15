@@ -5,12 +5,12 @@ import heroSpriteSheet from '../assets/hero.png';
 import grassTexture from '../assets/tiles/grass.png';
 // Import helpers and hook
 import { useAnimationCycle } from '../hooks/useAnimationCycle';
-import { isPlayerHovered, renderPlayer } from '../utils/renderingUtils';
+import { isPlayerHovered, renderPlayer, getSpriteCoordinates } from '../utils/renderingUtils';
 // Import Minimap drawing logic and dimensions
 import { drawMinimapOntoCanvas, MINIMAP_DIMENSIONS } from './Minimap';
 
-// Threshold for considering a player "recently moved" (in milliseconds)
-const MOVEMENT_IDLE_THRESHOLD_MS = 200;
+// Threshold for movement animation (position delta)
+const MOVEMENT_POSITION_THRESHOLD = 0.1; // Small threshold to account for float precision
 const ANIMATION_INTERVAL_MS = 150;
 
 // --- Jump Constants ---
@@ -20,15 +20,17 @@ const JUMP_HEIGHT_PX = 40; // Maximum height the player reaches
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
   localPlayerId?: string;
-  updatePlayerPosition: (x: number, y: number) => void;
+  updatePlayerPosition: (dx: number, dy: number) => void;
   callJumpReducer: () => void;
+  callSetSprintingReducer: (isSprinting: boolean) => void;
 }
 
 const GameCanvas: React.FC<GameCanvasProps> = ({ 
   players, 
   localPlayerId,
   updatePlayerPosition,
-  callJumpReducer
+  callJumpReducer,
+  callSetSprintingReducer
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -39,6 +41,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const mousePosRef = useRef<{x: number | null, y: number | null}>({ x: null, y: null });
   const [isMinimapOpen, setIsMinimapOpen] = useState(false); // State for minimap visibility
   const [isMouseOverMinimap, setIsMouseOverMinimap] = useState(false); // State for minimap hover
+  const isSprintingRef = useRef<boolean>(false); // Track current sprint state
+  const lastPositionsRef = useRef<Map<string, {x: number, y: number}>>(new Map()); // Store last known positions
   
   const animationFrame = useAnimationCycle(ANIMATION_INTERVAL_MS, 4);
 
@@ -50,34 +54,64 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      // Avoid processing modifier keys if they are the only key pressed initially
+      if (key === 'shift' || key === 'control' || key === 'alt' || key === 'meta') {
+        // Handle Shift for sprinting start
+        if (key === 'shift' && !isSprintingRef.current && !e.repeat) {
+            isSprintingRef.current = true;
+            callSetSprintingReducer(true);
+        }
+        // Don't add modifier keys themselves to keysPressed
+        return; 
+      }
+
       keysPressed.current.add(key);
 
       // Handle jump on Spacebar press
       if (key === ' ' && !e.repeat) {
         const localPlayer = getLocalPlayer();
         if (localPlayer) {
-          callJumpReducer(); // Call the passed-in reducer function
+          callJumpReducer(); 
         }
       }
 
       // Toggle minimap on 'g' press
-      if (key === 'g' && !e.repeat) { // Prevent toggle spam on hold
+      if (key === 'g' && !e.repeat) { 
         setIsMinimapOpen(prev => !prev);
       }
     };
     
     const handleKeyUp = (e: KeyboardEvent) => {
-      keysPressed.current.delete(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      // Handle Shift key release for sprinting end
+      if (key === 'shift') {
+        if (isSprintingRef.current) { // Only call if we were sprinting
+            isSprintingRef.current = false;
+            callSetSprintingReducer(false);
+        }
+      }
+      keysPressed.current.delete(key);
     };
     
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     
+    // Cleanup function to handle edge case: window losing focus while shift is held
+    const handleBlur = () => {
+        if (isSprintingRef.current) {
+            isSprintingRef.current = false;
+            callSetSprintingReducer(false);
+        }
+        keysPressed.current.clear(); // Clear all keys on blur
+    };
+    window.addEventListener('blur', handleBlur);
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
-  }, [getLocalPlayer, callJumpReducer]);
+  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer]);
   
   const updatePlayerBasedOnInput = useCallback(() => {
     const localPlayer = getLocalPlayer();
@@ -85,45 +119,33 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     
     let dx = 0;
     let dy = 0;
+    const speed = gameConfig.playerSpeed; // Use base speed
     
-    // Handle WASD movement
+    // Handle WASD movement to calculate deltas
     if (keysPressed.current.has('w') || keysPressed.current.has('arrowup')) {
-      dy -= gameConfig.playerSpeed;
+      dy -= speed;
     }
-    
     if (keysPressed.current.has('s') || keysPressed.current.has('arrowdown')) {
-      dy += gameConfig.playerSpeed;
+      dy += speed;
     }
-    
     if (keysPressed.current.has('a') || keysPressed.current.has('arrowleft')) {
-      dx -= gameConfig.playerSpeed;
+      dx -= speed;
     }
-    
     if (keysPressed.current.has('d') || keysPressed.current.has('arrowright')) {
-      dx += gameConfig.playerSpeed;
+      dx += speed;
     }
     
-    // Only update if there's movement
-    if (dx !== 0 || dy !== 0) {
-      // Use world dimensions for boundary checks
-      const worldPixelWidth = gameConfig.worldWidth * gameConfig.tileSize;
-      const worldPixelHeight = gameConfig.worldHeight * gameConfig.tileSize;
-      const newX = Math.max(
-        gameConfig.playerRadius, 
-        Math.min(
-          worldPixelWidth - gameConfig.playerRadius, // World boundary
-          localPlayer.positionX + dx
-        )
-      );
-      const newY = Math.max(
-        gameConfig.playerRadius, 
-        Math.min(
-          worldPixelHeight - gameConfig.playerRadius, // World boundary
-          localPlayer.positionY + dy
-        )
-      );
-      updatePlayerPosition(newX, newY);
+    // Normalize diagonal movement (optional but good practice)
+    if (dx !== 0 && dy !== 0) {
+        const magnitude = Math.sqrt(dx * dx + dy * dy);
+        dx = (dx / magnitude) * speed;
+        dy = (dy / magnitude) * speed;
     }
+
+    // Always call updatePlayerPosition to allow server to process passive changes (like stamina regen)
+    updatePlayerPosition(dx, dy);
+    // Client no longer calculates absolute position or checks boundaries
+
   }, [getLocalPlayer, updatePlayerPosition]);
   
   useEffect(() => { 
@@ -233,7 +255,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, []);
 
-  // Updated drawPlayers to include jump calculation
+  // Updated drawPlayers to use position check for animation
   const drawPlayersWithJump = useCallback((ctx: CanvasRenderingContext2D, currentMousePos: {x: number | null, y: number | null}) => {
     const heroImg = heroImageRef.current;
     if (!heroImg) return;
@@ -254,35 +276,45 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const now_ms = Date.now(); 
 
     players.forEach(player => {
-      // Determine movement state
-      // Use last_update from SpacetimeDB timestamp for movement idle check
-      const playerLastUpdate_micros = player.lastUpdate.microsSinceUnixEpoch;
-      const playerLastUpdate_ms = Number(playerLastUpdate_micros / 1000n); // Use BigInt division
-      const isPlayerMoving = (now_ms - playerLastUpdate_ms) < MOVEMENT_IDLE_THRESHOLD_MS;
-      
-      // --- Jump Calculation ---
+      const playerId = player.identity.toHexString();
+      const lastPos = lastPositionsRef.current.get(playerId);
+      let isPlayerMoving = false;
+
+      if (lastPos) {
+        const dx = Math.abs(player.positionX - lastPos.x);
+        const dy = Math.abs(player.positionY - lastPos.y);
+        // Check if position changed significantly
+        if (dx > MOVEMENT_POSITION_THRESHOLD || dy > MOVEMENT_POSITION_THRESHOLD) {
+          isPlayerMoving = true;
+        }
+      } else {
+        // If no last position, assume not moving initially for animation purposes
+        isPlayerMoving = false; 
+      }
+
+      // Update last known position for next frame
+      lastPositionsRef.current.set(playerId, { x: player.positionX, y: player.positionY });
+
+      // --- Jump Calculation (remains the same) ---
       let jumpOffset = 0;
       const jumpStartTime = player.jumpStartTimeMs;
       if (jumpStartTime > 0) {
-          const elapsedJumpTime = now_ms - Number(jumpStartTime); // Convert BigInt to number
+          const elapsedJumpTime = now_ms - Number(jumpStartTime); 
           if (elapsedJumpTime < JUMP_DURATION_MS) {
-              // Simple parabolic curve: y = -4h/d^2 * x * (x - d)
-              // where h=height, d=duration, x=elapsed time
               const d = JUMP_DURATION_MS;
               const h = JUMP_HEIGHT_PX;
               const x = elapsedJumpTime;
               jumpOffset = (-4 * h / (d * d)) * x * (x - d);
           } 
-          // No need to explicitly reset jump_start_time_ms here, server state handles it.
-          // If jumpStartTime is still > 0 but elapsed > duration, offset remains 0.
       }
       // --- End Jump Calculation ---
 
       // Check hover state
       const hovered = isPlayerHovered(worldMouseX, worldMouseY, player);
       
-      // Call the unified renderPlayer function, passing the jump offset
-      renderPlayer(ctx, player, heroImg, isPlayerMoving, hovered, animationFrame, jumpOffset); 
+      // Call the unified renderPlayer function
+      // We pass isPlayerMoving determined by position change
+      renderPlayer(ctx, player, heroImg, isPlayerMoving, hovered, animationFrame, jumpOffset);
     });
   }, [players, animationFrame, getLocalPlayer, canvasSize.width, canvasSize.height]);
 

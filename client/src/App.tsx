@@ -80,34 +80,51 @@ function App() {
   
   // Effect for Subscribing to Player data and handling updates
   useEffect(() => {
-    // Ensure we have a connection before subscribing
     if (!connection) return;
 
     console.log('Setting up Player table subscriptions...');
 
-    // --- Player Table Callbacks --- 
     const handlePlayerInsert = (ctx: any, player: SpacetimeDB.Player) => {
-      console.log('handlePlayerInsert called for:', player.identity.toHexString()); // Log when callback fires
-      console.log('Current connection identity:', connection?.identity?.toHexString()); // Log current identity
-      
       console.log('Player Inserted:', player.username, player.identity.toHexString());
-      setPlayers(prev => new Map(prev.set(player.identity.toHexString(), player)));
+      // Create a new map for inserts
+      setPlayers(prev => {
+        const newMap = new Map(prev);
+        newMap.set(player.identity.toHexString(), player);
+        return newMap;
+      });
       
-      // Check if the inserted player is the local player (and connection/identity exist)
       if (connection && connection.identity && player.identity.isEqual(connection.identity)) {
         console.log('Local player registered, switching to game view.');
-        setIsConnected(true); // Now switch to game view
+        setIsConnected(true); 
       }
     };
 
     const handlePlayerUpdate = (ctx: any, oldPlayer: SpacetimeDB.Player, newPlayer: SpacetimeDB.Player) => {
-      console.log('Player Updated:', newPlayer.username, newPlayer.identity.toHexString());
-      // Update the map with the new player data
-      setPlayers(prev => new Map(prev.set(newPlayer.identity.toHexString(), newPlayer)));
+      // Compare key fields, rounding stats and checking jump time
+      const positionChanged = oldPlayer.positionX !== newPlayer.positionX || oldPlayer.positionY !== newPlayer.positionY;
+      const staminaChanged = Math.round(oldPlayer.stamina) !== Math.round(newPlayer.stamina);
+      const hungerChanged = Math.round(oldPlayer.hunger) !== Math.round(newPlayer.hunger);
+      const thirstChanged = Math.round(oldPlayer.thirst) !== Math.round(newPlayer.thirst);
+      const jumpTimeChanged = oldPlayer.jumpStartTimeMs !== newPlayer.jumpStartTimeMs; // Add jump time check
+      const otherStateChanged = oldPlayer.isSprinting !== newPlayer.isSprinting || oldPlayer.direction !== newPlayer.direction;
+
+      // Only update state if something visually or logically important changed
+      if (positionChanged || staminaChanged || hungerChanged || thirstChanged || jumpTimeChanged || otherStateChanged)
+      {
+          console.log(`Player Updated (State Change - Pos: ${positionChanged}, Stam: ${staminaChanged}, Hung: ${hungerChanged}, Thirst: ${thirstChanged}, Jump: ${jumpTimeChanged}, Other: ${otherStateChanged}):`, newPlayer.username, newPlayer.identity.toHexString());
+          setPlayers(prev => {
+            const newMap = new Map(prev);
+            newMap.set(newPlayer.identity.toHexString(), newPlayer);
+            return newMap;
+          });
+      } else {
+        // console.log('Player Updated (No significant state change):', newPlayer.username); 
+      }
     };
 
     const handlePlayerDelete = (ctx: any, player: SpacetimeDB.Player) => {
       console.log('Player Deleted:', player.username, player.identity.toHexString());
+      // Ensure a new map is created for deletes
       setPlayers(prev => {
         const newMap = new Map(prev);
         newMap.delete(player.identity.toHexString());
@@ -168,14 +185,26 @@ function App() {
     }
   };
   
-  // Update player position handler
-  const updatePlayerPosition = (x: number, y: number) => {
+  // Update player position handler (now accepts deltas)
+  const updatePlayerPosition = (dx: number, dy: number) => {
     if (connection) {
       try {
-        // Call the actual SpacetimeDB reducer using camelCase
-        connection.reducers.updatePlayerPosition(x, y);
+        // Call the SpacetimeDB reducer with movement deltas
+        connection.reducers.updatePlayerPosition(dx, dy);
       } catch (err) {
         console.error('Failed to update player position:', err);
+      }
+    }
+  };
+  
+  // --- Sprint Reducer Call ---
+  const callSetSprintingReducer = (isSprinting: boolean) => {
+    if (connection) {
+      try {
+        // Call the new SpacetimeDB reducer using camelCase
+        connection.reducers.setSprinting(isSprinting);
+      } catch (err) {
+        console.error('Failed to call setSprinting reducer:', err);
       }
     }
   };
@@ -224,6 +253,7 @@ function App() {
             localPlayerId={connection?.identity?.toHexString()}
             updatePlayerPosition={updatePlayerPosition}
             callJumpReducer={callJumpReducer}
+            callSetSprintingReducer={callSetSprintingReducer}
           />
         </div>
       )}

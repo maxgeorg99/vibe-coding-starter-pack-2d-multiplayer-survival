@@ -40,6 +40,8 @@ import { Jump } from "./jump_reducer.ts";
 export { Jump };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
+import { SetSprinting } from "./set_sprinting_reducer.ts";
+export { SetSprinting };
 import { UpdatePlayerPosition } from "./update_player_position_reducer.ts";
 export { UpdatePlayerPosition };
 
@@ -76,6 +78,10 @@ const REMOTE_MODULE = {
       reducerName: "register_player",
       argsType: RegisterPlayer.getTypeScriptAlgebraicType(),
     },
+    set_sprinting: {
+      reducerName: "set_sprinting",
+      argsType: SetSprinting.getTypeScriptAlgebraicType(),
+    },
     update_player_position: {
       reducerName: "update_player_position",
       argsType: UpdatePlayerPosition.getTypeScriptAlgebraicType(),
@@ -111,6 +117,7 @@ export type Reducer = never
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
 | { name: "Jump", args: Jump }
 | { name: "RegisterPlayer", args: RegisterPlayer }
+| { name: "SetSprinting", args: SetSprinting }
 | { name: "UpdatePlayerPosition", args: UpdatePlayerPosition }
 ;
 
@@ -165,19 +172,35 @@ export class RemoteReducers {
     this.connection.offReducer("register_player", callback);
   }
 
-  updatePlayerPosition(proposedX: number, proposedY: number) {
-    const __args = { proposedX, proposedY };
+  setSprinting(sprinting: boolean) {
+    const __args = { sprinting };
+    let __writer = new BinaryWriter(1024);
+    SetSprinting.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("set_sprinting", __argsBuffer, this.setCallReducerFlags.setSprintingFlags);
+  }
+
+  onSetSprinting(callback: (ctx: ReducerEventContext, sprinting: boolean) => void) {
+    this.connection.onReducer("set_sprinting", callback);
+  }
+
+  removeOnSetSprinting(callback: (ctx: ReducerEventContext, sprinting: boolean) => void) {
+    this.connection.offReducer("set_sprinting", callback);
+  }
+
+  updatePlayerPosition(moveDx: number, moveDy: number) {
+    const __args = { moveDx, moveDy };
     let __writer = new BinaryWriter(1024);
     UpdatePlayerPosition.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("update_player_position", __argsBuffer, this.setCallReducerFlags.updatePlayerPositionFlags);
   }
 
-  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, proposedX: number, proposedY: number) => void) {
+  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number) => void) {
     this.connection.onReducer("update_player_position", callback);
   }
 
-  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, proposedX: number, proposedY: number) => void) {
+  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number) => void) {
     this.connection.offReducer("update_player_position", callback);
   }
 
@@ -197,6 +220,11 @@ export class SetReducerFlags {
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
   registerPlayer(flags: CallReducerFlags) {
     this.registerPlayerFlags = flags;
+  }
+
+  setSprintingFlags: CallReducerFlags = 'FullUpdate';
+  setSprinting(flags: CallReducerFlags) {
+    this.setSprintingFlags = flags;
   }
 
   updatePlayerPositionFlags: CallReducerFlags = 'FullUpdate';

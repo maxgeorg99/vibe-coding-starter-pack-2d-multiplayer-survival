@@ -31,32 +31,30 @@ import {
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export type UpdatePlayerPosition = {
-  moveDx: number,
-  moveDy: number,
+export type SetSprinting = {
+  sprinting: boolean,
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace UpdatePlayerPosition {
+export namespace SetSprinting {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("moveDx", AlgebraicType.createF32Type()),
-      new ProductTypeElement("moveDy", AlgebraicType.createF32Type()),
+      new ProductTypeElement("sprinting", AlgebraicType.createBoolType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: UpdatePlayerPosition): void {
-    UpdatePlayerPosition.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: SetSprinting): void {
+    SetSprinting.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): UpdatePlayerPosition {
-    return UpdatePlayerPosition.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): SetSprinting {
+    return SetSprinting.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }

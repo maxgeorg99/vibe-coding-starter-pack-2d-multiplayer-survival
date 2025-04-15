@@ -63,32 +63,61 @@ export const drawNameTag = (
   ctx.fillText(player.username, player.positionX, tagY + tagHeight / 2 + 4);
 };
 
-// Renders a complete player (sprite + conditional name tag)
+// Renders a complete player (sprite, shadow, and conditional name tag)
 export const renderPlayer = (
   ctx: CanvasRenderingContext2D,
   player: SpacetimeDBPlayer,
-  heroImg: CanvasImageSource, // Use CanvasImageSource type
+  heroImg: CanvasImageSource,
   isMoving: boolean,
   isHovered: boolean,
   currentAnimationFrame: number,
-  jumpOffsetY: number = 0 // Default to 0 if not provided
+  jumpOffsetY: number = 0
 ) => {
   const { sx, sy } = getSpriteCoordinates(player, isMoving, currentAnimationFrame);
   
   const drawWidth = gameConfig.spriteWidth * 2;
   const drawHeight = gameConfig.spriteHeight * 2;
-  const dx = player.positionX - drawWidth / 2;
-  const dy = player.positionY - drawHeight / 2 - jumpOffsetY;
+  const spriteBaseX = player.positionX - drawWidth / 2;
+  const spriteBaseY = player.positionY - drawHeight / 2;
+  // The sprite's visual Y position, accounting for the jump
+  const spriteDrawY = spriteBaseY - jumpOffsetY; 
 
-  // Draw the sprite
+  // --- Draw Shadow --- 
+  const shadowBaseRadiusX = drawWidth * 0.3;
+  const shadowBaseRadiusY = shadowBaseRadiusX * 0.4;
+  const shadowMaxJumpOffset = 10; 
+  const shadowYOffsetFromJump = jumpOffsetY * (shadowMaxJumpOffset / gameConfig.playerRadius); 
+  // Add constant offset to place shadow below feet (approx half sprite height)
+  const shadowBaseYOffset = drawHeight * 0.4; // Adjust this multiplier (0.4 to 0.5) as needed
+
+  // Shadow gets smaller and fainter as player goes higher
+  const jumpProgress = Math.min(1, jumpOffsetY / gameConfig.playerRadius); // 0 to 1 based on jump height
+  const shadowScale = 1.0 - jumpProgress * 0.4; // Shrinks up to 40%
+  const shadowOpacity = 0.5 - jumpProgress * 0.3; // Fades up to 60%
+
+  ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0, shadowOpacity)})`;
+  ctx.beginPath();
+  ctx.ellipse(
+    player.positionX, // Center X of shadow is player's X
+    player.positionY + shadowBaseYOffset + shadowYOffsetFromJump, // Apply base offset AND jump offset
+    shadowBaseRadiusX * shadowScale, 
+    shadowBaseRadiusY * shadowScale, 
+    0, 
+    0, 
+    Math.PI * 2 
+  );
+  ctx.fill();
+  // --- End Draw Shadow ---
+
+  // Draw the sprite (use the calculated spriteDrawY)
   ctx.drawImage(
     heroImg, 
     sx, sy, gameConfig.spriteWidth, gameConfig.spriteHeight, // Source
-    dx, dy, drawWidth, drawHeight // Destination
+    spriteBaseX, spriteDrawY, drawWidth, drawHeight // Destination
   );
 
-  // Draw name tag if hovered (position based on potentially offset dy)
+  // Draw name tag if hovered (position based on the sprite's visual top edge)
   if (isHovered) {
-    drawNameTag(ctx, player, dy);
+    drawNameTag(ctx, player, spriteDrawY);
   }
 }; 

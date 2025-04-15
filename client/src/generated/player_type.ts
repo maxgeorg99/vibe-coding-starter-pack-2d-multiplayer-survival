@@ -44,6 +44,7 @@ export type Player = {
   thirst: number,
   hunger: number,
   warmth: number,
+  isSprinting: boolean,
 };
 
 /**
@@ -69,6 +70,7 @@ export namespace Player {
       new ProductTypeElement("thirst", AlgebraicType.createF32Type()),
       new ProductTypeElement("hunger", AlgebraicType.createF32Type()),
       new ProductTypeElement("warmth", AlgebraicType.createF32Type()),
+      new ProductTypeElement("isSprinting", AlgebraicType.createBoolType()),
     ]);
   }
 

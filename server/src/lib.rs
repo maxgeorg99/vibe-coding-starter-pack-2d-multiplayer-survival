@@ -4,6 +4,13 @@ use log;
 const PLAYER_RADIUS: f32 = 20.0;
 const PLAYER_DIAMETER_SQUARED: f32 = (PLAYER_RADIUS * 2.0) * (PLAYER_RADIUS * 2.0);
 
+// Passive Stat Drain Rates
+const HUNGER_DRAIN_PER_SECOND: f32 = 100.0 / (30.0 * 60.0); // 100 hunger over 30 mins
+const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0); // 100 thirst over 20 mins
+const STAMINA_DRAIN_PER_SECOND: f32 = 20.0; // Stamina drains fast while sprinting
+const STAMINA_RECOVERY_PER_SECOND: f32 = 5.0;  // Stamina recovers slower
+const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;     // 50% faster sprint
+
 // Player table to store position and color
 #[spacetimedb::table(name = player, public)]
 #[derive(Clone)]
@@ -23,6 +30,7 @@ pub struct Player {
     pub thirst: f32,
     pub hunger: f32,
     pub warmth: f32,
+    pub is_sprinting: bool, // Is the player currently trying to sprint?
 }
 
 // When a client connects, we need to create a player for them
@@ -134,6 +142,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         thirst: 100.0,
         hunger: 100.0,
         warmth: 100.0,
+        is_sprinting: false, // Initialize sprint state
     };
     
     // Insert the new player
@@ -148,70 +157,126 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     }
 }
 
-// Update player movement with collision detection
+// NEW Reducer: Called by the client to set the sprinting state
+#[spacetimedb::reducer]
+pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let players = ctx.db.player();
+
+    if let Some(mut player) = players.identity().find(&sender_id) {
+        // Only update if the state is actually changing
+        if player.is_sprinting != sprinting {
+            player.is_sprinting = sprinting;
+            // Also update last_update time so stamina regen/drain calculation is accurate on next movement
+            player.last_update = ctx.timestamp; 
+            players.identity().update(player);
+            log::debug!("Player {:?} set sprinting to {}", sender_id, sprinting);
+        }
+        Ok(())
+    } else {
+        Err("Player not found".to_string())
+    }
+}
+
+// Update player movement, handle sprinting, stats, and collision
 #[spacetimedb::reducer]
 pub fn update_player_position(
     ctx: &ReducerContext, 
-    proposed_x: f32, // Rename to indicate it's a proposal
-    proposed_y: f32
+    move_dx: f32, // Delta X requested by client (based on base speed)
+    move_dy: f32  // Delta Y requested by client (based on base speed)
 ) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
     
-    // Find the current player
     let current_player = players.identity()
         .find(sender_id)
-        .ok_or_else(|| "Player not found".to_string())?; // Use ok_or_else for String error
+        .ok_or_else(|| "Player not found".to_string())?;
 
-    let mut final_x = proposed_x;
-    let mut final_y = proposed_y;
+    let now = ctx.timestamp;
+    let last_update_time = current_player.last_update;
+    let elapsed_micros = now.to_micros_since_unix_epoch().saturating_sub(last_update_time.to_micros_since_unix_epoch());
+    let elapsed_seconds = (elapsed_micros as f64 / 1_000_000.0) as f32;
+
+    // --- Calculate Stat Changes --- 
+    let mut new_hunger = (current_player.hunger - (elapsed_seconds * HUNGER_DRAIN_PER_SECOND)).max(0.0);
+    let mut new_thirst = (current_player.thirst - (elapsed_seconds * THIRST_DRAIN_PER_SECOND)).max(0.0);
+    
+    let mut new_stamina = current_player.stamina;
+    let mut actual_speed_multiplier = 1.0;
+    let mut current_sprinting_state = current_player.is_sprinting;
+    let is_moving = move_dx != 0.0 || move_dy != 0.0;
+
+    if current_sprinting_state && is_moving && new_stamina > 0.0 {
+        // Drain stamina if sprinting, moving, and has stamina
+        new_stamina = (new_stamina - (elapsed_seconds * STAMINA_DRAIN_PER_SECOND)).max(0.0);
+        if new_stamina > 0.0 { // Can still sprint
+            actual_speed_multiplier = SPRINT_SPEED_MULTIPLIER;
+        } else { // Ran out of stamina
+            current_sprinting_state = false; // Force stop sprinting this update cycle
+            log::debug!("Player {:?} ran out of stamina.", sender_id);
+        }
+    } else if !current_sprinting_state {
+        // Recover stamina if not trying to sprint
+        new_stamina = (new_stamina + (elapsed_seconds * STAMINA_RECOVERY_PER_SECOND)).min(100.0);
+    }
+    // Note: If player stops moving while holding sprint, stamina doesn't drain but also doesn't recover here.
+    // It will recover on the next update where is_sprinting is false or is_moving is false.
+
+    // --- Calculate Target Position --- 
+    let target_x = current_player.position_x + move_dx * actual_speed_multiplier;
+    let target_y = current_player.position_y + move_dy * actual_speed_multiplier;
+
+    // --- Collision Detection --- 
+    let mut final_x = target_x;
+    let mut final_y = target_y;
     let mut collision_detected = false;
 
-    // Iterate through all other players to check for collisions
     for other_player in players.iter() {
-        // Skip self-check
         if other_player.identity == sender_id {
             continue;
         }
-
-        // Calculate squared distance between proposed position and other player
-        let dx = proposed_x - other_player.position_x;
-        let dy = proposed_y - other_player.position_y;
+        let dx = target_x - other_player.position_x;
+        let dy = target_y - other_player.position_y;
         let dist_sq = dx * dx + dy * dy;
-
-        // Check for collision (overlap)
         if dist_sq < PLAYER_DIAMETER_SQUARED {
             collision_detected = true;
-            // Simple resolution: Prevent movement by reverting to current position
-            // More advanced: Calculate position just before collision or slide
+            // Revert to original position - simple collision resolution
             final_x = current_player.position_x;
             final_y = current_player.position_y;
             log::debug!("Collision detected between {:?} and {:?}. Movement reverted.", sender_id, other_player.identity);
-            break; // Stop checking after first collision for this simple resolution
+            break; 
         }
     }
 
-    // Only update if position actually changed and no collision stopped it
-    if (final_x != current_player.position_x || final_y != current_player.position_y) && !collision_detected {
-        // Determine direction based on movement
-        let dx = final_x - current_player.position_x;
-        let dy = final_y - current_player.position_y;
-        let mut direction = current_player.direction.clone(); // Keep old direction if no move
+    // --- Determine Update & Final State --- 
+    let actual_dx = final_x - current_player.position_x;
+    let actual_dy = final_y - current_player.position_y;
+    let position_changed = actual_dx != 0.0 || actual_dy != 0.0;
+    // Update if position changed, or if enough time passed for passive drains/regen
+    let should_update = position_changed || elapsed_seconds > 0.1; 
 
-        if dx.abs() > dy.abs() { // Horizontal movement is dominant
-            if dx > 0.0 { direction = "right".to_string(); }
-            else if dx < 0.0 { direction = "left".to_string(); }
-        } else if dy.abs() > dx.abs() { // Vertical movement is dominant
-            if dy > 0.0 { direction = "down".to_string(); }
-            else if dy < 0.0 { direction = "up".to_string(); }
-        } // If dx == dy == 0, direction remains unchanged
+    if should_update {
+        let mut direction = current_player.direction.clone(); 
+        if position_changed { // Only update direction if actual movement occurred
+            if actual_dx.abs() > actual_dy.abs() { 
+                if actual_dx > 0.0 { direction = "right".to_string(); }
+                else if actual_dx < 0.0 { direction = "left".to_string(); }
+            } else if actual_dy.abs() > actual_dx.abs() { 
+                if actual_dy > 0.0 { direction = "down".to_string(); }
+                else if actual_dy < 0.0 { direction = "up".to_string(); }
+            } 
+        }
 
         let updated_player = Player {
             position_x: final_x,
             position_y: final_y,
-            direction, // Set the calculated direction
-            last_update: ctx.timestamp,
-            ..current_player // Clone other fields (including the existing jump_start_time_ms)
+            direction, 
+            last_update: now,
+            hunger: new_hunger,
+            thirst: new_thirst,
+            stamina: new_stamina, // Update stamina
+            is_sprinting: current_sprinting_state, // Reflect if we forced sprint off due to low stamina
+            ..current_player // Clone other fields (health, warmth, color, username, jump_start_time_ms, identity)
         };
         
         players.identity().update(updated_player);

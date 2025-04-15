@@ -1,10 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { Player, DbConnection } from '../generated'; // Get DbConnection from generated
-import { Identity } from '@clockworklabs/spacetimedb-sdk'; // Import Identity from base SDK
+import { Player } from '../generated'; // DbConnection is not needed here anymore
+import { Identity } from '@clockworklabs/spacetimedb-sdk';
+
+// Define the StatusBar component inline for simplicity
+interface StatusBarProps {
+  label: string;
+  icon: string; // Placeholder for icon, e.g., emoji or text
+  value: number;
+  maxValue: number;
+  barColor: string;
+}
+
+const StatusBar: React.FC<StatusBarProps> = ({ label, icon, value, maxValue, barColor }) => {
+  const percentage = Math.max(0, Math.min(100, (value / maxValue) * 100));
+
+  return (
+    <div style={{ marginBottom: '4px', display: 'flex', alignItems: 'center' }}>
+      <span style={{ marginRight: '5px', minWidth: '18px', textAlign: 'center', fontSize: '14px' }}>{icon}</span>
+      <div style={{ flexGrow: 1 }}>
+        <div style={{
+          height: '8px',
+          backgroundColor: '#555',
+          borderRadius: '2px',
+          overflow: 'hidden',
+          border: '1px solid #333',
+        }}>
+          <div style={{
+            height: '100%',
+            width: `${percentage}%`,
+            backgroundColor: barColor,
+          }}></div>
+        </div>
+      </div>
+      <span style={{ marginLeft: '5px', fontSize: '10px', minWidth: '30px', textAlign: 'right' }}>
+        {value.toFixed(0)}
+      </span>
+    </div>
+  );
+};
+
 
 interface PlayerUIProps {
   identity: Identity | null;
-  players: Map<string, Player>; // Get the players map from App.tsx
+  players: Map<string, Player>;
 }
 
 const PlayerUI: React.FC<PlayerUIProps> = ({ identity, players }) => {
@@ -12,41 +50,67 @@ const PlayerUI: React.FC<PlayerUIProps> = ({ identity, players }) => {
 
     useEffect(() => {
         if (!identity) {
-            setLocalPlayer(null); // Clear if no identity
+            setLocalPlayer(null);
             return;
         }
-
-        // Find the player in the map passed via props
         const player = players.get(identity.toHexString());
         setLocalPlayer(player || null);
-
-        // No need for direct DB listeners here, App.tsx manages the players map
-
-    }, [identity, players]); // Rerun effect if identity or the players map changes
+    }, [identity, players]);
 
     if (!localPlayer) {
-        return null; // Don't render anything if local player data isn't available
+        return null;
     }
 
-    // Simple display for now
+    // Retro SNES RPG Style - Compact
     return (
         <div style={{
             position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            bottom: '15px',
+            right: '15px',
+            backgroundColor: 'rgba(40, 40, 60, 0.85)',
             color: 'white',
-            padding: '15px',
-            borderRadius: '8px',
-            fontFamily: 'Arial, sans-serif',
-            minWidth: '200px', // Ensure minimum width
+            padding: '10px',
+            borderRadius: '4px',
+            border: '1px solid #a0a0c0',
+            fontFamily: '"Press Start 2P", cursive',
+            minWidth: '200px',
+            boxShadow: '2px 2px 0px rgba(0,0,0,0.5)',
         }}>
-            <h4>{localPlayer.username}</h4>
-            <div>Health: {localPlayer.health.toFixed(0)}/100</div>
-            <div>Stamina: {localPlayer.stamina.toFixed(0)}/100</div>
-            <div>Thirst: {localPlayer.thirst.toFixed(0)}/100</div>
-            <div>Hunger: {localPlayer.hunger.toFixed(0)}/100</div>
-            <div>Warmth: {localPlayer.warmth.toFixed(0)}/100</div>
+            <StatusBar
+                label="HP"
+                icon="❤️"
+                value={localPlayer.health}
+                maxValue={100}
+                barColor="#ff4040"
+            />
+            <StatusBar
+                label="SP"
+                icon="⚡"
+                value={localPlayer.stamina}
+                maxValue={100}
+                barColor="#40ff40"
+            />
+            <StatusBar
+                label="Thirst"
+                icon="💧"
+                value={localPlayer.thirst}
+                maxValue={100}
+                barColor="#40a0ff"
+            />
+            <StatusBar
+                label="Hunger"
+                icon="🍖"
+                value={localPlayer.hunger}
+                maxValue={100}
+                barColor="#ffa040"
+            />
+            <StatusBar
+                label="Warmth"
+                icon="🔥"
+                value={localPlayer.warmth}
+                maxValue={100}
+                barColor="#ffcc00"
+            />
         </div>
     );
 };
