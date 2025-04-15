@@ -47,7 +47,11 @@ const HEALTH_LOSS_PER_SEC_LOW_HUNGER: f32 = 0.4;
 const HEALTH_LOSS_MULTIPLIER_AT_ZERO: f32 = 2.0; 
 const HEALTH_RECOVERY_THRESHOLD: f32 = 80.0;    
 const HEALTH_RECOVERY_PER_SEC: f32 = 1.0;      
-const MIN_HEALTH_FROM_NEEDS: f32 = 1.0;       
+// const MIN_HEALTH_FROM_NEEDS: f32 = 1.0; // Removed - allowing death from needs
+
+// New Warmth Penalties
+const HEALTH_LOSS_PER_SEC_LOW_WARMTH: f32 = 0.6; // Slightly higher than thirst/hunger
+const LOW_WARMTH_SPEED_PENALTY: f32 = 0.8; // 20% speed reduction when cold
 
 // Player table to store position and color
 #[spacetimedb::table(name = player, public)]
@@ -68,6 +72,8 @@ pub struct Player {
     pub hunger: f32,
     pub warmth: f32,
     pub is_sprinting: bool,
+    pub is_dead: bool,
+    pub respawn_at: Timestamp,
 }
 
 // When a client connects, we need to create a player for them
@@ -227,6 +233,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         hunger: 100.0,
         warmth: 100.0,
         is_sprinting: false,
+        is_dead: false,
+        respawn_at: ctx.timestamp,
     };
     
     // Insert the new player
@@ -432,10 +440,40 @@ pub fn update_player_position(
     let elapsed_seconds = (elapsed_micros as f64 / 1_000_000.0) as f32;
     let new_hunger = (current_player.hunger - (elapsed_seconds * HUNGER_DRAIN_PER_SECOND)).max(0.0);
     let new_thirst = (current_player.thirst - (elapsed_seconds * THIRST_DRAIN_PER_SECOND)).max(0.0);
+
+    // --- Calculate new Warmth (Moved earlier) ---
+    let mut warmth_change_per_sec: f32 = 0.0;
+    // 1. Warmth Drain based on Time of Day
+    let drain_multiplier = match world_state.time_of_day {
+        TimeOfDay::Morning | TimeOfDay::Noon | TimeOfDay::Afternoon => 0.0, // No warmth drain during day
+        TimeOfDay::Dawn | TimeOfDay::Dusk => WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, // Keep transition drain
+        TimeOfDay::Night => WARMTH_DRAIN_MULTIPLIER_NIGHT * 1.25, // Increased night drain
+        TimeOfDay::Midnight => WARMTH_DRAIN_MULTIPLIER_MIDNIGHT * 1.33, // Increased midnight drain
+    };
+    warmth_change_per_sec -= BASE_WARMTH_DRAIN_PER_SECOND * drain_multiplier;
+    // 2. Warmth Gain from nearby Campfires
+    for fire in campfires.iter() {
+        let dx = current_player.position_x - fire.pos_x;
+        let dy = current_player.position_y - fire.pos_y;
+        if (dx * dx + dy * dy) < WARMTH_RADIUS_SQUARED {
+            warmth_change_per_sec += WARMTH_PER_SECOND;
+            log::trace!("Player {:?} gaining warmth from campfire {}", sender_id, fire.id);
+        }
+    }
+    let new_warmth = (current_player.warmth + (warmth_change_per_sec * elapsed_seconds))
+                     .max(0.0) // Clamp between 0 and 100
+                     .min(100.0);
+    let warmth_changed = (new_warmth - current_player.warmth).abs() > 0.01;
+    if warmth_changed {
+        log::debug!("Player {:?} warmth updated to {:.1}", sender_id, new_warmth);
+    }
+    // --- End Warmth Calculation ---
+
+    // --- Stamina and Base Speed Calculation ---
     let mut new_stamina = current_player.stamina;
     let mut base_speed_multiplier = 1.0;
-    let mut current_sprinting_state = current_player.is_sprinting;
     let is_moving = move_dx != 0.0 || move_dy != 0.0;
+    let mut current_sprinting_state = current_player.is_sprinting;
     if current_sprinting_state && is_moving && new_stamina > 0.0 {
         new_stamina = (new_stamina - (elapsed_seconds * STAMINA_DRAIN_PER_SECOND)).max(0.0);
         if new_stamina > 0.0 { 
@@ -454,6 +492,14 @@ pub fn update_player_position(
              log::debug!("Player {:?} has low thirst. Applying speed penalty.", sender_id);
         }
     }
+    if new_warmth < LOW_NEED_THRESHOLD {
+        final_speed_multiplier *= LOW_WARMTH_SPEED_PENALTY;
+        if is_moving {
+            log::debug!("Player {:?} is cold. Applying speed penalty.", sender_id);
+        }
+    }
+
+    // --- Health Update Calculation ---
     let mut health_change_per_sec: f32 = 0.0;
     if new_thirst <= 0.0 {
         health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_THIRST * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
@@ -469,26 +515,45 @@ pub fn update_player_position(
         health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_HUNGER;
         log::debug!("Player {:?} health decreasing due to low hunger.", sender_id);
     }
+    if new_warmth <= 0.0 {
+        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_WARMTH * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
+        log::debug!("Player {:?} health decreasing rapidly due to freezing (zero warmth).", sender_id);
+    } else if new_warmth < LOW_NEED_THRESHOLD {
+        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_WARMTH;
+        log::debug!("Player {:?} health decreasing due to low warmth.", sender_id);
+    }
     if health_change_per_sec == 0.0 && 
        new_hunger >= HEALTH_RECOVERY_THRESHOLD && 
-       new_thirst >= HEALTH_RECOVERY_THRESHOLD {
+       new_thirst >= HEALTH_RECOVERY_THRESHOLD &&
+       new_warmth >= LOW_NEED_THRESHOLD { // Must not be freezing to recover health
         health_change_per_sec += HEALTH_RECOVERY_PER_SEC;
         log::debug!("Player {:?} health recovering.", sender_id);
     }
     let new_health = (current_player.health + (health_change_per_sec * elapsed_seconds))
-                     .max(MIN_HEALTH_FROM_NEEDS)
+                     .max(0.0) // Allow health to reach zero
                      .min(100.0);
     let health_changed = (new_health - current_player.health).abs() > 0.01;
+
+    // --- Death Check ---
+    let mut player_died = false;
+    let mut calculated_respawn_at = current_player.respawn_at; // Keep existing value by default
+    if current_player.health > 0.0 && new_health <= 0.0 && !current_player.is_dead {
+        player_died = true;
+        calculated_respawn_at = ctx.timestamp + Duration::from_secs(5).into(); // Set respawn time
+        log::warn!("Player {} ({:?}) has died! Will be respawnable at {:?}", 
+                 current_player.username, sender_id, calculated_respawn_at);
+    }
 
     // --- Warmth Update ---
     let mut warmth_change_per_sec: f32 = 0.0;
 
     // 1. Warmth Drain based on Time of Day
     let drain_multiplier = match world_state.time_of_day {
-        TimeOfDay::Night => WARMTH_DRAIN_MULTIPLIER_NIGHT,
-        TimeOfDay::Midnight => WARMTH_DRAIN_MULTIPLIER_MIDNIGHT,
-        TimeOfDay::Dawn | TimeOfDay::Dusk => WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK,
-        _ => 1.0, // Default multiplier for Morning, Noon, Afternoon
+        TimeOfDay::Morning | TimeOfDay::Noon | TimeOfDay::Afternoon => 0.0, // No warmth drain during day
+        TimeOfDay::Dawn | TimeOfDay::Dusk => WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, // Keep transition drain
+        TimeOfDay::Night => WARMTH_DRAIN_MULTIPLIER_NIGHT * 1.25, // Increased night drain (e.g., 2.0 -> 2.5)
+        TimeOfDay::Midnight => WARMTH_DRAIN_MULTIPLIER_MIDNIGHT * 1.33, // Increased midnight drain (e.g., 3.0 -> 4.0)
+        // _ => 1.0, // Removed default case, handled explicitly above
     };
     warmth_change_per_sec -= BASE_WARMTH_DRAIN_PER_SECOND * drain_multiplier;
 
@@ -813,8 +878,8 @@ pub fn update_player_position(
     let actual_dx = resolved_x - current_player.position_x;
     let actual_dy = resolved_y - current_player.position_y;
     let position_changed = actual_dx != 0.0 || actual_dy != 0.0;
-    // Update if position, health, or warmth changed, or if enough time passed
-    let should_update = position_changed || health_changed || warmth_changed || elapsed_seconds > 0.1;
+    // Update if position, health, or warmth changed, OR if player died, or if enough time passed
+    let should_update = player_died || position_changed || health_changed || warmth_changed || elapsed_seconds > 0.1;
 
     if should_update {
         let mut direction = current_player.direction.clone();
@@ -839,6 +904,8 @@ pub fn update_player_position(
             health: new_health,
             warmth: new_warmth,
             is_sprinting: current_sprinting_state,
+            is_dead: player_died || current_player.is_dead,
+            respawn_at: calculated_respawn_at,
             ..current_player
         };
         players.identity().update(updated_player);
@@ -887,4 +954,108 @@ pub fn jump(ctx: &ReducerContext) -> Result<(), String> {
    } else {
        Err("Player not found".to_string())
    }
+} 
+
+// --- Client-Requested Respawn Reducer ---
+#[spacetimedb::reducer]
+pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let players = ctx.db.player();
+    let item_defs = ctx.db.item_definition();
+    let inventory = ctx.db.inventory_item();
+
+    // Find the player requesting respawn
+    let mut player = players.identity().find(&sender_id)
+        .ok_or_else(|| "Player not found".to_string())?;
+
+    // Check if the player is actually dead
+    if !player.is_dead {
+        log::warn!("Player {:?} requested respawn but is not dead.", sender_id);
+        return Err("You are not dead.".to_string());
+    }
+
+    // Check if the respawn timer is up
+    if ctx.timestamp < player.respawn_at {
+        log::warn!("Player {:?} requested respawn too early.", sender_id);
+        // Calculate remaining time using the correct method
+        let remaining_micros = player.respawn_at.to_micros_since_unix_epoch().saturating_sub(ctx.timestamp.to_micros_since_unix_epoch());
+        let remaining_secs = (remaining_micros as f64 / 1_000_000.0).ceil() as u64;
+        return Err(format!("Respawn available in {} seconds.", remaining_secs));
+    }
+
+    log::info!("Respawning player {} ({:?})...", player.username, sender_id);
+
+    // --- Reset Stats and State ---
+    player.health = 100.0;
+    player.hunger = 100.0;
+    player.thirst = 100.0;
+    player.warmth = 100.0;
+    player.stamina = 100.0;
+    player.jump_start_time_ms = 0;
+    player.is_sprinting = false;
+    player.is_dead = false; // Mark as alive again
+    // player.respawn_at remains the old time, doesn't matter now
+
+    // --- Reset Position ---
+    let spawn_x = 640.0; // Simple initial spawn point
+    let spawn_y = 480.0;
+    player.position_x = spawn_x;
+    player.position_y = spawn_y;
+    player.direction = "down".to_string();
+
+    // --- Update Timestamp ---
+    player.last_update = ctx.timestamp;
+
+    // --- Grant Starting Items (Similar to register_player) ---
+    // Note: This simply adds/updates items. Existing inventory is not cleared.
+    // Consider clearing inventory or dropping items in a future update.
+    log::info!("Granting starting items to respawned player: {}", player.username);
+    let starting_items = [
+        ("Stone Hatchet", 1, 0u8), 
+        ("Stone Pickaxe", 1, 1u8),
+        ("Wood", 50, 2u8), // Reduced starting wood/stone
+        ("Stone", 50, 3u8),
+        ("Camp Fire", 1, 4u8),
+    ];
+
+    for (item_name, quantity, slot) in starting_items.iter() {
+        if let Some(item_def) = item_defs.iter().find(|def| def.name == *item_name) {
+            // Check if player already has this item type in this slot
+            let existing_item = inventory.iter()
+                .find(|item| item.player_identity == sender_id && 
+                              item.item_def_id == item_def.id && 
+                              item.hotbar_slot == Some(*slot));
+
+            match existing_item {
+                Some(mut item) => {
+                    // Update quantity if item exists in the slot
+                    item.quantity = *quantity; // Set to exact starting quantity
+                    inventory.instance_id().update(item);
+                    log::info!("Updated {} to quantity {} (slot {}) for player {}", item_name, quantity, slot, player.username);
+                }
+                None => {
+                    // Insert new item if it doesn't exist in the slot
+                    match inventory.try_insert(items::InventoryItem {
+                        instance_id: 0, // Auto-incremented
+                        player_identity: sender_id,
+                        item_def_id: item_def.id,
+                        quantity: *quantity,
+                        hotbar_slot: Some(*slot),
+                    }) {
+                        Ok(_) => log::info!("Granted {} {} (slot {}) to player {}", quantity, item_name, slot, player.username),
+                        Err(e) => log::error!("Failed to grant starting item {} to player {}: {}", item_name, player.username, e),
+                    }
+                }
+            }
+        } else {
+            log::error!("Could not find item definition for starting item: {}", item_name);
+        }
+    }
+    // --- End Grant Starting Items ---
+
+    // --- Apply Player Changes ---
+    players.identity().update(player);
+    log::info!("Player {:?} respawned at ({:.1}, {:.1}).", sender_id, spawn_x, spawn_y);
+
+    Ok(())
 } 
