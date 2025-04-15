@@ -1,6 +1,7 @@
 use spacetimedb::{ReducerContext, Table, Timestamp};
 use log;
 use std::f32::consts::PI;
+use crate::campfire::campfire as CampfireTableTrait; // Import the campfire table trait
 
 // --- Constants ---
 const DAY_DURATION_SECONDS: f32 = 30.0; // 30 seconds day for testing
@@ -129,6 +130,19 @@ pub fn tick_world_state(ctx: &ReducerContext, _timestamp: Timestamp) -> Result<(
         
         log::debug!("World tick: Progress {:.2}, Time: {:?}, Cycle: {}, Full Moon: {}", new_progress, world_state.time_of_day, new_cycle_count, new_is_full_moon);
     }
+
+    // --- Campfire Cleanup ---
+    let current_time = ctx.timestamp;
+    for campfire in ctx.db.campfire().iter() {
+        if current_time >= campfire.burn_out_at {
+            log::info!("Campfire {} burning out.", campfire.id);
+            // delete returns bool (true if deleted, false if not found)
+            if !ctx.db.campfire().id().delete(campfire.id) {
+                 log::warn!("Failed to delete campfire {} (might have already been deleted).", campfire.id);
+            }
+        }
+    }
+    // --- End Campfire Cleanup ---
 
     Ok(())
 }

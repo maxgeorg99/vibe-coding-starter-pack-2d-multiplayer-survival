@@ -1,5 +1,6 @@
 use spacetimedb::{Identity, Timestamp, ReducerContext, Table};
 use log;
+use std::time::Duration;
 
 // Declare the module
 mod environment;
@@ -364,12 +365,18 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
     }
 
     // --- 6. Create Campfire Entity ---
+    let current_time = ctx.timestamp;
+    let burn_duration = Duration::from_secs(60);
+    let burn_out_time = current_time + burn_duration.into();
+
     let new_campfire = Campfire {
         id: 0, // Auto-incremented
         pos_x: target_x,
         pos_y: target_y,
         placed_by: sender_id,
-        placed_at: ctx.timestamp,
+        placed_at: current_time,
+        burn_out_at: burn_out_time, // Set the burn out time
+        fuel: 60.0, // Initial fuel for 60 seconds
     };
 
     campfires.try_insert(new_campfire)?;

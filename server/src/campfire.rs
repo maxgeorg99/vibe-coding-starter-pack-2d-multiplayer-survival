@@ -1,4 +1,4 @@
-use spacetimedb::{Identity, Table, Timestamp};
+use spacetimedb::{Identity, Timestamp};
 
 // --- Constants ---
 pub(crate) const CAMPFIRE_COLLISION_RADIUS: f32 = 18.0; // Smaller than player radius
@@ -22,5 +22,7 @@ pub struct Campfire {
     pub pos_y: f32,
     pub placed_by: Identity, // Track who placed it
     pub placed_at: Timestamp,
+    pub burn_out_at: Timestamp, // Timestamp when the fire should expire
+    pub fuel: f32, // Current fuel level (for future use)
     // pub fuel: f32, // Example for future fuel mechanic
 } 
