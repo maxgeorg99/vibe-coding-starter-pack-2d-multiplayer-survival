@@ -17,6 +17,12 @@ pub struct Player {
     pub direction: String, // "up", "down", "left", "right"
     pub last_update: Timestamp,
     pub jump_start_time_ms: u64, // Timestamp when the jump started (0 if not jumping)
+    // New status fields
+    pub health: f32,
+    pub stamina: f32,
+    pub thirst: f32,
+    pub hunger: f32,
+    pub warmth: f32,
 }
 
 // When a client connects, we need to create a player for them
@@ -122,6 +128,12 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         direction: "down".to_string(), 
         last_update: ctx.timestamp,
         jump_start_time_ms: 0, // Initialize as not jumping
+        // Initialize new status fields
+        health: 100.0,
+        stamina: 100.0,
+        thirst: 100.0,
+        hunger: 100.0,
+        warmth: 100.0,
     };
     
     // Insert the new player

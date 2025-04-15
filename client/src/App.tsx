@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import './App.css';
+import './App.css'; // Removed potentially missing import
 import GameCanvas from './components/GameCanvas';
+import PlayerUI from './components/PlayerUI';
 
 // Import generated bindings (assuming they are in './generated')
 import * as SpacetimeDB from './generated';
@@ -214,6 +215,10 @@ function App() {
         </div>
       ) : (
         <div className="game-container">
+          <PlayerUI 
+            identity={connection?.identity || null} 
+            players={players}
+          />
           <GameCanvas
             players={players}
             localPlayerId={connection?.identity?.toHexString()}

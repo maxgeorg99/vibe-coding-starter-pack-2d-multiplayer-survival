@@ -1,3 +1,5 @@
+![Vibe Coding Starter Pack Banner](./github.png)
+
 # Vibe Coding Starter Pack: 2D Survival Multiplayer
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
@@ -24,6 +26,31 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 | Backend     | Rust (WebAssembly)         |
 | Development | Node.js 22+                |
 
+## ⚙️ Client Configuration
+
+### Game Parameters (`client/src/config/gameConfig.ts`)
+
+This file centralizes various client-side game parameters. Modify these values to tweak game behavior:
+
+*   `tileSize`: The width and height of each world tile in pixels.
+*   `worldWidth`, `worldHeight`: The dimensions of the game world, measured in tiles.
+*   `playerRadius`: The radius used for simple collision detection and mouse hover checks, typically half the sprite width.
+*   `playerSpeed`: How many pixels the player moves per frame when input is detected.
+*   `spriteWidth`, `spriteHeight`: The dimensions of a single frame within the player's spritesheet.
+*   `fps`: The target frames per second; primarily informational as the game loop uses `requestAnimationFrame`.
+
+### SpacetimeDB Connection (`client/src/App.tsx`)
+
+To connect the client to your SpacetimeDB instance, configure the following constants near the top of `client/src/App.tsx`:
+
+```typescript
+const SPACETIME_DB_ADDRESS = 'ws://localhost:3000';
+const SPACETIME_DB_NAME = 'vibe-survival-game';
+```
+
+*   **For Local Development:** Use the default values (`ws://localhost:3000` and your module name).
+*   **For Maincloud Deployment:** Replace `SPACETIME_DB_ADDRESS` with your Maincloud WebSocket URI (e.g., `wss://maincloud.spacetimedb.net`) and `SPACETIME_DB_NAME` with your Maincloud database name (e.g., `your-identity/your-database-name`).
+
 ## 📁 Project Structure
 
 ```
@@ -46,8 +73,8 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/SeloSlav/vibe-coding-starter-pack-2d-survival.git
-    cd vibe-coding-starter-pack-2d-survival
+    git clone https://github.com/SeloSlav/vibe-coding-starter-pack-2d-multiplayer-survival.git
+    cd vibe-coding-starter-pack-2d-multiplayer-survival
     ```
 
 2.  **Install Client Dependencies:**
@@ -130,17 +157,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📜 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## ⚙️ Client Configuration (`client/src/config/gameConfig.ts`)
-
-This file centralizes various client-side game parameters. Modify these values to tweak game behavior:
-
-*   `tileSize`: The width and height of each world tile in pixels.
-*   `worldWidth`, `worldHeight`: The dimensions of the game world, measured in tiles.
-*   `playerRadius`: The radius used for simple collision detection and mouse hover checks, typically half the sprite width.
-*   `playerSpeed`: How many pixels the player moves per frame when input is detected.
-*   `spriteWidth`, `spriteHeight`: The dimensions of a single frame within the player's spritesheet.
-*   `fps`: The target frames per second; primarily informational as the game loop uses `requestAnimationFrame`.
 
 ---
 

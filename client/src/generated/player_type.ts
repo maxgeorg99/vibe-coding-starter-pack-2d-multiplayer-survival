@@ -39,6 +39,11 @@ export type Player = {
   direction: string,
   lastUpdate: Timestamp,
   jumpStartTimeMs: bigint,
+  health: number,
+  stamina: number,
+  thirst: number,
+  hunger: number,
+  warmth: number,
 };
 
 /**
@@ -59,6 +64,11 @@ export namespace Player {
       new ProductTypeElement("direction", AlgebraicType.createStringType()),
       new ProductTypeElement("lastUpdate", AlgebraicType.createTimestampType()),
       new ProductTypeElement("jumpStartTimeMs", AlgebraicType.createU64Type()),
+      new ProductTypeElement("health", AlgebraicType.createF32Type()),
+      new ProductTypeElement("stamina", AlgebraicType.createF32Type()),
+      new ProductTypeElement("thirst", AlgebraicType.createF32Type()),
+      new ProductTypeElement("hunger", AlgebraicType.createF32Type()),
+      new ProductTypeElement("warmth", AlgebraicType.createF32Type()),
     ]);
   }
 
