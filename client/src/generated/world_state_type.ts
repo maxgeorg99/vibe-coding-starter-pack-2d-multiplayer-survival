@@ -30,36 +30,44 @@ import {
   Timestamp,
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
+import { TimeOfDay as __TimeOfDay } from "./time_of_day_type";
 
-export type UpdatePlayerPosition = {
-  moveDx: number,
-  moveDy: number,
-  intendedDirection: string | undefined,
+export type WorldState = {
+  id: number,
+  cycleProgress: number,
+  timeOfDay: __TimeOfDay,
+  cycleCount: number,
+  isFullMoon: boolean,
+  lastTick: Timestamp,
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace UpdatePlayerPosition {
+export namespace WorldState {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("moveDx", AlgebraicType.createF32Type()),
-      new ProductTypeElement("moveDy", AlgebraicType.createF32Type()),
-      new ProductTypeElement("intendedDirection", AlgebraicType.createOptionType(AlgebraicType.createStringType())),
+      new ProductTypeElement("id", AlgebraicType.createU32Type()),
+      new ProductTypeElement("cycleProgress", AlgebraicType.createF32Type()),
+      new ProductTypeElement("timeOfDay", __TimeOfDay.getTypeScriptAlgebraicType()),
+      new ProductTypeElement("cycleCount", AlgebraicType.createU32Type()),
+      new ProductTypeElement("isFullMoon", AlgebraicType.createBoolType()),
+      new ProductTypeElement("lastTick", AlgebraicType.createTimestampType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: UpdatePlayerPosition): void {
-    UpdatePlayerPosition.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: WorldState): void {
+    WorldState.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): UpdatePlayerPosition {
-    return UpdatePlayerPosition.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): WorldState {
+    return WorldState.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
+
 

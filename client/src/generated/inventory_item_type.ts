@@ -30,36 +30,40 @@ import {
   Timestamp,
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
-
-export type UpdatePlayerPosition = {
-  moveDx: number,
-  moveDy: number,
-  intendedDirection: string | undefined,
+export type InventoryItem = {
+  instanceId: bigint,
+  playerIdentity: Identity,
+  itemDefId: bigint,
+  quantity: number,
+  hotbarSlot: number | undefined,
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace UpdatePlayerPosition {
+export namespace InventoryItem {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("moveDx", AlgebraicType.createF32Type()),
-      new ProductTypeElement("moveDy", AlgebraicType.createF32Type()),
-      new ProductTypeElement("intendedDirection", AlgebraicType.createOptionType(AlgebraicType.createStringType())),
+      new ProductTypeElement("instanceId", AlgebraicType.createU64Type()),
+      new ProductTypeElement("playerIdentity", AlgebraicType.createIdentityType()),
+      new ProductTypeElement("itemDefId", AlgebraicType.createU64Type()),
+      new ProductTypeElement("quantity", AlgebraicType.createU32Type()),
+      new ProductTypeElement("hotbarSlot", AlgebraicType.createOptionType(AlgebraicType.createU8Type())),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: UpdatePlayerPosition): void {
-    UpdatePlayerPosition.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: InventoryItem): void {
+    InventoryItem.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): UpdatePlayerPosition {
-    return UpdatePlayerPosition.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): InventoryItem {
+    return InventoryItem.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
+
 

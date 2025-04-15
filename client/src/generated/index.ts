@@ -32,36 +32,129 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 
 // Import and reexport all reducer arg types
+import { EquipItem } from "./equip_item_reducer.ts";
+export { EquipItem };
 import { IdentityConnected } from "./identity_connected_reducer.ts";
 export { IdentityConnected };
 import { IdentityDisconnected } from "./identity_disconnected_reducer.ts";
 export { IdentityDisconnected };
 import { Jump } from "./jump_reducer.ts";
 export { Jump };
+import { PlaceCampfire } from "./place_campfire_reducer.ts";
+export { PlaceCampfire };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
+import { RequestRespawn } from "./request_respawn_reducer.ts";
+export { RequestRespawn };
+import { SeedEnvironment } from "./seed_environment_reducer.ts";
+export { SeedEnvironment };
+import { SeedItems } from "./seed_items_reducer.ts";
+export { SeedItems };
+import { SeedWorldState } from "./seed_world_state_reducer.ts";
+export { SeedWorldState };
 import { SetSprinting } from "./set_sprinting_reducer.ts";
 export { SetSprinting };
+import { TickWorldState } from "./tick_world_state_reducer.ts";
+export { TickWorldState };
+import { UnequipItem } from "./unequip_item_reducer.ts";
+export { UnequipItem };
 import { UpdatePlayerPosition } from "./update_player_position_reducer.ts";
 export { UpdatePlayerPosition };
+import { UseEquippedItem } from "./use_equipped_item_reducer.ts";
+export { UseEquippedItem };
 
 // Import and reexport all table handle types
+import { ActiveEquipmentTableHandle } from "./active_equipment_table.ts";
+export { ActiveEquipmentTableHandle };
+import { CampfireTableHandle } from "./campfire_table.ts";
+export { CampfireTableHandle };
+import { InventoryItemTableHandle } from "./inventory_item_table.ts";
+export { InventoryItemTableHandle };
+import { ItemDefinitionTableHandle } from "./item_definition_table.ts";
+export { ItemDefinitionTableHandle };
 import { PlayerTableHandle } from "./player_table.ts";
 export { PlayerTableHandle };
+import { StoneTableHandle } from "./stone_table.ts";
+export { StoneTableHandle };
+import { TreeTableHandle } from "./tree_table.ts";
+export { TreeTableHandle };
+import { WorldStateTableHandle } from "./world_state_table.ts";
+export { WorldStateTableHandle };
 
 // Import and reexport all types
+import { ActiveEquipment } from "./active_equipment_type.ts";
+export { ActiveEquipment };
+import { Campfire } from "./campfire_type.ts";
+export { Campfire };
+import { InventoryItem } from "./inventory_item_type.ts";
+export { InventoryItem };
+import { ItemCategory } from "./item_category_type.ts";
+export { ItemCategory };
+import { ItemDefinition } from "./item_definition_type.ts";
+export { ItemDefinition };
 import { Player } from "./player_type.ts";
 export { Player };
+import { Stone } from "./stone_type.ts";
+export { Stone };
+import { TimeOfDay } from "./time_of_day_type.ts";
+export { TimeOfDay };
+import { Tree } from "./tree_type.ts";
+export { Tree };
+import { TreeState } from "./tree_state_type.ts";
+export { TreeState };
+import { TreeType } from "./tree_type_type.ts";
+export { TreeType };
+import { WorldState } from "./world_state_type.ts";
+export { WorldState };
 
 const REMOTE_MODULE = {
   tables: {
+    active_equipment: {
+      tableName: "active_equipment",
+      rowType: ActiveEquipment.getTypeScriptAlgebraicType(),
+      primaryKey: "playerIdentity",
+    },
+    campfire: {
+      tableName: "campfire",
+      rowType: Campfire.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    inventory_item: {
+      tableName: "inventory_item",
+      rowType: InventoryItem.getTypeScriptAlgebraicType(),
+      primaryKey: "instanceId",
+    },
+    item_definition: {
+      tableName: "item_definition",
+      rowType: ItemDefinition.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
     player: {
       tableName: "player",
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
     },
+    stone: {
+      tableName: "stone",
+      rowType: Stone.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    tree: {
+      tableName: "tree",
+      rowType: Tree.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    world_state: {
+      tableName: "world_state",
+      rowType: WorldState.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
   },
   reducers: {
+    equip_item: {
+      reducerName: "equip_item",
+      argsType: EquipItem.getTypeScriptAlgebraicType(),
+    },
     identity_connected: {
       reducerName: "identity_connected",
       argsType: IdentityConnected.getTypeScriptAlgebraicType(),
@@ -74,17 +167,49 @@ const REMOTE_MODULE = {
       reducerName: "jump",
       argsType: Jump.getTypeScriptAlgebraicType(),
     },
+    place_campfire: {
+      reducerName: "place_campfire",
+      argsType: PlaceCampfire.getTypeScriptAlgebraicType(),
+    },
     register_player: {
       reducerName: "register_player",
       argsType: RegisterPlayer.getTypeScriptAlgebraicType(),
+    },
+    request_respawn: {
+      reducerName: "request_respawn",
+      argsType: RequestRespawn.getTypeScriptAlgebraicType(),
+    },
+    seed_environment: {
+      reducerName: "seed_environment",
+      argsType: SeedEnvironment.getTypeScriptAlgebraicType(),
+    },
+    seed_items: {
+      reducerName: "seed_items",
+      argsType: SeedItems.getTypeScriptAlgebraicType(),
+    },
+    seed_world_state: {
+      reducerName: "seed_world_state",
+      argsType: SeedWorldState.getTypeScriptAlgebraicType(),
     },
     set_sprinting: {
       reducerName: "set_sprinting",
       argsType: SetSprinting.getTypeScriptAlgebraicType(),
     },
+    tick_world_state: {
+      reducerName: "tick_world_state",
+      argsType: TickWorldState.getTypeScriptAlgebraicType(),
+    },
+    unequip_item: {
+      reducerName: "unequip_item",
+      argsType: UnequipItem.getTypeScriptAlgebraicType(),
+    },
     update_player_position: {
       reducerName: "update_player_position",
       argsType: UpdatePlayerPosition.getTypeScriptAlgebraicType(),
+    },
+    use_equipped_item: {
+      reducerName: "use_equipped_item",
+      argsType: UseEquippedItem.getTypeScriptAlgebraicType(),
     },
   },
   // Constructors which are used by the DbConnectionImpl to
@@ -113,19 +238,40 @@ const REMOTE_MODULE = {
 
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
+| { name: "EquipItem", args: EquipItem }
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
 | { name: "Jump", args: Jump }
+| { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "RegisterPlayer", args: RegisterPlayer }
+| { name: "RequestRespawn", args: RequestRespawn }
+| { name: "SeedEnvironment", args: SeedEnvironment }
+| { name: "SeedItems", args: SeedItems }
+| { name: "SeedWorldState", args: SeedWorldState }
 | { name: "SetSprinting", args: SetSprinting }
+| { name: "TickWorldState", args: TickWorldState }
+| { name: "UnequipItem", args: UnequipItem }
 | { name: "UpdatePlayerPosition", args: UpdatePlayerPosition }
+| { name: "UseEquippedItem", args: UseEquippedItem }
 ;
 
 export class RemoteReducers {
   constructor(private connection: DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {}
 
-  identityConnected() {
-    this.connection.callReducer("identity_connected", new Uint8Array(0), this.setCallReducerFlags.identityConnectedFlags);
+  equipItem(itemInstanceId: bigint) {
+    const __args = { itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    EquipItem.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("equip_item", __argsBuffer, this.setCallReducerFlags.equipItemFlags);
+  }
+
+  onEquipItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("equip_item", callback);
+  }
+
+  removeOnEquipItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("equip_item", callback);
   }
 
   onIdentityConnected(callback: (ctx: ReducerEventContext) => void) {
@@ -156,6 +302,22 @@ export class RemoteReducers {
     this.connection.offReducer("jump", callback);
   }
 
+  placeCampfire(targetX: number, targetY: number) {
+    const __args = { targetX, targetY };
+    let __writer = new BinaryWriter(1024);
+    PlaceCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("place_campfire", __argsBuffer, this.setCallReducerFlags.placeCampfireFlags);
+  }
+
+  onPlaceCampfire(callback: (ctx: ReducerEventContext, targetX: number, targetY: number) => void) {
+    this.connection.onReducer("place_campfire", callback);
+  }
+
+  removeOnPlaceCampfire(callback: (ctx: ReducerEventContext, targetX: number, targetY: number) => void) {
+    this.connection.offReducer("place_campfire", callback);
+  }
+
   registerPlayer(username: string) {
     const __args = { username };
     let __writer = new BinaryWriter(1024);
@@ -170,6 +332,54 @@ export class RemoteReducers {
 
   removeOnRegisterPlayer(callback: (ctx: ReducerEventContext, username: string) => void) {
     this.connection.offReducer("register_player", callback);
+  }
+
+  requestRespawn() {
+    this.connection.callReducer("request_respawn", new Uint8Array(0), this.setCallReducerFlags.requestRespawnFlags);
+  }
+
+  onRequestRespawn(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("request_respawn", callback);
+  }
+
+  removeOnRequestRespawn(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("request_respawn", callback);
+  }
+
+  seedEnvironment() {
+    this.connection.callReducer("seed_environment", new Uint8Array(0), this.setCallReducerFlags.seedEnvironmentFlags);
+  }
+
+  onSeedEnvironment(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("seed_environment", callback);
+  }
+
+  removeOnSeedEnvironment(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("seed_environment", callback);
+  }
+
+  seedItems() {
+    this.connection.callReducer("seed_items", new Uint8Array(0), this.setCallReducerFlags.seedItemsFlags);
+  }
+
+  onSeedItems(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("seed_items", callback);
+  }
+
+  removeOnSeedItems(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("seed_items", callback);
+  }
+
+  seedWorldState() {
+    this.connection.callReducer("seed_world_state", new Uint8Array(0), this.setCallReducerFlags.seedWorldStateFlags);
+  }
+
+  onSeedWorldState(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("seed_world_state", callback);
+  }
+
+  removeOnSeedWorldState(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("seed_world_state", callback);
   }
 
   setSprinting(sprinting: boolean) {
@@ -188,28 +398,68 @@ export class RemoteReducers {
     this.connection.offReducer("set_sprinting", callback);
   }
 
-  updatePlayerPosition(moveDx: number, moveDy: number) {
-    const __args = { moveDx, moveDy };
+  tickWorldState(timestamp: Timestamp) {
+    const __args = { timestamp };
+    let __writer = new BinaryWriter(1024);
+    TickWorldState.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("tick_world_state", __argsBuffer, this.setCallReducerFlags.tickWorldStateFlags);
+  }
+
+  onTickWorldState(callback: (ctx: ReducerEventContext, timestamp: Timestamp) => void) {
+    this.connection.onReducer("tick_world_state", callback);
+  }
+
+  removeOnTickWorldState(callback: (ctx: ReducerEventContext, timestamp: Timestamp) => void) {
+    this.connection.offReducer("tick_world_state", callback);
+  }
+
+  unequipItem() {
+    this.connection.callReducer("unequip_item", new Uint8Array(0), this.setCallReducerFlags.unequipItemFlags);
+  }
+
+  onUnequipItem(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("unequip_item", callback);
+  }
+
+  removeOnUnequipItem(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("unequip_item", callback);
+  }
+
+  updatePlayerPosition(moveDx: number, moveDy: number, intendedDirection: string | undefined) {
+    const __args = { moveDx, moveDy, intendedDirection };
     let __writer = new BinaryWriter(1024);
     UpdatePlayerPosition.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("update_player_position", __argsBuffer, this.setCallReducerFlags.updatePlayerPositionFlags);
   }
 
-  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number) => void) {
+  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number, intendedDirection: string | undefined) => void) {
     this.connection.onReducer("update_player_position", callback);
   }
 
-  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number) => void) {
+  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number, intendedDirection: string | undefined) => void) {
     this.connection.offReducer("update_player_position", callback);
+  }
+
+  useEquippedItem() {
+    this.connection.callReducer("use_equipped_item", new Uint8Array(0), this.setCallReducerFlags.useEquippedItemFlags);
+  }
+
+  onUseEquippedItem(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("use_equipped_item", callback);
+  }
+
+  removeOnUseEquippedItem(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("use_equipped_item", callback);
   }
 
 }
 
 export class SetReducerFlags {
-  identityConnectedFlags: CallReducerFlags = 'FullUpdate';
-  identityConnected(flags: CallReducerFlags) {
-    this.identityConnectedFlags = flags;
+  equipItemFlags: CallReducerFlags = 'FullUpdate';
+  equipItem(flags: CallReducerFlags) {
+    this.equipItemFlags = flags;
   }
 
   jumpFlags: CallReducerFlags = 'FullUpdate';
@@ -217,9 +467,34 @@ export class SetReducerFlags {
     this.jumpFlags = flags;
   }
 
+  placeCampfireFlags: CallReducerFlags = 'FullUpdate';
+  placeCampfire(flags: CallReducerFlags) {
+    this.placeCampfireFlags = flags;
+  }
+
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
   registerPlayer(flags: CallReducerFlags) {
     this.registerPlayerFlags = flags;
+  }
+
+  requestRespawnFlags: CallReducerFlags = 'FullUpdate';
+  requestRespawn(flags: CallReducerFlags) {
+    this.requestRespawnFlags = flags;
+  }
+
+  seedEnvironmentFlags: CallReducerFlags = 'FullUpdate';
+  seedEnvironment(flags: CallReducerFlags) {
+    this.seedEnvironmentFlags = flags;
+  }
+
+  seedItemsFlags: CallReducerFlags = 'FullUpdate';
+  seedItems(flags: CallReducerFlags) {
+    this.seedItemsFlags = flags;
+  }
+
+  seedWorldStateFlags: CallReducerFlags = 'FullUpdate';
+  seedWorldState(flags: CallReducerFlags) {
+    this.seedWorldStateFlags = flags;
   }
 
   setSprintingFlags: CallReducerFlags = 'FullUpdate';
@@ -227,9 +502,24 @@ export class SetReducerFlags {
     this.setSprintingFlags = flags;
   }
 
+  tickWorldStateFlags: CallReducerFlags = 'FullUpdate';
+  tickWorldState(flags: CallReducerFlags) {
+    this.tickWorldStateFlags = flags;
+  }
+
+  unequipItemFlags: CallReducerFlags = 'FullUpdate';
+  unequipItem(flags: CallReducerFlags) {
+    this.unequipItemFlags = flags;
+  }
+
   updatePlayerPositionFlags: CallReducerFlags = 'FullUpdate';
   updatePlayerPosition(flags: CallReducerFlags) {
     this.updatePlayerPositionFlags = flags;
+  }
+
+  useEquippedItemFlags: CallReducerFlags = 'FullUpdate';
+  useEquippedItem(flags: CallReducerFlags) {
+    this.useEquippedItemFlags = flags;
   }
 
 }
@@ -237,8 +527,36 @@ export class SetReducerFlags {
 export class RemoteTables {
   constructor(private connection: DbConnectionImpl) {}
 
+  get activeEquipment(): ActiveEquipmentTableHandle {
+    return new ActiveEquipmentTableHandle(this.connection.clientCache.getOrCreateTable<ActiveEquipment>(REMOTE_MODULE.tables.active_equipment));
+  }
+
+  get campfire(): CampfireTableHandle {
+    return new CampfireTableHandle(this.connection.clientCache.getOrCreateTable<Campfire>(REMOTE_MODULE.tables.campfire));
+  }
+
+  get inventoryItem(): InventoryItemTableHandle {
+    return new InventoryItemTableHandle(this.connection.clientCache.getOrCreateTable<InventoryItem>(REMOTE_MODULE.tables.inventory_item));
+  }
+
+  get itemDefinition(): ItemDefinitionTableHandle {
+    return new ItemDefinitionTableHandle(this.connection.clientCache.getOrCreateTable<ItemDefinition>(REMOTE_MODULE.tables.item_definition));
+  }
+
   get player(): PlayerTableHandle {
     return new PlayerTableHandle(this.connection.clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
+  }
+
+  get stone(): StoneTableHandle {
+    return new StoneTableHandle(this.connection.clientCache.getOrCreateTable<Stone>(REMOTE_MODULE.tables.stone));
+  }
+
+  get tree(): TreeTableHandle {
+    return new TreeTableHandle(this.connection.clientCache.getOrCreateTable<Tree>(REMOTE_MODULE.tables.tree));
+  }
+
+  get worldState(): WorldStateTableHandle {
+    return new WorldStateTableHandle(this.connection.clientCache.getOrCreateTable<WorldState>(REMOTE_MODULE.tables.world_state));
   }
 }
 

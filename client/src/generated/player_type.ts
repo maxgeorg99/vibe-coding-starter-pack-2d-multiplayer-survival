@@ -45,6 +45,8 @@ export type Player = {
   hunger: number,
   warmth: number,
   isSprinting: boolean,
+  isDead: boolean,
+  respawnAt: Timestamp,
 };
 
 /**
@@ -71,6 +73,8 @@ export namespace Player {
       new ProductTypeElement("hunger", AlgebraicType.createF32Type()),
       new ProductTypeElement("warmth", AlgebraicType.createF32Type()),
       new ProductTypeElement("isSprinting", AlgebraicType.createBoolType()),
+      new ProductTypeElement("isDead", AlgebraicType.createBoolType()),
+      new ProductTypeElement("respawnAt", AlgebraicType.createTimestampType()),
     ]);
   }
 

@@ -55,14 +55,18 @@ const SPACETIME_DB_NAME = 'vibe-survival-game';
 
 ```
 vibe-coding-starter-pack-2d-survival/
-├── client/         # React frontend game logic and rendering
-│   ├── src/        # Source code
-│   ├── public/     # Static assets
+├── client/         # React frontend (UI, rendering, input)
+│   ├── public/     # Static files (index.html, favicons)
+│   ├── src/
+│   │   ├── assets/ # Sprites, textures, sounds
+│   │   ├── components/ # React components (UI, Canvas)
+│   │   ├── generated/  # Auto-generated SpacetimeDB bindings
+│   │   ├── hooks/      # Custom React hooks
+│   │   └── utils/      # Helper functions (rendering, logic)
 │   └── package.json
 ├── server/         # SpacetimeDB server logic (Rust)
-│   ├── src/        # Server code
+│   ├── src/        # Server code (lib.rs, modules)
 │   └── Cargo.toml
-├── public/         # Shared static assets (tilemaps, sprites)
 ├── README.md
 └── LICENSE
 ```
@@ -143,12 +147,18 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 
 ## 🗺️ Roadmap
 
-- **Environment Systems**: Day/night cycle with dynamic weather effects
-- **Advanced AI**: Basic enemy behaviors and interaction patterns
-- **Construction**: Base building with defensive structures
-- **Survival Mechanics**: Farming, cooking, and resource management
-- **Competitive Elements**: PvP mechanics and team-based gameplay
-- **World Discovery**: Fog of war, minimap, and exploration rewards
+- ✅ **Environment Systems**: Day/night cycle
+- [ ] **Authentication/Account System**
+- [ ] **Advanced AI**: Basic enemy behaviors and interaction patterns
+- [ ] **Construction**: More base building (beyond campfire)
+- ✅ **Placeables**: Campfire (Basic)
+- ✅ **Survival Mechanics**: Basic resource harvesting (wood/stone)
+- 🚧 **More Survival**: Hunger, Thirst, Warmth, Health, Death/Respawn (Partially done, needs more depth)
+- [ ] **Competitive Elements**: PvP mechanics and team-based gameplay
+- ✅ **World Discovery**: Minimap
+- ✅ **Hotbar/Basic UI**: Basic functionality
+- [ ] **Crafting/Items**: Crafting system, more item variety
+- [ ] **World Persistence**: Saving/Loading game state
 
 ## 🤝 Contributing
 
