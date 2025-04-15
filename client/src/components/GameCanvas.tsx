@@ -1,12 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { gameConfig } from '../config/gameConfig';
 import { Player as SpacetimeDBPlayer } from '../generated';
-import { Identity as SpacetimeDBIdentity, Timestamp as SpacetimeDBTimestamp } from '@clockworklabs/spacetimedb-sdk';
 import heroSpriteSheet from '../assets/hero.png';
 import grassTexture from '../assets/tiles/grass.png';
+// Import helpers and hook
+import { useAnimationCycle } from '../hooks/useAnimationCycle';
+import { isPlayerHovered, renderPlayer } from '../utils/renderingUtils';
+// Import Minimap drawing logic and dimensions
+import { drawMinimapOntoCanvas, MINIMAP_DIMENSIONS } from './Minimap';
 
 // Threshold for considering a player "recently moved" (in milliseconds)
-const MOVEMENT_IDLE_THRESHOLD_MS = 50;
+const MOVEMENT_IDLE_THRESHOLD_MS = 200;
+const ANIMATION_INTERVAL_MS = 150;
 
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
@@ -20,24 +25,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   updatePlayerPosition 
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const keysPressed = useRef<Set<string>>(new Set());
   const requestIdRef = useRef<number>(0);
   const heroImageRef = useRef<HTMLImageElement | null>(null);
   const grassImageRef = useRef<HTMLImageElement | null>(null);
-  const [animationFrame, setAnimationFrame] = useState(0);
-  const animationIntervalRef = useRef<number | null>(null);
   const mousePosRef = useRef<{x: number | null, y: number | null}>({ x: null, y: null });
+  const [isMinimapOpen, setIsMinimapOpen] = useState(false); // State for minimap visibility
+  const [isMouseOverMinimap, setIsMouseOverMinimap] = useState(false); // State for minimap hover
   
-  // Get the local player
-  const getLocalPlayer = (): SpacetimeDBPlayer | undefined => {
+  const animationFrame = useAnimationCycle(ANIMATION_INTERVAL_MS, 4);
+
+  const getLocalPlayer = useCallback((): SpacetimeDBPlayer | undefined => {
     if (!localPlayerId) return undefined;
     return players.get(localPlayerId);
-  };
+  }, [players, localPlayerId]);
   
-  // Set up keyboard event listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       keysPressed.current.add(e.key.toLowerCase());
+      // Toggle minimap on 'g' press
+      if (e.key.toLowerCase() === 'g' && !e.repeat) { // Prevent toggle spam on hold
+        setIsMinimapOpen(prev => !prev);
+      }
     };
     
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -53,8 +63,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     };
   }, []);
   
-  // Update local player position based on keys pressed
-  const updatePlayerBasedOnInput = () => {
+  const updatePlayerBasedOnInput = useCallback(() => {
     const localPlayer = getLocalPlayer();
     if (!localPlayer) return;
     
@@ -80,29 +89,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     
     // Only update if there's movement
     if (dx !== 0 || dy !== 0) {
-      // Calculate new position
+      // Use world dimensions for boundary checks
+      const worldPixelWidth = gameConfig.worldWidth * gameConfig.tileSize;
+      const worldPixelHeight = gameConfig.worldHeight * gameConfig.tileSize;
       const newX = Math.max(
         gameConfig.playerRadius, 
         Math.min(
-          gameConfig.canvasWidth - gameConfig.playerRadius, 
+          worldPixelWidth - gameConfig.playerRadius, // World boundary
           localPlayer.positionX + dx
         )
       );
-      
       const newY = Math.max(
         gameConfig.playerRadius, 
         Math.min(
-          gameConfig.canvasHeight - gameConfig.playerRadius, 
+          worldPixelHeight - gameConfig.playerRadius, // World boundary
           localPlayer.positionY + dy
         )
       );
-      
-      // Update position through reducer
       updatePlayerPosition(newX, newY);
     }
-  };
+  }, [getLocalPlayer, updatePlayerPosition]);
   
-  // Load images
   useEffect(() => { 
     // Remove pattern logic
     // Load Hero
@@ -125,22 +132,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   }, []); // Runs once
 
-  // Effect for setting up the animation timer
-  useEffect(() => {
-    // Always run animation timer
-    animationIntervalRef.current = window.setInterval(() => {
-      setAnimationFrame(frame => (frame + 1) % 4); // Cycle through 4 frames
-    }, 150); // Adjust animation speed (ms)
-
-    // Cleanup timer
-    return () => { 
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current);
-      }
-    };
-  }, []); // Runs once to set up timer
-  
-  // Effect for Mouse Listeners (runs once)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -154,6 +145,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         x: (event.clientX - rect.left) * scaleX,
         y: (event.clientY - rect.top) * scaleY
       };
+
+      // Check if mouse is over the minimap (only if open)
+      if (isMinimapOpen) {
+        // Use imported dimensions and current canvas size state
+        const currentCanvasWidth = canvasSize.width;
+        const currentCanvasHeight = canvasSize.height;
+        const minimapX = (currentCanvasWidth - MINIMAP_DIMENSIONS.width) / 2;
+        const minimapY = (currentCanvasHeight - MINIMAP_DIMENSIONS.height) / 2;
+        const mouseX = mousePosRef.current.x;
+        const mouseY = mousePosRef.current.y;
+
+        if (mouseX !== null && mouseY !== null &&
+            mouseX >= minimapX && mouseX <= minimapX + MINIMAP_DIMENSIONS.width &&
+            mouseY >= minimapY && mouseY <= minimapY + MINIMAP_DIMENSIONS.height) {
+          setIsMouseOverMinimap(true);
+        } else {
+          setIsMouseOverMinimap(false);
+        }
+      } else {
+        setIsMouseOverMinimap(false); // Ensure it's false if minimap is closed
+      }
     };
     canvas.addEventListener('mousemove', handleMouseMove);
 
@@ -168,186 +180,146 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, []); // Empty dependency array - runs once
+  }, [isMinimapOpen, canvasSize.width, canvasSize.height]); // Add canvas size dependencies
 
-  // Game loop
-  const gameLoop = () => {
-    updatePlayerBasedOnInput();
-    // Read current mouse position from ref
-    renderGame(mousePosRef.current); 
-    requestIdRef.current = requestAnimationFrame(gameLoop);
-  };
-  
-  // Draw the game (accepts mouse position object)
-  const renderGame = (currentMousePos: {x: number | null, y: number | null}) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    const localPlayerData = localPlayerId ? players.get(localPlayerId) : undefined;
-
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-
-    const cameraX = canvas.width / 2;
-    const cameraY = canvas.height / 2;
-    if (localPlayerData) {
-      ctx.translate(cameraX - localPlayerData.positionX, cameraY - localPlayerData.positionY);
-    }
-    
-    // Draw grid (which will now include grass tiles)
-    drawGrid(ctx);
-    drawPlayers(ctx, currentMousePos); 
-    ctx.restore();
-  };
-  
-  // Draw the grid and grass tiles
-  const drawGrid = (ctx: CanvasRenderingContext2D) => {
+  const drawWorldBackground = useCallback((ctx: CanvasRenderingContext2D) => {
     const grassImg = grassImageRef.current;
-    const drawGridLines = false; // Set to false to hide grid lines
+    if (!grassImg) { // Draw fallback if image not loaded
+      ctx.fillStyle = '#8FBC8F';
+      ctx.fillRect(0, 0, gameConfig.worldWidth * gameConfig.tileSize, gameConfig.worldHeight * gameConfig.tileSize );
+      return; 
+    }
+
+    // You can change this value to true if you want to enable grid lines again.
+    const drawGridLines = false; // Keep grid lines off
+
+    // --- Potential Fix: Draw slightly larger tiles ---
+    const overlap = 1; // Overlap by 1 pixel
 
     for (let y = 0; y < gameConfig.worldHeight; y++) {
       for (let x = 0; x < gameConfig.worldWidth; x++) {
-        // Draw grass tile first
-        if (grassImg) {
-          ctx.drawImage(
-            grassImg,
-            x * gameConfig.tileSize, 
-            y * gameConfig.tileSize, 
-            gameConfig.tileSize, 
-            gameConfig.tileSize
-          );
-        }
-        
-        // Optionally draw grid line borders for this tile (can be removed)
+        // Draw image slightly larger to cover potential gaps
+        ctx.drawImage(
+          grassImg,
+          x * gameConfig.tileSize,
+          y * gameConfig.tileSize,
+          gameConfig.tileSize + overlap, // Draw wider
+          gameConfig.tileSize + overlap  // Draw taller
+        );
+
+        // Original grid line drawing (remains unchanged)
         if (drawGridLines) {
-           ctx.strokeStyle = 'rgba(221, 221, 221, 0.5)'; // Lighter grid lines
-           ctx.lineWidth = 1;
-           ctx.strokeRect(
-             x * gameConfig.tileSize, 
-             y * gameConfig.tileSize, 
-             gameConfig.tileSize, 
-             gameConfig.tileSize
-            );
+          ctx.strokeStyle = 'rgba(221, 221, 221, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x * gameConfig.tileSize, y * gameConfig.tileSize, gameConfig.tileSize, gameConfig.tileSize);
         }
       }
     }
+  }, []);
 
-    // If not drawing borders per tile, draw the full grid lines (original method)
-    /* if (!drawGridLines) { 
-        ctx.strokeStyle = '#ddd';
-        ctx.lineWidth = 1;
-        for (let x = 0; x <= gameConfig.worldWidth; x++) { ... }
-        for (let y = 0; y <= gameConfig.worldHeight; y++) { ... }
-    } */
-  };
-  
-  // Draw all players (accepts mouse position object)
-  const drawPlayers = (ctx: CanvasRenderingContext2D, currentMousePos: {x: number | null, y: number | null}) => {
-    const img = heroImageRef.current;
-    if (!img) return;
+  const drawPlayers = useCallback((ctx: CanvasRenderingContext2D, currentMousePos: {x: number | null, y: number | null}) => {
+    const heroImg = heroImageRef.current;
+    if (!heroImg) return; // Need image loaded to pass to renderPlayer
     const canvas = canvasRef.current;
     if (!canvas) return;
-
-    const localPlayerData = localPlayerId ? players.get(localPlayerId) : undefined;
-
+    const localPlayerData = getLocalPlayer();
+    
     let worldMouseX: number | null = null;
     let worldMouseY: number | null = null;
     if (currentMousePos.x !== null && currentMousePos.y !== null && localPlayerData) {
-      const cameraOffsetX = canvas.width / 2 - localPlayerData.positionX;
-      const cameraOffsetY = canvas.height / 2 - localPlayerData.positionY;
-      worldMouseX = currentMousePos.x - cameraOffsetX;
-      worldMouseY = currentMousePos.y - cameraOffsetY;
+        const cameraOffsetX = canvas.width / 2 - localPlayerData.positionX;
+        const cameraOffsetY = canvas.height / 2 - localPlayerData.positionY;
+        worldMouseX = currentMousePos.x - cameraOffsetX;
+        worldMouseY = currentMousePos.y - cameraOffsetY;
     }
 
     const now_ms = Date.now(); 
 
     players.forEach(player => {
-      let spriteRow = 2; 
-      switch (player.direction) {
-        case 'up':    spriteRow = 0; break; 
-        case 'right': spriteRow = 1; break; 
-        case 'down':  spriteRow = 2; break; 
-        case 'left':  spriteRow = 3; break; 
-        default:      spriteRow = 2; break; 
-      }
-
+      // Determine movement state
       const playerLastUpdate_micros = player.lastUpdate.__timestamp_micros_since_unix_epoch__;
       const playerLastUpdate_ms = Number(playerLastUpdate_micros / 1000n); 
       const isPlayerMoving = (now_ms - playerLastUpdate_ms) < MOVEMENT_IDLE_THRESHOLD_MS;
       
-      const frameIndex = isPlayerMoving ? animationFrame : 1; 
-      // Use dimensions from gameConfig
-      const sx = frameIndex * gameConfig.spriteWidth;
-      const sy = spriteRow * gameConfig.spriteHeight;
-
-      // Calculate destination coordinates (center the *scaled* sprite)
-      const drawWidth = gameConfig.spriteWidth * 2;
-      const drawHeight = gameConfig.spriteHeight * 2;
-      const dx = player.positionX - drawWidth / 2;
-      const dy = player.positionY - drawHeight / 2;
-
-      // Draw the sprite scaled up
-      ctx.drawImage(
-        img, 
-        sx, sy, gameConfig.spriteWidth, gameConfig.spriteHeight, // Source rect (original size)
-        dx, dy, drawWidth, drawHeight  // Destination rect (scaled size)
-      );
+      // Check hover state
+      const hovered = isPlayerHovered(worldMouseX, worldMouseY, player); // Use util
       
-      let isHovering = false;
-      if (worldMouseX !== null && worldMouseY !== null) {
-        const hoverDX = worldMouseX - player.positionX;
-        const hoverDY = worldMouseY - player.positionY;
-        const distSq = hoverDX * hoverDX + hoverDY * hoverDY;
-        if (distSq < (gameConfig.playerRadius * gameConfig.playerRadius)) { // Use radius from config
-          isHovering = true;
-        }
-      }
-
-      if (isHovering) {
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        const textWidth = ctx.measureText(player.username).width;
-        const tagPadding = 4;
-        const tagHeight = 16;
-        const tagWidth = textWidth + tagPadding * 2;
-        const tagX = player.positionX - tagWidth / 2; 
-        const tagY = dy - tagHeight - 2; // Position tag above scaled sprite (using dy)
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.beginPath();
-        ctx.roundRect(tagX, tagY, tagWidth, tagHeight, 5);
-        ctx.fill();
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(player.username, player.positionX, tagY + tagHeight / 2 + 4);
-      }
+      // Call the unified renderPlayer function
+      renderPlayer(ctx, player, heroImg, isPlayerMoving, hovered, animationFrame); 
     });
-  };
+  }, [players, animationFrame, getLocalPlayer]);
 
-  // useEffect starting game loop (Restore dependencies)
-  useEffect(() => {
+  const renderGame = useCallback((currentMousePos: {x: number | null, y: number | null}) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     
-    // Start the game loop
+    const localPlayerData = getLocalPlayer();
+
+    // Use state for canvas dimensions
+    const currentCanvasWidth = canvasSize.width;
+    const currentCanvasHeight = canvasSize.height;
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, currentCanvasWidth, currentCanvasHeight);
+    ctx.save();
+
+    // Use state for camera centering
+    const cameraX = currentCanvasWidth / 2;
+    const cameraY = currentCanvasHeight / 2;
+    if (localPlayerData) {
+      ctx.translate(cameraX - localPlayerData.positionX, cameraY - localPlayerData.positionY);
+    }
+    
+    drawWorldBackground(ctx);
+    drawPlayers(ctx, currentMousePos); 
+    ctx.restore();
+
+    // Draw minimap if open (drawn in screen space, after restoring transform)
+    if (isMinimapOpen) {
+      // Call the imported drawing function
+      drawMinimapOntoCanvas(
+        ctx,
+        players,
+        localPlayerId,
+        currentCanvasWidth,  // Pass state dimensions
+        currentCanvasHeight, // Pass state dimensions
+        isMouseOverMinimap
+      );
+    }
+  }, [getLocalPlayer, drawWorldBackground, drawPlayers, isMinimapOpen, players, localPlayerId, isMouseOverMinimap, canvasSize.width, canvasSize.height]); // Added canvas size dependencies
+
+  const gameLoop = useCallback(() => {
+    updatePlayerBasedOnInput();
+    renderGame(mousePosRef.current); 
     requestIdRef.current = requestAnimationFrame(gameLoop);
-    
-    // Clean up
+  }, [updatePlayerBasedOnInput, renderGame]);
+
+  useEffect(() => {
+    requestIdRef.current = requestAnimationFrame(gameLoop);
     return () => {
       cancelAnimationFrame(requestIdRef.current);
     };
-  // Restore players/localPlayerId dependency 
-  }, [players, localPlayerId]); 
+  }, [gameLoop]); 
+
+  // Effect to handle window resizing
+  useEffect(() => {
+    const handleResize = () => {
+      setCanvasSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial size
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <canvas
       ref={canvasRef}
-      // Restore static width/height based on game config
-      width={gameConfig.canvasWidth} 
-      height={gameConfig.canvasHeight}
+      width={canvasSize.width} 
+      height={canvasSize.height}
     />
   );
 };

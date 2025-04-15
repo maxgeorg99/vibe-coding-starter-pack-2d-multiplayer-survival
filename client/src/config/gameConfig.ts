@@ -3,8 +3,8 @@ export const gameConfig = {
   tileSize: 48, // pixels
   
   // World dimensions (in tiles)
-  worldWidth: 20,
-  worldHeight: 15,
+  worldWidth: 100,
+  worldHeight: 100,
   
   // Player settings
   playerRadius: 24, // Radius for collision/hover checks (spriteWidth / 2)
@@ -12,15 +12,10 @@ export const gameConfig = {
   spriteWidth: 48, // Intrinsic width of one sprite frame
   spriteHeight: 48, // Intrinsic height of one sprite frame
   
+  // Viewport/Canvas size (fixed resolution)
+  viewWidth: 800,  // Desired visible width in pixels
+  viewHeight: 600, // Desired visible height in pixels
+  
   // Game settings
   fps: 60,
-  
-  // Canvas will be calculated based on tile size and world dimensions
-  get canvasWidth() {
-    return this.tileSize * this.worldWidth;
-  },
-  
-  get canvasHeight() {
-    return this.tileSize * this.worldHeight;
-  }
 }; 
