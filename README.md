@@ -16,7 +16,7 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 **Completed (✅):**
 *   Real-time Multiplayer: Basic player movement synchronization
 *   Environment Systems: Day/night cycle
-*   Survival Mechanics: Basic resource harvesting (wood/stone)
+*   Survival Mechanics: Basic resource harvesting (wood/stone/mushrooms)
 *   Survival Systems: Health, Hunger, Thirst, Warmth, Death/Respawn
 *   Resource Respawning: Trees, Stones
 *   World Discovery: Minimap
@@ -30,10 +30,11 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 *   Crafting System: Item recipes, crafting stations
 *   Campfire Mechanics: Fueling with wood, indefinite burn (while fueled)
 
-**Planned ([ ]):**
+**Planned (📓):** 
 *   **Core Systems & World:**
     *   Authentication/Account System
     *   World Generation: Procedural generation, biomes, monuments
+    *   Terrain Autotiling: Edge detection, Wang tiles, seamless transitions between biomes
     *   Advanced AI: Enemy behaviors, pathfinding
     *   Team/Social Features
 *   **Gameplay Loops & Interaction:**
