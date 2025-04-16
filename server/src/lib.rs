@@ -283,9 +283,9 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
                 ("Burlap Backpack", 1, None, Some(11u16)),
 
                 // NEW: Add starting materials to inventory
-                ("Wood", 600, None, Some(12u16)), // Add 600 Wood to inv slot 12
-                ("Wood", 500, None, Some(13u16)), // Add 500 Wood to inv slot 13
-                ("Stone", 500, None, Some(14u16)), // Add 500 Stone to inv slot 14
+                // ("Wood", 600, None, Some(12u16)), // Add 600 Wood to inv slot 12
+                // ("Wood", 500, None, Some(13u16)), // Add 500 Wood to inv slot 13
+                // ("Stone", 500, None, Some(14u16)), // Add 500 Stone to inv slot 14
             ];
 
             log::info!("[Register Player] Defined {} starting item entries.", starting_items.len());

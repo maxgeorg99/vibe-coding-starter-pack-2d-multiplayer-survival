@@ -268,30 +268,15 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     sender_id, stone_id, item_def.name, item_damage, old_health, stone.health);
 
             // --- Grant Stone Item --- 
-            let stone_def = item_defs.iter().find(|def| def.name == "Stone")
-                .ok_or("Stone item definition not found")?;
-            let stone_to_grant = item_damage as u32; 
-            let existing_stone_stack = inventory_items.iter()
-                .find(|item| item.player_identity == sender_id && item.item_def_id == stone_def.id);
-
-            match existing_stone_stack {
-                Some(mut stone_stack) => {
-                    stone_stack.quantity = stone_stack.quantity.saturating_add(stone_to_grant);
-                    log::debug!("Player {:?} collected {} stone. New stack size: {}", 
-                            sender_id, stone_to_grant, stone_stack.quantity);
-                    inventory_items.instance_id().update(stone_stack);
-                },
-                None => {
-                    let new_inventory_item = crate::items::InventoryItem {
-                        instance_id: 0, // Auto-incremented
-                        player_identity: sender_id,
-                        item_def_id: stone_def.id,
-                        quantity: stone_to_grant,
-                        hotbar_slot: None,
-                        inventory_slot: None,
-                    };
-                    ctx.db.inventory_item().insert(new_inventory_item);
+            let stone_def_opt = item_defs.iter().find(|def| def.name == "Stone");
+            if let Some(stone_def) = stone_def_opt {
+                let stone_to_grant = item_damage as u32; 
+                match crate::items::add_item_to_player_inventory(ctx, sender_id, stone_def.id, stone_to_grant) {
+                    Ok(_) => log::debug!("Granted {} Stone to player {:?} via helper.", stone_to_grant, sender_id),
+                    Err(e) => log::error!("Failed to grant Stone to player {:?}: {}", sender_id, e),
                 }
+            } else {
+                log::error!("Stone item definition not found when granting stone.");
             }
             // --- End Grant Stone Item ---
 
@@ -334,7 +319,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
     } else if tool_name == "Stone Hatchet" {
         // Hatchet: Prioritize Trees > Players
         if let Some((tree_id, _)) = closest_tree_target {
-            // --- Damage Tree & Grant Wood --- (Code is duplicated from previous version)
+            // --- Damage Tree & Grant Wood ---
             let mut tree = trees.id().find(tree_id).ok_or("Target tree disappeared?")?;
             let old_health = tree.health;
             tree.health = tree.health.saturating_sub(item_damage);
@@ -342,30 +327,19 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             log::info!("Player {:?} hit Tree {} with {} for {} damage. Health: {} -> {}",
                      sender_id, tree_id, item_def.name, item_damage, old_health, tree.health);
 
-            let wood_def = item_defs.iter().find(|def| def.name == "Wood")
-                .ok_or("Wood item definition not found")?;
-            let wood_to_grant = item_damage as u32; 
-            let existing_wood_stack = inventory_items.iter()
-                .find(|item| item.player_identity == sender_id && item.item_def_id == wood_def.id);
-            match existing_wood_stack {
-                Some(mut wood_stack) => {
-                    wood_stack.quantity = wood_stack.quantity.saturating_add(wood_to_grant);
-                    log::debug!("Player {:?} collected {} wood. New stack size: {}", 
-                             sender_id, wood_to_grant, wood_stack.quantity);
-                    inventory_items.instance_id().update(wood_stack);
-                },
-                None => {
-                    let new_inventory_item = crate::items::InventoryItem {
-                        instance_id: 0, // Auto-incremented
-                        player_identity: sender_id,
-                        item_def_id: wood_def.id,
-                        quantity: wood_to_grant,
-                        hotbar_slot: None,
-                        inventory_slot: None,
-                    };
-                    ctx.db.inventory_item().insert(new_inventory_item);
+            // --- Grant Wood Item ---
+            let wood_def_opt = item_defs.iter().find(|def| def.name == "Wood");
+            if let Some(wood_def) = wood_def_opt {
+                let wood_to_grant = item_damage as u32; 
+                match crate::items::add_item_to_player_inventory(ctx, sender_id, wood_def.id, wood_to_grant) {
+                    Ok(_) => log::debug!("Granted {} Wood to player {:?} via helper.", wood_to_grant, sender_id),
+                    Err(e) => log::error!("Failed to grant Wood to player {:?}: {}", sender_id, e),
                 }
+            } else {
+                log::error!("Wood item definition not found when granting wood.");
             }
+            // --- End Grant Wood Item ---
+            
             if tree.health == 0 {
                 log::info!("Tree {} destroyed by Player {:?}.
 ", tree_id, sender_id);
@@ -440,33 +414,15 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     log::info!("Player {:?} hit Tree {} with {} for {} damage. Health: {} -> {}",
                             sender_id, tree_id, item_def.name, 1, old_health, tree.health);
 
-                    // Grant 1 Wood
+                    // Grant 1 Wood - USE REFACTORED HELPER
                     if let Some(wood_def) = item_defs.iter().find(|def| def.name == "Wood") {
-                        match inventory_items.iter().find(|item| item.player_identity == sender_id && item.item_def_id == wood_def.id) {
-                            Some(mut existing_stack) => {
-                                existing_stack.quantity = existing_stack.quantity.saturating_add(1);
-                                inventory_items.instance_id().update(existing_stack);
-                                log::debug!("Added 1 wood to existing stack for player {:?}.", sender_id);
-                            },
-                            None => {
-                                let mut target_slot: Option<u8> = None;
-                                let mut occupied_slots = std::collections::HashSet::new();
-                                for item in inventory_items.iter().filter(|i| i.player_identity == sender_id && i.hotbar_slot.is_some()) {
-                                    occupied_slots.insert(item.hotbar_slot.unwrap());
-                                }
-                                for i in 0..6u8 { if !occupied_slots.contains(&i) { target_slot = Some(i); break; } }
-                                let new_inventory_item = crate::items::InventoryItem {
-                                    instance_id: 0, // Auto-incremented
-                                    player_identity: sender_id,
-                                    item_def_id: wood_def.id,
-                                    quantity: 1,
-                                    hotbar_slot: target_slot,
-                                    inventory_slot: None,
-                                };
-                                ctx.db.inventory_item().insert(new_inventory_item);
-                            }
+                        match crate::items::add_item_to_player_inventory(ctx, sender_id, wood_def.id, 1) {
+                            Ok(_) => log::debug!("Granted 1 Wood to player {:?} via helper.", sender_id),
+                            Err(e) => log::error!("Failed to grant Wood to player {:?}: {}", sender_id, e),
                         }
-                    } else { log::error!("Wood item definition not found for Rock hit."); }
+                    } else { 
+                        log::error!("Wood item definition not found for Rock hit."); 
+                    }
 
                     if tree.health == 0 {
                         log::info!("Tree {} destroyed by Player {:?}.
@@ -493,33 +449,15 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     log::info!("Player {:?} hit Stone {} with {} for {} damage. Health: {} -> {}",
                             sender_id, stone_id, item_def.name, 1, old_health, stone.health);
 
-                    // Grant 1 Stone
+                    // Grant 1 Stone - USE REFACTORED HELPER
                     if let Some(stone_def) = item_defs.iter().find(|def| def.name == "Stone") {
-                       match inventory_items.iter().find(|item| item.player_identity == sender_id && item.item_def_id == stone_def.id) {
-                            Some(mut existing_stack) => {
-                                existing_stack.quantity = existing_stack.quantity.saturating_add(1);
-                                inventory_items.instance_id().update(existing_stack);
-                                log::debug!("Added 1 stone to existing stack for player {:?}.", sender_id);
-                            },
-                            None => {
-                                let mut target_slot: Option<u8> = None;
-                                let mut occupied_slots = std::collections::HashSet::new();
-                                for item in inventory_items.iter().filter(|i| i.player_identity == sender_id && i.hotbar_slot.is_some()) {
-                                    occupied_slots.insert(item.hotbar_slot.unwrap());
-                                }
-                                for i in 0..6u8 { if !occupied_slots.contains(&i) { target_slot = Some(i); break; } }
-                                let new_inventory_item = crate::items::InventoryItem {
-                                    instance_id: 0, // Auto-incremented
-                                    player_identity: sender_id,
-                                    item_def_id: stone_def.id,
-                                    quantity: 1,
-                                    hotbar_slot: target_slot,
-                                    inventory_slot: None,
-                                };
-                                ctx.db.inventory_item().insert(new_inventory_item);
-                            }
-                        }
-                    } else { log::error!("Stone item definition not found for Rock hit."); }
+                       match crate::items::add_item_to_player_inventory(ctx, sender_id, stone_def.id, 1) {
+                           Ok(_) => log::debug!("Granted 1 Stone to player {:?} via helper.", sender_id),
+                           Err(e) => log::error!("Failed to grant Stone to player {:?}: {}", sender_id, e),
+                       }
+                    } else { 
+                        log::error!("Stone item definition not found for Rock hit."); 
+                    }
 
                     if stone.health == 0 {
                         log::info!("Stone {} depleted by Player {:?}. Scheduling respawn.", stone_id, sender_id);

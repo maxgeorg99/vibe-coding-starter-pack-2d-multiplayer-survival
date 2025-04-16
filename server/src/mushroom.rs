@@ -31,71 +31,7 @@ pub struct Mushroom {
 
 // --- Interaction Reducer ---
 
-// Helper function to add an item to inventory (simplified version)
-// TODO: Refactor inventory logic into its own module later
-fn add_item_to_player_inventory(ctx: &ReducerContext, player_id: Identity, item_def_id: u64, quantity: u32) -> Result<(), String> {
-    let inventory = ctx.db.inventory_item();
-    let item_defs = ctx.db.item_definition();
-
-    let item_def = item_defs.id().find(item_def_id)
-        .ok_or_else(|| format!("Item definition {} not found", item_def_id))?;
-
-    // 1. Try to stack onto existing items (either inventory or hotbar)
-    if item_def.is_stackable {
-        let mut items_to_update: Vec<crate::items::InventoryItem> = Vec::new();
-        let mut remaining_quantity = quantity;
-
-        for mut item in inventory.iter().filter(|i| i.player_identity == player_id && i.item_def_id == item_def_id) {
-            let space_available = item_def.stack_size.saturating_sub(item.quantity);
-            if space_available > 0 {
-                let transfer_qty = std::cmp::min(remaining_quantity, space_available);
-                item.quantity += transfer_qty;
-                remaining_quantity -= transfer_qty;
-                items_to_update.push(item); // Add item to update list
-                if remaining_quantity == 0 {
-                    break; // Done stacking
-                }
-            }
-        }
-        // Apply updates
-        for item in items_to_update {
-             inventory.instance_id().update(item);
-        }
-
-        // If quantity remains, proceed to find empty slot
-        if remaining_quantity == 0 {
-            log::info!("[AddItem] Stacked {} of item def {} for player {:?}.", quantity, item_def_id, player_id);
-            return Ok(());
-        }
-    } else {
-        // Not stackable, must find empty slot immediately
-    }
-
-    // 2. Find first empty INVENTORY slot (more robust search needed later)
-     let occupied_slots: std::collections::HashSet<u16> = inventory.iter()
-        .filter(|i| i.player_identity == player_id && i.inventory_slot.is_some())
-        .map(|i| i.inventory_slot.unwrap())
-        .collect();
-
-    // Assuming 24 inventory slots (0-23)
-    if let Some(empty_slot) = (0..24).find(|slot| !occupied_slots.contains(slot)) {
-        let new_item = crate::items::InventoryItem {
-            instance_id: 0, // Auto-inc
-            player_identity: player_id,
-            item_def_id,
-            quantity: if item_def.is_stackable { quantity } else { 1 }, // Use remaining if stackable
-            hotbar_slot: None,
-            inventory_slot: Some(empty_slot),
-        };
-        inventory.insert(new_item);
-        log::info!("[AddItem] Added {} of item def {} to inventory slot {} for player {:?}.", 
-                 if item_def.is_stackable { quantity } else { 1 }, item_def_id, empty_slot, player_id);
-        Ok(())
-    } else {
-        log::error!("[AddItem] No empty inventory slots for player {:?} to add item def {}.", player_id, item_def_id);
-        Err("Inventory is full".to_string())
-    }
-}
+// REMOVED Helper function to add an item to inventory (moved to items.rs)
 
 #[spacetimedb::reducer]
 pub fn interact_with_mushroom(ctx: &ReducerContext, mushroom_id: u64) -> Result<(), String> {
@@ -126,8 +62,8 @@ pub fn interact_with_mushroom(ctx: &ReducerContext, mushroom_id: u64) -> Result<
         .find(|def| def.name == "Mushroom")
         .ok_or_else(|| "Mushroom item definition not found".to_string())?;
 
-    // 5. Add Mushroom to Inventory (using helper)
-    add_item_to_player_inventory(ctx, sender_id, mushroom_def.id, 1)?;
+    // 5. Add Mushroom to Inventory (using helper from items module)
+    crate::items::add_item_to_player_inventory(ctx, sender_id, mushroom_def.id, 1)?;
 
     // 6. Delete the Mushroom Entity
     mushrooms.id().delete(mushroom_id);

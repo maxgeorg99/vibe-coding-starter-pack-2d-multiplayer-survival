@@ -5,6 +5,7 @@ use log;
 // ADD generated table trait import with alias
 use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 use std::cmp::min;
+use spacetimedb::Identity; // ADDED for add_item_to_player_inventory
 
 // --- Item Enums and Structs ---
 
@@ -286,6 +287,117 @@ fn find_first_empty_inventory_slot(ctx: &ReducerContext) -> Option<u16> {
 
     // Assuming 24 inventory slots (0-23)
     (0..24).find(|slot| !occupied_slots.contains(slot))
+}
+
+// Helper to add an item to inventory, prioritizing hotbar for stacking and new slots.
+// Called when items are gathered/added directly (e.g., picking mushrooms, gathering resources).
+pub(crate) fn add_item_to_player_inventory(ctx: &ReducerContext, player_id: Identity, item_def_id: u64, quantity: u32) -> Result<(), String> {
+    let inventory = ctx.db.inventory_item();
+    let item_defs = ctx.db.item_definition();
+    let mut remaining_quantity = quantity; // Use remaining_quantity throughout
+
+    let item_def = item_defs.id().find(item_def_id)
+        .ok_or_else(|| format!("Item definition {} not found", item_def_id))?;
+
+    // 1. Try to stack onto existing items - PRIORITIZE HOTBAR
+    if item_def.is_stackable && remaining_quantity > 0 {
+        let mut items_to_update: Vec<crate::items::InventoryItem> = Vec::new();
+
+        // --- Stack on Hotbar First ---
+        for mut item in inventory.iter().filter(|i| i.player_identity == player_id && i.item_def_id == item_def_id && i.hotbar_slot.is_some()) {
+            let space_available = item_def.stack_size.saturating_sub(item.quantity);
+            if space_available > 0 {
+                let transfer_qty = std::cmp::min(remaining_quantity, space_available);
+                item.quantity += transfer_qty;
+                remaining_quantity -= transfer_qty;
+                items_to_update.push(item); // Add item to update list
+                if remaining_quantity == 0 { break; } // Done stacking
+            }
+        }
+
+        // --- Then Stack on Inventory ---
+        if remaining_quantity > 0 {
+            for mut item in inventory.iter().filter(|i| i.player_identity == player_id && i.item_def_id == item_def_id && i.inventory_slot.is_some()) {
+                let space_available = item_def.stack_size.saturating_sub(item.quantity);
+                if space_available > 0 {
+                    let transfer_qty = std::cmp::min(remaining_quantity, space_available);
+                    item.quantity += transfer_qty;
+                    remaining_quantity -= transfer_qty;
+                    items_to_update.push(item); // Add item to update list
+                    if remaining_quantity == 0 { break; } // Done stacking
+                }
+            }
+        }
+
+        // Apply updates if any stacking occurred
+        for item in items_to_update {
+             inventory.instance_id().update(item);
+        }
+
+        // If quantity fully stacked, return early
+        if remaining_quantity == 0 {
+            log::info!("[AddItem] Fully stacked {} of item def {} for player {:?}.", quantity, item_def_id, player_id);
+            return Ok(());
+        }
+    } // End of stacking logic
+
+    // If quantity still remains (or item not stackable), find an empty slot
+    if remaining_quantity > 0 {
+        let final_quantity_to_add = if item_def.is_stackable { remaining_quantity } else { 1 }; // Non-stackable always adds 1
+
+        // 2. Find first empty HOTBAR slot
+        let occupied_hotbar_slots: std::collections::HashSet<u8> = inventory.iter()
+            .filter(|i| i.player_identity == player_id && i.hotbar_slot.is_some())
+            .map(|i| i.hotbar_slot.unwrap())
+            .collect();
+
+        if let Some(empty_hotbar_slot) = (0..6).find(|slot| !occupied_hotbar_slots.contains(slot)) {
+            // Found empty hotbar slot
+            let new_item = crate::items::InventoryItem {
+                instance_id: 0, // Auto-inc
+                player_identity: player_id,
+                item_def_id,
+                quantity: final_quantity_to_add,
+                hotbar_slot: Some(empty_hotbar_slot),
+                inventory_slot: None,
+            };
+            inventory.insert(new_item);
+            log::info!("[AddItem] Added {} of item def {} to hotbar slot {} for player {:?}.",
+                     final_quantity_to_add, item_def_id, empty_hotbar_slot, player_id);
+            return Ok(()); // Item added successfully
+        } else {
+             // 3. Hotbar full, find first empty INVENTORY slot
+            let occupied_inventory_slots: std::collections::HashSet<u16> = inventory.iter()
+                .filter(|i| i.player_identity == player_id && i.inventory_slot.is_some())
+                .map(|i| i.inventory_slot.unwrap())
+                .collect();
+
+            if let Some(empty_inventory_slot) = (0..24).find(|slot| !occupied_inventory_slots.contains(slot)) {
+                // Found empty inventory slot
+                let new_item = crate::items::InventoryItem {
+                    instance_id: 0, // Auto-inc
+                    player_identity: player_id,
+                    item_def_id,
+                    quantity: final_quantity_to_add,
+                    hotbar_slot: None,
+                    inventory_slot: Some(empty_inventory_slot),
+                };
+                inventory.insert(new_item);
+                log::info!("[AddItem] Added {} of item def {} to inventory slot {} for player {:?}. (Hotbar was full)",
+                         final_quantity_to_add, item_def_id, empty_inventory_slot, player_id);
+                return Ok(()); // Item added successfully
+            } else {
+                // 4. Both hotbar and inventory are full
+                log::error!("[AddItem] No empty hotbar or inventory slots for player {:?} to add item def {}.", player_id, item_def_id);
+                return Err("Inventory is full".to_string());
+            }
+        }
+    } else {
+         // This case should only be reached if stacking happened perfectly and remaining_quantity became 0
+         // No further action needed, the stacking return above handles this.
+         log::debug!("[AddItem] Stacking completed successfully for item def {} for player {:?}. No new slot needed.", item_def_id, player_id);
+         Ok(())
+    }
 }
 
 // Helper to clear an item from any equipment slot it might occupy
