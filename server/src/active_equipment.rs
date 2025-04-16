@@ -15,6 +15,7 @@ use crate::items::item_definition as item_definition_table_trait; // Alias to av
 use crate::environment::{TREE_COLLISION_Y_OFFSET, STONE_COLLISION_Y_OFFSET}; // Import offset constants
 use crate::PLAYER_RADIUS; // Add back the import for PLAYER_RADIUS
 use std::f32::consts::PI;
+use crate::items::{InventoryItem, ItemDefinition, ItemCategory, EquipmentSlot};
 
 // --- Constants ---
 pub(crate) const RESPAWN_TIME_MS: u64 = 5000; // 5 seconds respawn time
@@ -29,6 +30,13 @@ pub struct ActiveEquipment {
     pub equipped_item_def_id: Option<u64>, // ID from ItemDefinition table
     pub equipped_item_instance_id: Option<u64>, // Instance ID from InventoryItem
     pub swing_start_time_ms: u64, // Timestamp (ms) when the current swing started, 0 if not swinging
+    // Fields for worn armor
+    pub head_item_instance_id: Option<u64>,
+    pub chest_item_instance_id: Option<u64>,
+    pub legs_item_instance_id: Option<u64>,
+    pub feet_item_instance_id: Option<u64>,
+    pub hands_item_instance_id: Option<u64>,
+    pub back_item_instance_id: Option<u64>,
 }
 
 // Reducer to equip an item from the inventory
@@ -74,11 +82,27 @@ pub fn equip_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), Str
         equipped_item_def_id: Some(item_def.id), // Store the u64 ID directly
         equipped_item_instance_id: Some(item_instance_id),
         swing_start_time_ms: 0, // Reset swing state when equipping
+        head_item_instance_id: None,
+        chest_item_instance_id: None,
+        legs_item_instance_id: None,
+        feet_item_instance_id: None,
+        hands_item_instance_id: None,
+        back_item_instance_id: None,
     };
 
     // Now insert the new equipment, knowing any old entry is gone.
     active_equipments.insert(new_equipment);
     log::info!("Player {:?} equipped item: {} (Instance ID: {})", sender_id, item_def.name, item_instance_id);
+
+    // Insert the new inventory item
+    ctx.db.inventory_item().insert(crate::items::InventoryItem {
+        instance_id: 0, // Auto-incremented
+        player_identity: ctx.sender,
+        item_def_id: item_to_equip.item_def_id,
+        quantity: 1,
+        hotbar_slot: None,
+        inventory_slot: None,
+    });
 
     Ok(())
 }
@@ -258,15 +282,15 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     inventory_items.instance_id().update(stone_stack);
                 },
                 None => {
-                    let new_stone_item = crate::items::InventoryItem {
-                        instance_id: 0, player_identity: sender_id, item_def_id: stone_def.id,
-                        quantity: stone_to_grant, hotbar_slot: None,
+                    let new_inventory_item = crate::items::InventoryItem {
+                        instance_id: 0, // Auto-incremented
+                        player_identity: sender_id,
+                        item_def_id: stone_def.id,
+                        quantity: stone_to_grant,
+                        hotbar_slot: None,
+                        inventory_slot: None,
                     };
-                    match inventory_items.try_insert(new_stone_item) {
-                        Ok(_) => log::debug!("Player {:?} collected {} stone. New stack created.", 
-                                           sender_id, stone_to_grant),
-                        Err(e) => log::error!("Failed to grant new stone stack to player {:?}: {}", sender_id, e),
-                    }
+                    ctx.db.inventory_item().insert(new_inventory_item);
                 }
             }
             // --- End Grant Stone Item ---
@@ -331,15 +355,15 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     inventory_items.instance_id().update(wood_stack);
                 },
                 None => {
-                    let new_wood_item = crate::items::InventoryItem {
-                        instance_id: 0, player_identity: sender_id, item_def_id: wood_def.id,
-                        quantity: wood_to_grant, hotbar_slot: None,
+                    let new_inventory_item = crate::items::InventoryItem {
+                        instance_id: 0, // Auto-incremented
+                        player_identity: sender_id,
+                        item_def_id: wood_def.id,
+                        quantity: wood_to_grant,
+                        hotbar_slot: None,
+                        inventory_slot: None,
                     };
-                    match inventory_items.try_insert(new_wood_item) {
-                        Ok(_) => log::debug!("Player {:?} collected {} wood. New stack created.", 
-                                           sender_id, wood_to_grant),
-                        Err(e) => log::error!("Failed to grant new wood stack to player {:?}: {}", sender_id, e),
-                    }
+                    ctx.db.inventory_item().insert(new_inventory_item);
                 }
             }
             if tree.health == 0 {
@@ -431,9 +455,15 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                                     occupied_slots.insert(item.hotbar_slot.unwrap());
                                 }
                                 for i in 0..6u8 { if !occupied_slots.contains(&i) { target_slot = Some(i); break; } }
-                                match inventory_items.try_insert(crate::items::InventoryItem { instance_id: 0, player_identity: sender_id, item_def_id: wood_def.id, quantity: 1, hotbar_slot: target_slot }) {
-                                    Ok(_) => {}, Err(e) => log::error!("Failed to grant new wood stack to player {:?}: {}", sender_id, e),
-                                }
+                                let new_inventory_item = crate::items::InventoryItem {
+                                    instance_id: 0, // Auto-incremented
+                                    player_identity: sender_id,
+                                    item_def_id: wood_def.id,
+                                    quantity: 1,
+                                    hotbar_slot: target_slot,
+                                    inventory_slot: None,
+                                };
+                                ctx.db.inventory_item().insert(new_inventory_item);
                             }
                         }
                     } else { log::error!("Wood item definition not found for Rock hit."); }
@@ -478,9 +508,15 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                                     occupied_slots.insert(item.hotbar_slot.unwrap());
                                 }
                                 for i in 0..6u8 { if !occupied_slots.contains(&i) { target_slot = Some(i); break; } }
-                                match inventory_items.try_insert(crate::items::InventoryItem { instance_id: 0, player_identity: sender_id, item_def_id: stone_def.id, quantity: 1, hotbar_slot: target_slot }) {
-                                    Ok(_) => {}, Err(e) => log::error!("Failed to grant new stone stack to player {:?}: {}", sender_id, e),
-                                }
+                                let new_inventory_item = crate::items::InventoryItem {
+                                    instance_id: 0, // Auto-incremented
+                                    player_identity: sender_id,
+                                    item_def_id: stone_def.id,
+                                    quantity: 1,
+                                    hotbar_slot: target_slot,
+                                    inventory_slot: None,
+                                };
+                                ctx.db.inventory_item().insert(new_inventory_item);
                             }
                         }
                     } else { log::error!("Stone item definition not found for Rock hit."); }
@@ -628,5 +664,108 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
         log::debug!("Player {:?} swung {} but hit nothing.", sender_id, item_def.name);
     }
 
+    Ok(())
+}
+
+// Helper to find or create ActiveEquipment row
+fn get_or_create_active_equipment(ctx: &ReducerContext, player_id: Identity) -> Result<ActiveEquipment, String> {
+    let table = ctx.db.active_equipment();
+    if let Some(existing) = table.player_identity().find(player_id) {
+        Ok(existing)
+    } else {
+        log::info!("Creating new ActiveEquipment row for player {:?}", player_id);
+        let new_equip = ActiveEquipment { 
+            player_identity: player_id, 
+            equipped_item_def_id: None, // Initialize hand slot
+            equipped_item_instance_id: None,
+            swing_start_time_ms: 0,
+            // Initialize all armor slots to None
+            head_item_instance_id: None,
+            chest_item_instance_id: None,
+            legs_item_instance_id: None,
+            feet_item_instance_id: None,
+            hands_item_instance_id: None,
+            back_item_instance_id: None,
+        };
+        table.insert(new_equip.clone()); // Insert returns nothing useful here
+        Ok(new_equip)
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn equip_armor(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    log::info!("Player {:?} attempting to equip armor item instance {}", sender_id, item_instance_id);
+
+    // 1. Get the InventoryItem being equipped
+    let mut item_to_equip = ctx.db.inventory_item().iter()
+        .find(|i| i.instance_id == item_instance_id && i.player_identity == sender_id)
+        .ok_or_else(|| format!("Item instance {} not found or not owned.", item_instance_id))?;
+    let source_inv_slot = item_to_equip.inventory_slot; // Store original location
+    let source_hotbar_slot = item_to_equip.hotbar_slot; // Store original location
+
+    // 2. Get its ItemDefinition
+    let item_def = ctx.db.item_definition().iter()
+        .find(|def| def.id == item_to_equip.item_def_id)
+        .ok_or_else(|| format!("Definition not found for item ID {}", item_to_equip.item_def_id))?;
+
+    // 3. Validate: Must be Armor category and have a defined equipment_slot
+    if item_def.category != ItemCategory::Armor {
+        return Err(format!("Item '{}' is not Armor.", item_def.name));
+    }
+    let target_slot_type = item_def.equipment_slot
+        .clone() // Clone the Option<EquipmentSlot>
+        .ok_or_else(|| format!("Armor '{}' does not have a defined equipment slot.", item_def.name))?;
+
+    // 4. Find or create the player's ActiveEquipment row
+    let mut active_equipment = get_or_create_active_equipment(ctx, sender_id)?;
+
+    // 5. Check if the target slot is already occupied & get old item ID
+    let old_item_instance_id_opt = match target_slot_type {
+         EquipmentSlot::Head => active_equipment.head_item_instance_id.take(), // .take() retrieves value and sets field to None
+         EquipmentSlot::Chest => active_equipment.chest_item_instance_id.take(),
+         EquipmentSlot::Legs => active_equipment.legs_item_instance_id.take(),
+         EquipmentSlot::Feet => active_equipment.feet_item_instance_id.take(),
+         EquipmentSlot::Hands => active_equipment.hands_item_instance_id.take(),
+         EquipmentSlot::Back => active_equipment.back_item_instance_id.take(),
+    };
+
+    // 6. If occupied, move the old item back to the source slot of the item being equipped
+    if let Some(old_item_instance_id) = old_item_instance_id_opt {
+        log::info!("Slot {:?} was occupied by item {}. Moving it back to source slot (Inv: {:?}, Hotbar: {:?}).", 
+                 target_slot_type, old_item_instance_id, source_inv_slot, source_hotbar_slot);
+                 
+        if let Some(mut old_item) = ctx.db.inventory_item().instance_id().find(old_item_instance_id) {
+            old_item.inventory_slot = source_inv_slot; 
+            old_item.hotbar_slot = source_hotbar_slot;
+            ctx.db.inventory_item().instance_id().update(old_item);
+        } else {
+            // This shouldn't happen if data is consistent, but log an error if it does
+            log::error!("Failed to find InventoryItem for previously equipped armor (ID: {})!", old_item_instance_id);
+        }
+    } else {
+         log::info!("Slot {:?} was empty.", target_slot_type);
+    }
+
+    // 7. Update ActiveEquipment row with the new item ID in the correct slot
+    match target_slot_type {
+         EquipmentSlot::Head => active_equipment.head_item_instance_id = Some(item_instance_id),
+         EquipmentSlot::Chest => active_equipment.chest_item_instance_id = Some(item_instance_id),
+         EquipmentSlot::Legs => active_equipment.legs_item_instance_id = Some(item_instance_id),
+         EquipmentSlot::Feet => active_equipment.feet_item_instance_id = Some(item_instance_id),
+         EquipmentSlot::Hands => active_equipment.hands_item_instance_id = Some(item_instance_id),
+         EquipmentSlot::Back => active_equipment.back_item_instance_id = Some(item_instance_id),
+         // Note: The .take() above already cleared the field, so we just set the new value
+    };
+    ctx.db.active_equipment().player_identity().update(active_equipment); // Save ActiveEquipment changes
+
+    // 8. Update the InventoryItem being equipped (remove from inventory/hotbar)
+    item_to_equip.inventory_slot = None;
+    item_to_equip.hotbar_slot = None;
+    ctx.db.inventory_item().instance_id().update(item_to_equip);
+
+    log::info!("Successfully equipped armor '{}' (ID: {}) to slot {:?}", 
+             item_def.name, item_instance_id, target_slot_type);
+             
     Ok(())
 }

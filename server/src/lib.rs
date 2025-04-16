@@ -252,29 +252,53 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
             let item_defs = ctx.db.item_definition();
             let inventory = ctx.db.inventory_item();
 
+            // Define the full starting items array explicitly
             let starting_items = [
-                ("Stone Hatchet", 1, 0u8), // name, quantity, hotbar slot
-                ("Stone Pickaxe", 1, 1u8),
-                ("Wood", 500, 2u8),
-                ("Stone", 500, 3u8),
-                ("Camp Fire", 1, 4u8),
+                // Tools/Resources on Hotbar
+                ("Stone Hatchet", 1, Some(0u8), None), 
+                ("Stone Pickaxe", 1, Some(1u8), None),
+                ("Wood", 500, Some(2u8), None),
+                ("Stone", 500, Some(3u8), None),
+                ("Camp Fire", 1, Some(4u8), None),
+                ("Rock", 1, Some(5u8), None), 
+                
+                // Armor in Inventory (2 instances of each in specific slots)
+                ("Cloth Shirt", 1, None, Some(0u16)), 
+                ("Cloth Shirt", 1, None, Some(1u16)), 
+                ("Cloth Pants", 1, None, Some(2u16)),
+                ("Cloth Pants", 1, None, Some(3u16)),
+                ("Cloth Hood", 1, None, Some(4u16)),
+                ("Cloth Hood", 1, None, Some(5u16)),
+                ("Cloth Boots", 1, None, Some(6u16)),
+                ("Cloth Boots", 1, None, Some(7u16)),
+                ("Cloth Gloves", 1, None, Some(8u16)),
+                ("Cloth Gloves", 1, None, Some(9u16)),
+                ("Burlap Backpack", 1, None, Some(10u16)),
+                ("Burlap Backpack", 1, None, Some(11u16)),
             ];
 
-            for (item_name, quantity, slot) in starting_items.iter() {
-                // Find the item definition by name
+            log::info!("[Register Player] Defined {} starting item entries.", starting_items.len());
+
+            for (item_name, quantity, hotbar_slot_opt, inventory_slot_opt) in starting_items.iter() {
+                 log::debug!("[Register Player] Processing entry: {}", item_name);
                 if let Some(item_def) = item_defs.iter().find(|def| def.name == *item_name) {
-                    match inventory.try_insert(items::InventoryItem {
-                        instance_id: 0, // Auto-incremented
+                    let item_to_insert = items::InventoryItem {
+                        instance_id: 0,
                         player_identity: sender_id,
                         item_def_id: item_def.id,
                         quantity: *quantity,
-                        hotbar_slot: Some(*slot),
-                    }) {
-                        Ok(_) => log::info!("Granted {} {} (slot {}) to player {}", quantity, item_name, slot, username),
-                        Err(e) => log::error!("Failed to grant starting item {} to player {}: {}", item_name, username, e),
+                        hotbar_slot: *hotbar_slot_opt,
+                        inventory_slot: *inventory_slot_opt,
+                    };
+                    match inventory.try_insert(item_to_insert) {
+                        Ok(_) => {
+                             log::info!("[Register Player] Granted: {} (Qty: {}, H: {:?}, I: {:?})", 
+                                         item_name, quantity, hotbar_slot_opt, inventory_slot_opt);
+                        },
+                        Err(e) => log::error!("[Register Player] FAILED insert for {}: {}", item_name, e),
                     }
                 } else {
-                    log::error!("Could not find item definition for starting item: {}", item_name);
+                    log::error!("[Register Player] Definition NOT FOUND for: {}", item_name);
                 }
             }
             // --- End Grant Starting Items ---
@@ -1048,7 +1072,8 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
             player_identity: sender_id,
             item_def_id: rock_def.id,
             quantity: 1,
-            hotbar_slot: Some(0), // Put in first slot
+            hotbar_slot: Some(0), // Put rock in first slot
+            inventory_slot: None,
         }) {
             Ok(_) => log::info!("Granted 1 Rock (slot 0) to player {}", player.username),
             Err(e) => log::error!("Failed to grant starting Rock to player {}: {}", player.username, e),
