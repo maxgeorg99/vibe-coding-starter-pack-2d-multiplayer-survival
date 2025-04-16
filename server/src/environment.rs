@@ -40,13 +40,6 @@ pub enum TreeType {
     Oak, // Represents tree.png
 }
 
-// Define the state of the tree
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, SpacetimeType)]
-pub enum TreeState {
-    Growing,
-    Stump,
-}
-
 #[spacetimedb::table(name = tree, public)]
 #[derive(Clone)]
 pub struct Tree {
@@ -57,8 +50,7 @@ pub struct Tree {
     pub pos_y: f32,
     pub health: u32,
     pub tree_type: TreeType,
-    pub state: TreeState,
-    pub last_hit_time: Option<Timestamp>, // Added for shake effect
+    pub last_hit_time: Option<Timestamp>,
 }
 
 // --- Stone Struct and Table ---
@@ -72,6 +64,7 @@ pub struct Stone {
     pub pos_y: f32,
     pub health: u32, // Stones just disappear when health is 0
     pub last_hit_time: Option<Timestamp>, // Added for shake effect
+    pub respawn_at: Option<Timestamp>, // Added for respawn timer
 }
 
 // --- Environment Seeding ---
@@ -164,8 +157,8 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             // Spawn the tree
             let tree_type = TreeType::Oak; // Only Oak for now
             match trees.try_insert(Tree {
-                id: 0, pos_x, pos_y, health: 100, tree_type, state: TreeState::Growing,
-                last_hit_time: None, // Initialize the new field
+                id: 0, pos_x, pos_y, health: 100, tree_type,
+                last_hit_time: None,
             }) {
                 Ok(_) => {
                     spawned_tree_count += 1;
@@ -232,7 +225,8 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             // Spawn the stone
             match stones.try_insert(Stone {
                 id: 0, pos_x, pos_y, health: 100, // Initial health
-                last_hit_time: None, // Initialize the new field
+                last_hit_time: None,
+                respawn_at: None, // Initialize respawn timer as None
             }) {
                 Ok(_) => {
                     spawned_stone_count += 1;
@@ -249,5 +243,39 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
         spawned_stone_count, target_stone_count, stone_attempts
     );
     log::info!("Environment seeding complete.");
+    Ok(())
+}
+
+// --- Resource Respawn Reducer ---
+const TREE_INITIAL_HEALTH: u32 = 100;
+const STONE_INITIAL_HEALTH: u32 = 100;
+
+#[spacetimedb::reducer]
+pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
+    let now_ts = ctx.timestamp;
+    let mut stones_to_respawn = Vec::new();
+
+    // Identify respawnable stones
+    for stone in ctx.db.stone().iter().filter(|s| s.health == 0 && s.respawn_at.is_some()) {
+        if let Some(respawn_time) = stone.respawn_at {
+            if now_ts >= respawn_time {
+                stones_to_respawn.push(stone.id);
+            }
+        }
+    }
+
+    // Respawn stones
+    for stone_id in stones_to_respawn {
+        if let Some(mut stone) = ctx.db.stone().id().find(stone_id) {
+            log::info!("Respawning Stone {}", stone_id);
+            stone.health = STONE_INITIAL_HEALTH;
+            stone.respawn_at = None; // Clear respawn timer
+            stone.last_hit_time = None; // Clear last hit time
+            ctx.db.stone().id().update(stone);
+        } else {
+            log::warn!("Could not find Stone {} to respawn.", stone_id);
+        }
+    }
+
     Ok(())
 }

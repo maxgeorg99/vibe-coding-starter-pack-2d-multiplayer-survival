@@ -31,7 +31,6 @@ import {
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TreeType as __TreeType } from "./tree_type_type";
-import { TreeState as __TreeState } from "./tree_state_type";
 
 export type Tree = {
   id: bigint,
@@ -39,7 +38,6 @@ export type Tree = {
   posY: number,
   health: number,
   treeType: __TreeType,
-  state: __TreeState,
   lastHitTime: Timestamp | undefined,
 };
 
@@ -58,7 +56,6 @@ export namespace Tree {
       new ProductTypeElement("posY", AlgebraicType.createF32Type()),
       new ProductTypeElement("health", AlgebraicType.createU32Type()),
       new ProductTypeElement("treeType", __TreeType.getTypeScriptAlgebraicType()),
-      new ProductTypeElement("state", __TreeState.getTypeScriptAlgebraicType()),
       new ProductTypeElement("lastHitTime", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
     ]);
   }

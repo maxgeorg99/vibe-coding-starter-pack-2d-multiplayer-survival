@@ -42,6 +42,12 @@ const SHAKE_DURATION_MS = 150; // How long the shake effect lasts
 const SHAKE_INTENSITY_PX = 10; // Max pixel offset (less than tree?)
 
 export function renderStone(ctx: CanvasRenderingContext2D, stone: Stone, now_ms: number) {
+  // --- Check if Stone is depleted ---
+  if (stone.health <= 0) {
+    return; // Don't render depleted stones
+  }
+  // --- End Depleted Check ---
+
   const img = getStoneImage();
   if (!img || !img.complete || img.naturalWidth === 0) {
     // Image not loaded yet or failed to load, can draw a placeholder

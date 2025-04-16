@@ -1,12 +1,12 @@
 import { Tree } from '../generated'; // Import generated types
 import treeOakImage from '../assets/doodads/tree.png'; // Adjust path if needed
-import treeStumpImage from '../assets/doodads/tree_stump.png'; // Adjust path if needed
+// import treeStumpImage from '../assets/doodads/tree_stump.png'; // REMOVED
 
 // Define image sources map (could be moved to config)
 // Use string literals for keys based on the expected enum tags/values
 export const treeImageSources: { [key: string]: string } = {
   Oak: treeOakImage,  // Use string 'Oak'
-  Stump: treeStumpImage,
+  // Stump: treeStumpImage, // REMOVED
 };
 
 // Simple cache for loaded images
@@ -28,13 +28,17 @@ export function preloadTreeImages() {
 // Function to get the correct image for a tree
 function getTreeImage(tree: Tree): HTMLImageElement | null {
   let src: string;
-  if (tree.state.tag === 'Stump') { // Access the tag property for state comparison
-    src = treeImageSources.Stump;
-  } else {
-    // Access the tag property of the treeType enum for indexing
-    const typeKey = tree.treeType.tag; // Assuming .tag holds 'Oak' or 'Pine'
-    src = treeImageSources[typeKey] || treeImageSources.Oak; // Use the extracted key
-  }
+  // REMOVED Stump check
+  // if (tree.state.tag === 'Stump') { // Access the tag property for state comparison
+  //   src = treeImageSources.Stump;
+  // } else {
+
+  // Access the tag property of the treeType enum for indexing
+  const typeKey = tree.treeType.tag; // Assuming .tag holds 'Oak' or 'Pine'
+  src = treeImageSources[typeKey] || treeImageSources.Oak; // Use the extracted key
+
+  // REMOVED closing brace for else block
+  // }
 
   if (!src) {
     console.error('Could not determine image source for tree:', tree);

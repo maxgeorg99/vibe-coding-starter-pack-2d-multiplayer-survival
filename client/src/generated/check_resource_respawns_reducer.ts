@@ -30,42 +30,29 @@ import {
   Timestamp,
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
-export type Stone = {
-  id: bigint,
-  posX: number,
-  posY: number,
-  health: number,
-  lastHitTime: Timestamp | undefined,
-  respawnAt: Timestamp | undefined,
-};
+
+export type CheckResourceRespawns = {};
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace Stone {
+export namespace CheckResourceRespawns {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("id", AlgebraicType.createU64Type()),
-      new ProductTypeElement("posX", AlgebraicType.createF32Type()),
-      new ProductTypeElement("posY", AlgebraicType.createF32Type()),
-      new ProductTypeElement("health", AlgebraicType.createU32Type()),
-      new ProductTypeElement("lastHitTime", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
-      new ProductTypeElement("respawnAt", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: Stone): void {
-    Stone.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: CheckResourceRespawns): void {
+    CheckResourceRespawns.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): Stone {
-    return Stone.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): CheckResourceRespawns {
+    return CheckResourceRespawns.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
-
 

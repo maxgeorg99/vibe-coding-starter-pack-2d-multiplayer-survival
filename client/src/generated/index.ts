@@ -32,6 +32,8 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 
 // Import and reexport all reducer arg types
+import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
+export { CheckResourceRespawns };
 import { EquipItem } from "./equip_item_reducer.ts";
 export { EquipItem };
 import { IdentityConnected } from "./identity_connected_reducer.ts";
@@ -100,8 +102,6 @@ import { TimeOfDay } from "./time_of_day_type.ts";
 export { TimeOfDay };
 import { Tree } from "./tree_type.ts";
 export { Tree };
-import { TreeState } from "./tree_state_type.ts";
-export { TreeState };
 import { TreeType } from "./tree_type_type.ts";
 export { TreeType };
 import { WorldState } from "./world_state_type.ts";
@@ -151,6 +151,10 @@ const REMOTE_MODULE = {
     },
   },
   reducers: {
+    check_resource_respawns: {
+      reducerName: "check_resource_respawns",
+      argsType: CheckResourceRespawns.getTypeScriptAlgebraicType(),
+    },
     equip_item: {
       reducerName: "equip_item",
       argsType: EquipItem.getTypeScriptAlgebraicType(),
@@ -238,6 +242,7 @@ const REMOTE_MODULE = {
 
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
+| { name: "CheckResourceRespawns", args: CheckResourceRespawns }
 | { name: "EquipItem", args: EquipItem }
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
@@ -257,6 +262,18 @@ export type Reducer = never
 
 export class RemoteReducers {
   constructor(private connection: DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {}
+
+  checkResourceRespawns() {
+    this.connection.callReducer("check_resource_respawns", new Uint8Array(0), this.setCallReducerFlags.checkResourceRespawnsFlags);
+  }
+
+  onCheckResourceRespawns(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("check_resource_respawns", callback);
+  }
+
+  removeOnCheckResourceRespawns(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("check_resource_respawns", callback);
+  }
 
   equipItem(itemInstanceId: bigint) {
     const __args = { itemInstanceId };
@@ -457,6 +474,11 @@ export class RemoteReducers {
 }
 
 export class SetReducerFlags {
+  checkResourceRespawnsFlags: CallReducerFlags = 'FullUpdate';
+  checkResourceRespawns(flags: CallReducerFlags) {
+    this.checkResourceRespawnsFlags = flags;
+  }
+
   equipItemFlags: CallReducerFlags = 'FullUpdate';
   equipItem(flags: CallReducerFlags) {
     this.equipItemFlags = flags;

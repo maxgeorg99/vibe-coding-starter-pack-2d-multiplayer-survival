@@ -956,6 +956,12 @@ pub fn update_player_position(
         Err(e) => log::error!("Error ticking world state: {}", e),
     }
 
+    // --- Check Resource Respawns ---
+    match environment::check_resource_respawns(ctx) {
+        Ok(_) => { /* Resources checked successfully */ }
+        Err(e) => log::error!("Error checking resource respawns: {}", e),
+    }
+
     Ok(())
 }
 

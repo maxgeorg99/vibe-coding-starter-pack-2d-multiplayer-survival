@@ -9,6 +9,14 @@
 
 A lightweight 2D multiplayer survival game starter kit built with modern web technologies. Create interactive survival experiences with persistent player state, real-time multiplayer synchronization, and modular game logic.
 
+<details>
+  <summary>Watch Demo</summary>
+  <video controls>
+    <source src="recording.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+</details>
+
 ## ✨ Features
 
 - **Real-time Multiplayer**: Seamless player movement synchronization
@@ -158,7 +166,6 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 - ✅ **World Discovery**: Minimap
 - ✅ **Hotbar/Basic UI**: Basic functionality
 - [ ] **Crafting/Items**: Crafting system, more item variety
-- [ ] **World Persistence**: Saving/Loading game state
 
 ## 🤝 Contributing
 

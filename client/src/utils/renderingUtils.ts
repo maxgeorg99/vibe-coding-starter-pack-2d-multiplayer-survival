@@ -3,6 +3,8 @@ import { Player as SpacetimeDBPlayer } from '../generated';
 
 // --- Constants --- 
 const IDLE_FRAME_INDEX = 1; // Second frame is idle
+const PLAYER_SHAKE_DURATION_MS = 200; // How long the shake lasts
+const PLAYER_SHAKE_AMOUNT_PX = 3;   // Max pixels to offset
 
 // --- Helper Functions --- 
 
@@ -43,7 +45,8 @@ export const isPlayerHovered = (
 export const drawNameTag = (
   ctx: CanvasRenderingContext2D,
   player: SpacetimeDBPlayer,
-  spriteTopY: number // dy from drawPlayer calculation
+  spriteTopY: number, // dy from drawPlayer calculation
+  spriteX: number // Added new parameter for shaken X position
 ) => {
   ctx.font = '12px Arial';
   ctx.textAlign = 'center';
@@ -51,7 +54,7 @@ export const drawNameTag = (
   const tagPadding = 4;
   const tagHeight = 16;
   const tagWidth = textWidth + tagPadding * 2;
-  const tagX = player.positionX - tagWidth / 2;
+  const tagX = spriteX - tagWidth / 2;
   const tagY = spriteTopY - tagHeight - 2;
 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -60,7 +63,7 @@ export const drawNameTag = (
   ctx.fill();
 
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(player.username, player.positionX, tagY + tagHeight / 2 + 4);
+  ctx.fillText(player.username, spriteX, tagY + tagHeight / 2 + 4);
 };
 
 // Renders a complete player (sprite, shadow, and conditional name tag)
@@ -71,53 +74,98 @@ export const renderPlayer = (
   isMoving: boolean,
   isHovered: boolean,
   currentAnimationFrame: number,
+  nowMs: number, // <-- Added current time in ms
   jumpOffsetY: number = 0
 ) => {
   const { sx, sy } = getSpriteCoordinates(player, isMoving, currentAnimationFrame);
   
+  // --- Calculate Shake Offset (Only if alive) ---
+  let shakeX = 0;
+  let shakeY = 0;
+  if (!player.isDead && player.lastHitTime) { // Check !player.isDead
+    const lastHitMs = Number(player.lastHitTime.microsSinceUnixEpoch / 1000n);
+    const elapsedSinceHit = nowMs - lastHitMs;
+    if (elapsedSinceHit >= 0 && elapsedSinceHit < PLAYER_SHAKE_DURATION_MS) {
+      shakeX = (Math.random() - 0.5) * 2 * PLAYER_SHAKE_AMOUNT_PX;
+      shakeY = (Math.random() - 0.5) * 2 * PLAYER_SHAKE_AMOUNT_PX;
+    }
+  }
+  // --- End Shake Offset ---
+
   const drawWidth = gameConfig.spriteWidth * 2;
   const drawHeight = gameConfig.spriteHeight * 2;
-  const spriteBaseX = player.positionX - drawWidth / 2;
-  const spriteBaseY = player.positionY - drawHeight / 2;
-  // The sprite's visual Y position, accounting for the jump
+  const spriteBaseX = player.positionX - drawWidth / 2 + shakeX; // Includes shake if applicable
+  const spriteBaseY = player.positionY - drawHeight / 2 + shakeY; // Includes shake if applicable
   const spriteDrawY = spriteBaseY - jumpOffsetY; 
 
-  // --- Draw Shadow --- 
-  const shadowBaseRadiusX = drawWidth * 0.3;
-  const shadowBaseRadiusY = shadowBaseRadiusX * 0.4;
-  const shadowMaxJumpOffset = 10; 
-  const shadowYOffsetFromJump = jumpOffsetY * (shadowMaxJumpOffset / gameConfig.playerRadius); 
-  // Add constant offset to place shadow below feet (approx half sprite height)
-  const shadowBaseYOffset = drawHeight * 0.4; // Adjust this multiplier (0.4 to 0.5) as needed
+  // --- Draw Shadow (Only if alive) --- 
+  if (!player.isDead) { // Check !player.isDead
+      const shadowBaseRadiusX = drawWidth * 0.3;
+      const shadowBaseRadiusY = shadowBaseRadiusX * 0.4;
+      const shadowMaxJumpOffset = 10; 
+      const shadowYOffsetFromJump = jumpOffsetY * (shadowMaxJumpOffset / gameConfig.playerRadius); 
+      const shadowBaseYOffset = drawHeight * 0.4; 
+      const jumpProgress = Math.min(1, jumpOffsetY / gameConfig.playerRadius); 
+      const shadowScale = 1.0 - jumpProgress * 0.4; 
+      const shadowOpacity = 0.5 - jumpProgress * 0.3; 
 
-  // Shadow gets smaller and fainter as player goes higher
-  const jumpProgress = Math.min(1, jumpOffsetY / gameConfig.playerRadius); // 0 to 1 based on jump height
-  const shadowScale = 1.0 - jumpProgress * 0.4; // Shrinks up to 40%
-  const shadowOpacity = 0.5 - jumpProgress * 0.3; // Fades up to 60%
-
-  ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0, shadowOpacity)})`;
-  ctx.beginPath();
-  ctx.ellipse(
-    player.positionX, // Center X of shadow is player's X
-    player.positionY + shadowBaseYOffset + shadowYOffsetFromJump, // Apply base offset AND jump offset
-    shadowBaseRadiusX * shadowScale, 
-    shadowBaseRadiusY * shadowScale, 
-    0, 
-    0, 
-    Math.PI * 2 
-  );
-  ctx.fill();
+      ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0, shadowOpacity)})`;
+      ctx.beginPath();
+      ctx.ellipse(
+        player.positionX, // Use original player X for shadow center
+        player.positionY + shadowBaseYOffset + shadowYOffsetFromJump, // Use original player Y for shadow center
+        shadowBaseRadiusX * shadowScale, 
+        shadowBaseRadiusY * shadowScale, 
+        0, 
+        0, 
+        Math.PI * 2 
+      );
+      ctx.fill();
+  }
   // --- End Draw Shadow ---
 
-  // Draw the sprite (use the calculated spriteDrawY)
-  ctx.drawImage(
-    heroImg, 
-    sx, sy, gameConfig.spriteWidth, gameConfig.spriteHeight, // Source
-    spriteBaseX, spriteDrawY, drawWidth, drawHeight // Destination
-  );
+  // --- Draw Sprite --- 
+  ctx.save(); // Save context state before potential rotation
+  try {
+    // Calculate center point for rotation (based on shaken position if alive)
+    const centerX = spriteBaseX + drawWidth / 2;
+    const centerY = spriteDrawY + drawHeight / 2;
 
-  // Draw name tag if hovered (position based on the sprite's visual top edge)
-  if (isHovered) {
-    drawNameTag(ctx, player, spriteDrawY);
+    if (player.isDead) {
+      // Determine rotation angle based on direction
+      let rotationAngleRad = 0;
+      switch (player.direction) {
+        case 'up':    // Facing up, rotate CCW
+        case 'right': // Facing right, rotate CCW
+          rotationAngleRad = -Math.PI / 2; // -90 degrees
+          break;
+        case 'down':  // Facing down, rotate CW
+        case 'left':  // Facing left, rotate CW
+        default:
+          rotationAngleRad = Math.PI / 2; // +90 degrees
+          break;
+      }
+      
+      // Translate origin to sprite center, rotate, translate back
+      ctx.translate(centerX, centerY);
+      ctx.rotate(rotationAngleRad);
+      ctx.translate(-centerX, -centerY);
+    }
+
+    // Draw the sprite (respecting rotation if applied)
+    ctx.drawImage(
+      heroImg, 
+      sx, sy, gameConfig.spriteWidth, gameConfig.spriteHeight, // Source
+      spriteBaseX, spriteDrawY, drawWidth, drawHeight // Destination (includes shake if alive)
+    );
+
+  } finally {
+      ctx.restore(); // Restore context state (removes rotation)
+  }
+  // --- End Draw Sprite ---
+
+  // Draw name tag if hovered AND alive
+  if (isHovered && !player.isDead) { // Check !player.isDead
+    drawNameTag(ctx, player, spriteDrawY, spriteBaseX + drawWidth / 2);
   }
 }; 

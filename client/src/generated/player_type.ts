@@ -47,6 +47,7 @@ export type Player = {
   isSprinting: boolean,
   isDead: boolean,
   respawnAt: Timestamp,
+  lastHitTime: Timestamp | undefined,
 };
 
 /**
@@ -75,6 +76,7 @@ export namespace Player {
       new ProductTypeElement("isSprinting", AlgebraicType.createBoolType()),
       new ProductTypeElement("isDead", AlgebraicType.createBoolType()),
       new ProductTypeElement("respawnAt", AlgebraicType.createTimestampType()),
+      new ProductTypeElement("lastHitTime", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
     ]);
   }
 

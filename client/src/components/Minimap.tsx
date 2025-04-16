@@ -6,8 +6,8 @@ import { Player as SpacetimeDBPlayer, Tree as SpacetimeDBTree, Stone as Spacetim
 const MINIMAP_WIDTH = 200;
 const MINIMAP_HEIGHT = 150;
 const MINIMAP_PLAYER_DOT_SIZE = 3;
-const MINIMAP_BG_COLOR_NORMAL = 'rgba(40, 40, 60, 0.85)';
-const MINIMAP_BG_COLOR_HOVER = 'rgba(60, 60, 80, 0.95)';
+const MINIMAP_BG_COLOR_NORMAL = 'rgba(40, 40, 60, 0.2)';
+const MINIMAP_BG_COLOR_HOVER = 'rgba(60, 60, 80, 0.2)';
 const MINIMAP_BORDER_COLOR = '#a0a0c0';
 const MINIMAP_LOCAL_PLAYER_COLOR = 'yellow';
 const MINIMAP_OTHER_PLAYER_COLOR = 'red';
@@ -21,7 +21,7 @@ const STONE_DOT_SIZE = 2;
 const STONE_DOT_COLOR = '#808080';
 const CAMPFIRE_DOT_SIZE = 3;
 const CAMPFIRE_DOT_COLOR = '#FFA500';
-const MINIMAP_WORLD_BG_COLOR = '#345834';
+const MINIMAP_WORLD_BG_COLOR = 'rgba(52, 88, 52, 0.2)';
 
 interface MinimapProps {
   ctx: CanvasRenderingContext2D;

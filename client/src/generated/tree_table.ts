@@ -32,7 +32,6 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { Tree } from "./tree_type";
 import { TreeType as __TreeType } from "./tree_type_type";
-import { TreeState as __TreeState } from "./tree_state_type";
 
 import { EventContext, Reducer, RemoteReducers, RemoteTables } from ".";
 

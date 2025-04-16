@@ -493,6 +493,25 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   }, []); // Runs once
 
+  // --- NEW: Effect for Preloading Item Images based on Definitions ---
+  useEffect(() => {
+    console.log("Preloading item images based on itemDefinitions update...");
+    itemDefinitions.forEach(itemDef => {
+      // Check if the icon name exists in our mapping and hasn't been loaded yet
+      if (itemDef && itemIcons[itemDef.iconAssetName] && !itemImagesRef.current.has(itemDef.iconAssetName)) {
+        const img = new Image();
+        img.src = itemIcons[itemDef.iconAssetName]; // Use path from itemIcons map
+        img.onload = () => {
+          itemImagesRef.current.set(itemDef.iconAssetName, img);
+          console.log(`Preloaded item image: ${itemDef.iconAssetName} from ${img.src}`);
+        };
+        img.onerror = () => console.error(`Failed to preload item image asset: ${itemDef.iconAssetName} (Expected path/source: ${itemIcons[itemDef.iconAssetName]})`);
+        // Add placeholder immediately to prevent repeated load attempts in the same cycle
+        itemImagesRef.current.set(itemDef.iconAssetName, img);
+      }
+    });
+  }, [itemDefinitions]); // Re-run whenever itemDefinitions changes
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -650,26 +669,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const currentWorldMouseX = worldMousePosRef.current.x;
     const currentWorldMouseY = worldMousePosRef.current.y;
 
-    // --- Preload necessary item images --- (Can be optimized)
-    activeEquipments.forEach(equip => {
-      // Ensure equip and equippedItemDefId are not null/undefined
-      if (equip && equip.equippedItemDefId) { 
-        const itemDef = itemDefinitions.get(equip.equippedItemDefId.toString());
-        // Use itemIcons map to get the actual imported image path
-        if (itemDef && itemIcons[itemDef.iconAssetName] && !itemImagesRef.current.has(itemDef.iconAssetName)) {
-          const img = new Image();
-          img.src = itemIcons[itemDef.iconAssetName]; // Use path from itemIcons
-          img.onload = () => {
-            itemImagesRef.current.set(itemDef.iconAssetName, img);
-            console.log(`Loaded item image: ${itemDef.iconAssetName} from ${img.src}`);
-          };
-          img.onerror = () => console.error(`Failed to load item image asset: ${itemDef.iconAssetName} (Expected path/source: ${itemIcons[itemDef.iconAssetName]})`);
-          // Set a placeholder while loading?
-          itemImagesRef.current.set(itemDef.iconAssetName, img); // Add placeholder to prevent repeated load attempts
-        }
-      }
-    });
-
     // Render Sorted World Entities (No Campfires)
     worldEntitiesToRender.forEach(entity => {
        if (isPlayer(entity)) {
@@ -721,12 +720,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               }
               // Draw Player
               if (heroImg) {
-                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, jumpOffset);
+                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, now_ms, jumpOffset);
               }
            } else { // direction === 'right' or 'down'
               // Draw Player FIRST
               if (heroImg) {
-                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, jumpOffset);
+                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, now_ms, jumpOffset);
               }
               // Draw Item IN FRONT of Player
               if (canRenderItem && equipment) {
