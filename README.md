@@ -174,7 +174,36 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We welcome contributions to this project! To contribute, please follow the standard GitHub Fork & Pull Request workflow:
+
+1.  **Fork the Repository**: Click the 'Fork' button on the top right of the main repository page (`SeloSlav/vibe-coding-starter-pack-2d-multiplayer-survival`) to create your personal copy under your GitHub account.
+2.  **Clone Your Fork**: Clone *your forked repository* to your local machine:
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/vibe-coding-starter-pack-2d-multiplayer-survival.git
+    cd vibe-coding-starter-pack-2d-multiplayer-survival
+    ```
+    (Replace `YOUR_USERNAME` with your actual GitHub username).
+3.  **Create a Branch**: Create a new branch for your feature or fix:
+    ```bash
+    git checkout -b feature/your-feature-name
+    ```
+4.  **Implement Your Changes**: Make your code changes, following project style guidelines.
+5.  **Test Thoroughly**: Ensure your changes work as expected and don't break existing functionality.
+6.  **Commit Your Changes**: Commit your work with a clear message:
+    ```bash
+    git commit -m "feat: Add awesome new feature"
+    ```
+7.  **Push Your Branch**: Push your changes *to your fork*:
+    ```bash
+    git push origin feature/your-feature-name
+    ```
+8.  **Open a Pull Request**: Go back to the *original* repository (`SeloSlav/vibe-coding-starter-pack-2d-multiplayer-survival`) on GitHub. You should see a prompt to create a Pull Request from your recently pushed branch. Click it, or navigate to the "Pull Requests" tab and click "New Pull Request".
+9.  **Configure the PR**: Ensure the base repository is `SeloSlav/vibe-coding-starter-pack-2d-multiplayer-survival` and the base branch is typically `main` (or the relevant development branch). Ensure the head repository is your fork and the compare branch is your feature branch (`feature/your-feature-name`).
+10. **Describe Your Changes**: Provide a clear title and description for your Pull Request, explaining the changes and their purpose.
+
+Whether you're interested in adding new gameplay mechanics, improving existing systems, or enhancing the codebase, your contributions are valuable to making this starter pack even better!
+
+For questions or discussions about potential contributions, feel free to open an issue first to discuss your ideas.
 
 ## 📜 License
 
