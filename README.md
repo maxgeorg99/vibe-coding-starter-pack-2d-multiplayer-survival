@@ -11,13 +11,34 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 
 ![Gameplay Preview](preview.png)
 
-## ✨ Features
+## 🗺️ Roadmap
 
-- **Real-time Multiplayer**: Seamless player movement synchronization
-- **Infinite World**: Procedurally generated, tile-based terrain with efficient rendering
-- **Resource System**: Comprehensive inventory and collection mechanics
-- **Modern Architecture**: Clean separation between client and server components
-- **Performance Focused**: Built with optimization, extensibility, and good vibes in mind
+**Completed (✅):**
+*   Real-time Multiplayer: Basic player movement synchronization
+*   Environment Systems: Day/night cycle
+*   Survival Mechanics: Basic resource harvesting (wood/stone)
+*   Survival Systems: Health, Hunger, Thirst, Warmth, Death/Respawn
+*   Resource Respawning: Trees, Stones
+*   World Discovery: Minimap
+*   Hotbar/Basic UI: Item selection, basic layout
+*   Inventory Management: Moving, swapping, stacking, stack splitting
+*   Item Equipping: Tools/Weapons (Hotbar), Armor (Slots)
+*   Placeables: Campfire (Basic placement)
+*   Consumables: Eating (Mushrooms)
+
+**In Progress (🚧):**
+*   Crafting System: Item recipes, crafting stations
+
+**Planned ([ ]):**
+*   Authentication/Account System
+*   World Generation: Basic tile rendering (Planned: Procedural generation, biomes, monuments)
+*   Advanced AI: Enemy behaviors, pathfinding
+*   Construction System: Walls, floors, structures
+*   Farming System: Planting, growing, harvesting crops
+*   Cooking System: Using campfire/stations to prepare food
+*   More Item Variety: Tools, weapons, armor, resources, consumables
+*   Combat Improvements: More weapon types, better hit detection, PvP balancing
+*   Team/Social Features
 
 ## 🛠️ Tech Stack
 
@@ -144,20 +165,6 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 2. **Client Development**:
    - Edit React components in `client/src`
    - The dev server supports hot module replacement
-
-## 🗺️ Roadmap
-
-- ✅ **Environment Systems**: Day/night cycle
-- [ ] **Authentication/Account System**
-- [ ] **Advanced AI**: Basic enemy behaviors and interaction patterns
-- [ ] **Construction**: More base building (beyond campfire)
-- ✅ **Placeables**: Campfire (Basic)
-- ✅ **Survival Mechanics**: Basic resource harvesting (wood/stone)
-- 🚧 **More Survival**: Hunger, Thirst, Warmth, Health, Death/Respawn (Partially done, needs more depth)
-- [ ] **Competitive Elements**: PvP mechanics and team-based gameplay
-- ✅ **World Discovery**: Minimap
-- ✅ **Hotbar/Basic UI**: Basic functionality
-- [ ] **Crafting/Items**: Crafting system, more item variety
 
 ## 🤝 Contributing
 
