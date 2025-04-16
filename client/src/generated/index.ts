@@ -34,6 +34,8 @@ import {
 // Import and reexport all reducer arg types
 import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
 export { CheckResourceRespawns };
+import { ConsumeItem } from "./consume_item_reducer.ts";
+export { ConsumeItem };
 import { EquipArmor } from "./equip_armor_reducer.ts";
 export { EquipArmor };
 import { EquipArmorFromDrag } from "./equip_armor_from_drag_reducer.ts";
@@ -46,6 +48,8 @@ import { IdentityConnected } from "./identity_connected_reducer.ts";
 export { IdentityConnected };
 import { IdentityDisconnected } from "./identity_disconnected_reducer.ts";
 export { IdentityDisconnected };
+import { InteractWithMushroom } from "./interact_with_mushroom_reducer.ts";
+export { InteractWithMushroom };
 import { Jump } from "./jump_reducer.ts";
 export { Jump };
 import { MoveItemToHotbar } from "./move_item_to_hotbar_reducer.ts";
@@ -86,6 +90,8 @@ import { InventoryItemTableHandle } from "./inventory_item_table.ts";
 export { InventoryItemTableHandle };
 import { ItemDefinitionTableHandle } from "./item_definition_table.ts";
 export { ItemDefinitionTableHandle };
+import { MushroomTableHandle } from "./mushroom_table.ts";
+export { MushroomTableHandle };
 import { PlayerTableHandle } from "./player_table.ts";
 export { PlayerTableHandle };
 import { StoneTableHandle } from "./stone_table.ts";
@@ -108,6 +114,8 @@ import { ItemCategory } from "./item_category_type.ts";
 export { ItemCategory };
 import { ItemDefinition } from "./item_definition_type.ts";
 export { ItemDefinition };
+import { Mushroom } from "./mushroom_type.ts";
+export { Mushroom };
 import { Player } from "./player_type.ts";
 export { Player };
 import { Stone } from "./stone_type.ts";
@@ -143,6 +151,11 @@ const REMOTE_MODULE = {
       rowType: ItemDefinition.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
+    mushroom: {
+      tableName: "mushroom",
+      rowType: Mushroom.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
     player: {
       tableName: "player",
       rowType: Player.getTypeScriptAlgebraicType(),
@@ -169,6 +182,10 @@ const REMOTE_MODULE = {
       reducerName: "check_resource_respawns",
       argsType: CheckResourceRespawns.getTypeScriptAlgebraicType(),
     },
+    consume_item: {
+      reducerName: "consume_item",
+      argsType: ConsumeItem.getTypeScriptAlgebraicType(),
+    },
     equip_armor: {
       reducerName: "equip_armor",
       argsType: EquipArmor.getTypeScriptAlgebraicType(),
@@ -192,6 +209,10 @@ const REMOTE_MODULE = {
     identity_disconnected: {
       reducerName: "identity_disconnected",
       argsType: IdentityDisconnected.getTypeScriptAlgebraicType(),
+    },
+    interact_with_mushroom: {
+      reducerName: "interact_with_mushroom",
+      argsType: InteractWithMushroom.getTypeScriptAlgebraicType(),
     },
     jump: {
       reducerName: "jump",
@@ -281,12 +302,14 @@ const REMOTE_MODULE = {
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
+| { name: "ConsumeItem", args: ConsumeItem }
 | { name: "EquipArmor", args: EquipArmor }
 | { name: "EquipArmorFromDrag", args: EquipArmorFromDrag }
 | { name: "EquipItem", args: EquipItem }
 | { name: "EquipToHotbar", args: EquipToHotbar }
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
+| { name: "InteractWithMushroom", args: InteractWithMushroom }
 | { name: "Jump", args: Jump }
 | { name: "MoveItemToHotbar", args: MoveItemToHotbar }
 | { name: "MoveItemToInventory", args: MoveItemToInventory }
@@ -317,6 +340,22 @@ export class RemoteReducers {
 
   removeOnCheckResourceRespawns(callback: (ctx: ReducerEventContext) => void) {
     this.connection.offReducer("check_resource_respawns", callback);
+  }
+
+  consumeItem(itemInstanceId: bigint) {
+    const __args = { itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    ConsumeItem.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("consume_item", __argsBuffer, this.setCallReducerFlags.consumeItemFlags);
+  }
+
+  onConsumeItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("consume_item", callback);
+  }
+
+  removeOnConsumeItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("consume_item", callback);
   }
 
   equipArmor(itemInstanceId: bigint) {
@@ -397,6 +436,22 @@ export class RemoteReducers {
 
   removeOnIdentityDisconnected(callback: (ctx: ReducerEventContext) => void) {
     this.connection.offReducer("identity_disconnected", callback);
+  }
+
+  interactWithMushroom(mushroomId: bigint) {
+    const __args = { mushroomId };
+    let __writer = new BinaryWriter(1024);
+    InteractWithMushroom.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("interact_with_mushroom", __argsBuffer, this.setCallReducerFlags.interactWithMushroomFlags);
+  }
+
+  onInteractWithMushroom(callback: (ctx: ReducerEventContext, mushroomId: bigint) => void) {
+    this.connection.onReducer("interact_with_mushroom", callback);
+  }
+
+  removeOnInteractWithMushroom(callback: (ctx: ReducerEventContext, mushroomId: bigint) => void) {
+    this.connection.offReducer("interact_with_mushroom", callback);
   }
 
   jump() {
@@ -619,6 +674,11 @@ export class SetReducerFlags {
     this.checkResourceRespawnsFlags = flags;
   }
 
+  consumeItemFlags: CallReducerFlags = 'FullUpdate';
+  consumeItem(flags: CallReducerFlags) {
+    this.consumeItemFlags = flags;
+  }
+
   equipArmorFlags: CallReducerFlags = 'FullUpdate';
   equipArmor(flags: CallReducerFlags) {
     this.equipArmorFlags = flags;
@@ -637,6 +697,11 @@ export class SetReducerFlags {
   equipToHotbarFlags: CallReducerFlags = 'FullUpdate';
   equipToHotbar(flags: CallReducerFlags) {
     this.equipToHotbarFlags = flags;
+  }
+
+  interactWithMushroomFlags: CallReducerFlags = 'FullUpdate';
+  interactWithMushroom(flags: CallReducerFlags) {
+    this.interactWithMushroomFlags = flags;
   }
 
   jumpFlags: CallReducerFlags = 'FullUpdate';
@@ -733,6 +798,10 @@ export class RemoteTables {
 
   get itemDefinition(): ItemDefinitionTableHandle {
     return new ItemDefinitionTableHandle(this.connection.clientCache.getOrCreateTable<ItemDefinition>(REMOTE_MODULE.tables.item_definition));
+  }
+
+  get mushroom(): MushroomTableHandle {
+    return new MushroomTableHandle(this.connection.clientCache.getOrCreateTable<Mushroom>(REMOTE_MODULE.tables.mushroom));
   }
 
   get player(): PlayerTableHandle {

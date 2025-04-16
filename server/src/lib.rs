@@ -12,6 +12,10 @@ mod world_state;
 mod campfire;
 // Declare the active_equipment module
 mod active_equipment;
+// Declare the mushroom module
+mod mushroom;
+// Declare the consumables module
+mod consumables;
 
 // Use the public items from the module
 use environment::*; 
@@ -21,6 +25,8 @@ use crate::items::*;
 use crate::world_state::*;
 // Use the public items from the campfire module
 use crate::campfire::*;
+// Use the public items from the mushroom module
+// use crate::mushroom::*; // Removed unused import
 // Use the public items from the active_equipment module
 // use crate::active_equipment::*; // Remove this - module accessed via reducers
 // Import generated table traits with aliases to avoid name conflicts
@@ -619,41 +625,6 @@ pub fn update_player_position(
             Err(e) => log::error!("Failed to unequip item for dying player {:?}: {}", sender_id, e),
         }
     }
-
-    // --- Warmth Update ---
-    let mut warmth_change_per_sec: f32 = 0.0;
-
-    // 1. Warmth Drain based on Time of Day
-    let drain_multiplier = match world_state.time_of_day {
-        TimeOfDay::Morning | TimeOfDay::Noon | TimeOfDay::Afternoon => 0.0, // No warmth drain during day
-        TimeOfDay::Dawn | TimeOfDay::Dusk => WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, // Keep transition drain
-        TimeOfDay::Night => WARMTH_DRAIN_MULTIPLIER_NIGHT * 1.25, // Increased night drain (e.g., 2.0 -> 2.5)
-        TimeOfDay::Midnight => WARMTH_DRAIN_MULTIPLIER_MIDNIGHT * 1.33, // Increased midnight drain (e.g., 3.0 -> 4.0)
-        // _ => 1.0, // Removed default case, handled explicitly above
-    };
-    warmth_change_per_sec -= BASE_WARMTH_DRAIN_PER_SECOND * drain_multiplier;
-
-    // 2. Warmth Gain from nearby Campfires
-    for fire in campfires.iter() {
-        let dx = current_player.position_x - fire.pos_x;
-        let dy = current_player.position_y - fire.pos_y;
-        if (dx * dx + dy * dy) < WARMTH_RADIUS_SQUARED {
-            // Player is within warmth radius
-            warmth_change_per_sec += WARMTH_PER_SECOND;
-            log::trace!("Player {:?} gaining warmth from campfire {}", sender_id, fire.id);
-            // Optional: could break here if only one fire should affect,
-            // but summing allows multiple fires to have additive effect.
-        }
-    }
-
-    let new_warmth = (current_player.warmth + (warmth_change_per_sec * elapsed_seconds))
-                     .max(0.0) // Clamp between 0 and 100
-                     .min(100.0);
-    let warmth_changed = (new_warmth - current_player.warmth).abs() > 0.01;
-    if warmth_changed {
-        log::debug!("Player {:?} warmth updated to {:.1}", sender_id, new_warmth);
-    }
-    // TODO: Add effects for low warmth (e.g., health loss, slower movement) later
 
     // --- Movement Calculation ---
     let proposed_x = current_player.position_x + move_dx * final_speed_multiplier;

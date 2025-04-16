@@ -15,6 +15,7 @@ pub enum ItemCategory {
     Material,
     Placeable,
     Armor,
+    Consumable,
     // Add other categories as needed (Consumable, Wearable, etc.)
 }
 
@@ -221,6 +222,18 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             stack_size: 1,
             is_equippable: true,
             equipment_slot: Some(EquipmentSlot::Back),
+        },
+        ItemDefinition {
+            id: 0,
+            name: "Mushroom".to_string(),
+            description: "A common edible fungus.".to_string(),
+            category: ItemCategory::Consumable,
+            icon_asset_name: "mushroom.png".to_string(),
+            damage: None,
+            is_stackable: true,
+            stack_size: 50,
+            is_equippable: false,
+            equipment_slot: None,
         },
     ];
 

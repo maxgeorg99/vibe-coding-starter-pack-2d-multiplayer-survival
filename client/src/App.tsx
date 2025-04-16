@@ -7,7 +7,7 @@ import Hotbar from './components/Hotbar'; // Import the new Hotbar component
 import githubLogo from '../public/github.png'; // Import the logo
 import * as SpacetimeDB from './generated';
 import { Identity as SpacetimeDBIdentity } from '@clockworklabs/spacetimedb-sdk';
-const { DbConnection } = SpacetimeDB; 
+import { DbConnection } from './generated'; // Correct import source
 
 // SpacetimeDB connection parameters
 const SPACETIME_DB_ADDRESS = 'ws://localhost:3000';
@@ -28,6 +28,8 @@ function App() {
   const [stones, setStones] = useState<Map<string, SpacetimeDB.Stone>>(new Map());
   // Add state for campfires
   const [campfires, setCampfires] = useState<Map<string, SpacetimeDB.Campfire>>(new Map());
+  // Add state for mushrooms
+  const [mushrooms, setMushrooms] = useState<Map<string, SpacetimeDB.Mushroom>>(new Map());
   // Add state for item definitions and inventory
   const [itemDefinitions, setItemDefinitions] = useState<Map<string, SpacetimeDB.ItemDefinition>>(new Map());
   const [inventoryItems, setInventoryItems] = useState<Map<string, SpacetimeDB.InventoryItem>>(new Map());
@@ -129,6 +131,7 @@ function App() {
     let inventorySubscription: any = null;
     let worldStateSubscription: any = null; // Subscription for WorldState
     let activeEquipmentSubscription: any = null; // Subscription for ActiveEquipment
+    let mushroomSubscription: any = null; // Subscription for Mushroom
 
     console.log('Setting up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, and WorldState table subscriptions...');
 
@@ -363,6 +366,25 @@ function App() {
       });
     };
 
+    // --- Mushroom Callbacks ---
+    const handleMushroomInsert = (ctx: any, mushroom: SpacetimeDB.Mushroom) => {
+      console.log('Mushroom Inserted:', mushroom.id);
+      setMushrooms(prev => new Map(prev).set(mushroom.id.toString(), mushroom));
+    };
+    const handleMushroomUpdate = (ctx: any, oldMushroom: SpacetimeDB.Mushroom, newMushroom: SpacetimeDB.Mushroom) => {
+      // Mushrooms currently have no updatable fields, but include for future
+      console.log('Mushroom Updated:', newMushroom.id);
+      setMushrooms(prev => new Map(prev).set(newMushroom.id.toString(), newMushroom));
+    };
+    const handleMushroomDelete = (ctx: any, mushroom: SpacetimeDB.Mushroom) => {
+      console.log('Mushroom Deleted:', mushroom.id);
+      setMushrooms(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(mushroom.id.toString());
+          return newMap;
+      });
+    };
+
     // Register the callbacks for Player
     connection.db.player.onInsert(handlePlayerInsert);
     connection.db.player.onUpdate(handlePlayerUpdate);
@@ -402,6 +424,11 @@ function App() {
     connection.db.activeEquipment.onInsert(handleActiveEquipmentInsert);
     connection.db.activeEquipment.onUpdate(handleActiveEquipmentUpdate);
     connection.db.activeEquipment.onDelete(handleActiveEquipmentDelete);
+
+    // Register Mushroom callbacks
+    connection.db.mushroom.onInsert(handleMushroomInsert);
+    connection.db.mushroom.onUpdate(handleMushroomUpdate);
+    connection.db.mushroom.onDelete(handleMushroomDelete);
 
     // --- Subscriptions --- 
     console.log('Subscribing to Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, and WorldState tables...');
@@ -473,6 +500,15 @@ function App() {
       })
       .subscribe('SELECT * FROM active_equipment');
 
+    // Subscribe to Mushroom
+    mushroomSubscription = connection.subscriptionBuilder()
+      .onApplied(() => console.log('Subscription to Mushroom table APPLIED.'))
+      .onError((ctx: SpacetimeDB.ErrorContext) => {
+        console.error('Subscription to Mushroom table FAILED. Context:', ctx);
+        setError(`Mushroom subscription failed. Check console.`);
+      })
+      .subscribe('SELECT * FROM mushroom');
+
     // Cleanup function for this effect
     return () => {
       console.log('Cleaning up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, and WorldState table subscriptions...');
@@ -512,6 +548,11 @@ function App() {
       connection.db.activeEquipment.removeOnUpdate(handleActiveEquipmentUpdate);
       connection.db.activeEquipment.removeOnDelete(handleActiveEquipmentDelete);
       
+      // Remove Mushroom listeners
+      connection.db.mushroom.removeOnInsert(handleMushroomInsert);
+      connection.db.mushroom.removeOnUpdate(handleMushroomUpdate);
+      connection.db.mushroom.removeOnDelete(handleMushroomDelete);
+      
       // Unsubscribe from queries
       if (playerSubscription) playerSubscription.unsubscribe();
       if (treeSubscription) treeSubscription.unsubscribe();
@@ -521,6 +562,7 @@ function App() {
       if (inventorySubscription) inventorySubscription.unsubscribe();
       if (worldStateSubscription) worldStateSubscription.unsubscribe();
       if (activeEquipmentSubscription) activeEquipmentSubscription.unsubscribe();
+      if (mushroomSubscription) mushroomSubscription.unsubscribe(); // Unsubscribe mushroom
     };
     
   }, [connection]); // Re-run this effect if the connection object changes
@@ -813,6 +855,7 @@ function App() {
             trees={trees}
             stones={stones}
             campfires={campfires}
+            mushrooms={mushrooms}
             activeEquipments={activeEquipments}
             inventoryItems={inventoryItems}
             itemDefinitions={itemDefinitions}

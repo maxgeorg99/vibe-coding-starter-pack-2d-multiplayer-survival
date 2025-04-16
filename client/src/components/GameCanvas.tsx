@@ -1,7 +1,17 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 // import { SpacetimeDBClient } from '@clockworklabs/spacetimedb-sdk';
 import { gameConfig } from '../config/gameConfig';
-import { Player as SpacetimeDBPlayer, Tree as SpacetimeDBTree, Stone as SpacetimeDBStone, Campfire as SpacetimeDBCampfire, WorldState as SpacetimeDBWorldState, ActiveEquipment as SpacetimeDBActiveEquipment, InventoryItem as SpacetimeDBInventoryItem, ItemDefinition as SpacetimeDBItemDefinition } from '../generated';
+import {
+  Player as SpacetimeDBPlayer,
+  Tree as SpacetimeDBTree,
+  Stone as SpacetimeDBStone,
+  Campfire as SpacetimeDBCampfire,
+  Mushroom as SpacetimeDBMushroom, // Explicitly import Mushroom type
+  WorldState as SpacetimeDBWorldState,
+  ActiveEquipment as SpacetimeDBActiveEquipment,
+  InventoryItem as SpacetimeDBInventoryItem,
+  ItemDefinition as SpacetimeDBItemDefinition
+} from '../generated';
 import heroSpriteSheet from '../assets/hero.png';
 import grassTexture from '../assets/tiles/grass.png';
 import campfireSprite from '../assets/doodads/campfire.png';
@@ -16,6 +26,8 @@ import { renderTree, preloadTreeImages } from '../utils/treeRenderingUtils';
 import { renderStone, preloadStoneImage } from '../utils/stoneRenderingUtils';
 // Import Campfire rendering utils
 import { renderCampfire, preloadCampfireImage } from '../utils/campfireRenderingUtils';
+// Import Mushroom rendering utils
+import { renderMushroom, preloadMushroomImages } from '../utils/mushroomRenderingUtils';
 // Import DeathScreen component with extension
 import DeathScreen from './DeathScreen.tsx';
 // Import item icon mapping
@@ -40,17 +52,21 @@ const CAMPFIRE_FLICKER_AMOUNT = 5; // Max pixels radius will change by
 // Warmer light colors
 const CAMPFIRE_LIGHT_INNER_COLOR = 'rgba(255, 180, 80, 0.35)'; // Warmer orange/yellow, slightly more opaque
 const CAMPFIRE_LIGHT_OUTER_COLOR = 'rgba(255, 100, 0, 0.0)';  // Fade to transparent orange
-const CAMPFIRE_WIDTH_PREVIEW = 64; 
-const CAMPFIRE_HEIGHT_PREVIEW = 64; 
+const CAMPFIRE_WIDTH_PREVIEW = 64;
+const CAMPFIRE_HEIGHT_PREVIEW = 64;
 
 const SWING_DURATION_MS = 300; // Duration of the item swing animation - REMOVED (now in util)
 const SWING_ANGLE_MAX_RAD = Math.PI / 2.5; // Maximum angle during swing (approx 72 degrees) - REMOVED (now in util)
+
+// --- Interaction Constants ---
+const PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
 
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
   trees: Map<string, SpacetimeDBTree>;
   stones: Map<string, SpacetimeDBStone>;
   campfires: Map<string, SpacetimeDBCampfire>;
+  mushrooms: Map<string, SpacetimeDBMushroom>; // Use imported type alias
   inventoryItems: Map<string, SpacetimeDBInventoryItem>;
   itemDefinitions: Map<string, SpacetimeDBItemDefinition>;
   worldState: SpacetimeDBWorldState | null;
@@ -78,13 +94,24 @@ function isTree(entity: any): entity is SpacetimeDBTree {
 
 // Type guard for Stone
 function isStone(entity: any): entity is SpacetimeDBStone {
-  // Check for camelCase properties (posX, posY) from generated types
-  return entity && typeof entity.health !== 'undefined' && typeof entity.posX === 'number' && typeof entity.posY === 'number' && typeof entity.identity === 'undefined' && typeof entity.treeType === 'undefined';
+  // Check for properties specific to Stone and not Player/Tree/Campfire
+  return entity && typeof entity.health === 'number' && 
+         typeof entity.posX === 'number' && typeof entity.posY === 'number' && 
+         typeof entity.identity === 'undefined' && typeof entity.treeType === 'undefined' && 
+         typeof entity.placed_by === 'undefined'; 
 }
 
 // Type guard for Campfire
 function isCampfire(entity: any): entity is SpacetimeDBCampfire {
-    return entity && typeof entity.placed_by !== 'undefined' && typeof entity.pos_x === 'number' && typeof entity.pos_y === 'number';
+    return entity && typeof entity.placedBy !== 'undefined' && typeof entity.posX === 'number' && typeof entity.posY === 'number';
+}
+
+// Type guard for Mushroom
+function isMushroom(entity: any): entity is SpacetimeDBMushroom {
+    // Check for properties specific to Mushroom and not others
+    return entity && typeof entity.posX === 'number' && typeof entity.posY === 'number' &&
+           typeof entity.identity === 'undefined' && typeof entity.treeType === 'undefined' &&
+           typeof entity.health === 'undefined' && typeof entity.placedBy === 'undefined';
 }
 
 // --- Interpolation Data ---
@@ -94,8 +121,8 @@ interface ColorPoint {
 
 // --- Realistic Day/Night Color Palette ---
 // Default night: Dark, desaturated blue/grey
-const defaultPeakMidnightColor: ColorPoint = { r: 15, g: 20, b: 30, a: 0.92 }; 
-const defaultTransitionNightColor: ColorPoint = { r: 40, g: 50, b: 70, a: 0.75 }; 
+const defaultPeakMidnightColor: ColorPoint = { r: 15, g: 20, b: 30, a: 0.92 };
+const defaultTransitionNightColor: ColorPoint = { r: 40, g: 50, b: 70, a: 0.75 };
 
 // Full Moon night: Brighter, cooler grey/blue, less saturated
 const fullMoonPeakMidnightColor: ColorPoint =    { r: 90, g: 110, b: 130, a: 0.48 }; // Slightly brighter, less saturated blue-grey
@@ -107,15 +134,15 @@ const keyframes: Record<number, ColorPoint> = {
   // Use default transition night color as base for 0.20 and 0.95
   0.20: defaultTransitionNightColor,
   // Dawn: Soft pink/orange hues
-  0.35: { r: 255, g: 180, b: 120, a: 0.25 },   
+  0.35: { r: 255, g: 180, b: 120, a: 0.25 },
   // Noon: Clear (transparent)
-  0.50: { r: 0, g: 0, b: 0, a: 0.0 },        
+  0.50: { r: 0, g: 0, b: 0, a: 0.0 },
   // Afternoon: Warm golden tint
-  0.65: { r: 255, g: 210, b: 150, a: 0.15 }, 
+  0.65: { r: 255, g: 210, b: 150, a: 0.15 },
   // Dusk: Softer orange/purple hues
-  0.75: { r: 255, g: 150, b: 100, a: 0.35 },  
+  0.75: { r: 255, g: 150, b: 100, a: 0.35 },
   // Fading Dusk: Muted deep purple/grey
-  0.85: { r: 80, g: 70, b: 90, a: 0.60 },  
+  0.85: { r: 80, g: 70, b: 90, a: 0.60 },
   // Use default transition night color as base for 0.20 and 0.95
   0.95: defaultTransitionNightColor,
   // Use default peak midnight color as the base for 0.00/1.00
@@ -161,11 +188,12 @@ function interpolateRgba(progress: number, currentKeyframes: Record<number, Colo
 }
 // --- End Interpolation Data ---
 
-const GameCanvas: React.FC<GameCanvasProps> = ({ 
-  players, 
+const GameCanvas: React.FC<GameCanvasProps> = ({
+  players,
   trees,
   stones,
   campfires,
+  mushrooms,
   inventoryItems,
   itemDefinitions,
   worldState,
@@ -196,7 +224,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const isSprintingRef = useRef<boolean>(false); // Track current sprint state
   const lastPositionsRef = useRef<Map<string, {x: number, y: number}>>(new Map()); // Store last known positions
   const isInputDisabled = useRef<boolean>(false); // Ref to track input disable state
-  
+  const closestInteractableMushroomIdRef = useRef<bigint | null>(null); // Ref for nearby mushroom ID
+
   const animationFrame = useAnimationCycle(ANIMATION_INTERVAL_MS, 4);
 
   // Memoize the keyframes based on full moon state, anticipating the next cycle if needed
@@ -208,7 +237,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Anticipate next cycle's moon status if we're in late dusk/night
     let effectiveIsFullMoon = currentIsFullMoon;
-    if (currentProgress > anticipationThreshold) { 
+    if (currentProgress > anticipationThreshold) {
         const nextCycleIsFullMoon = ((currentCycleCount + 1) % FULL_MOON_CYCLE_INTERVAL) === 0;
         effectiveIsFullMoon = nextCycleIsFullMoon;
     }
@@ -229,29 +258,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Adjust adjacent keyframes ONLY if the effective moon state is full moon
     if (effectiveIsFullMoon) {
         const dusk = keyframes[0.75];
-        adjustedKeyframes[0.85] = { 
-             r: Math.round(lerp(dusk.r, transitionNight.r, 0.5)), 
+        adjustedKeyframes[0.85] = {
+             r: Math.round(lerp(dusk.r, transitionNight.r, 0.5)),
              g: Math.round(lerp(dusk.g, transitionNight.g, 0.5)),
              b: Math.round(lerp(dusk.b, transitionNight.b, 0.5)),
              a: lerp(dusk.a, transitionNight.a, 0.5)
         };
-        const dawn = keyframes[0.35]; 
+        const dawn = keyframes[0.35];
         adjustedKeyframes[0.35] = {
-             r: Math.round(lerp(transitionNight.r, dawn.r, 0.7)), 
-             g: Math.round(lerp(transitionNight.g, dawn.g, 0.7)), 
-             b: Math.round(lerp(transitionNight.b, dawn.b, 0.7)),  
-             a: lerp(transitionNight.a, dawn.a, 0.6) 
+             r: Math.round(lerp(transitionNight.r, dawn.r, 0.7)),
+             g: Math.round(lerp(transitionNight.g, dawn.g, 0.7)),
+             b: Math.round(lerp(transitionNight.b, dawn.b, 0.7)),
+             a: lerp(transitionNight.a, dawn.a, 0.6)
          };
-    } 
+    }
     return adjustedKeyframes;
 
-  }, [worldState?.cycleProgress, worldState?.cycleCount, worldState?.isFullMoon]); 
+  }, [worldState?.cycleProgress, worldState?.cycleCount, worldState?.isFullMoon]);
 
   const getLocalPlayer = useCallback((): SpacetimeDBPlayer | undefined => {
     if (!localPlayerId) return undefined;
     return players.get(localPlayerId);
   }, [players, localPlayerId]);
-  
+
   // Update input disabled state based on local player death status
   useEffect(() => {
     const localPlayer = getLocalPlayer();
@@ -262,11 +291,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (isSprintingRef.current) {
            isSprintingRef.current = false;
            // Optionally call reducer if needed, but player state reset on respawn might cover this
-           // callSetSprintingReducer(false); 
+           // callSetSprintingReducer(false);
       }
     }
   }, [players, localPlayerId, getLocalPlayer]);
-  
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore input if player is dead or placing campfire (except escape)
@@ -290,7 +319,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             callSetSprintingReducer(true);
         }
         // Don't add modifier keys themselves to keysPressed
-        return; 
+        return;
       }
 
       keysPressed.current.add(key);
@@ -299,32 +328,49 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (key === ' ' && !e.repeat) {
         const localPlayer = getLocalPlayer();
         if (localPlayer) {
-          callJumpReducer(); 
+          callJumpReducer();
         }
       }
 
       // Toggle minimap on 'g' press
-      if (key === 'g' && !e.repeat) { 
+      if (key === 'g' && !e.repeat) {
         setIsMinimapOpen(prev => !prev);
       }
+
+      // Handle interaction key ('e')
+      if (key === 'e' && !e.repeat) {
+        if (closestInteractableMushroomIdRef.current !== null && connection?.reducers) {
+          console.log(`Attempting to interact with mushroom: ${closestInteractableMushroomIdRef.current}`);
+          try {
+            // Use the BigInt ID directly
+            connection.reducers.interactWithMushroom(closestInteractableMushroomIdRef.current);
+          } catch (err) {
+            console.error("Error calling interactWithMushroom reducer:", err);
+            // Optionally show error to user
+          }
+        } else {
+          // Optional: Log if E is pressed but nothing is nearby
+          // console.log("Pressed E but no interactable mushroom nearby.");
+        }
+      }
     };
-    
+
     const handleKeyUp = (e: KeyboardEvent) => {
       // Always allow keyup processing to clear keysPressed, even if dead
       const key = e.key.toLowerCase();
       // Handle Shift key release for sprinting end
       if (key === 'shift') {
-        if (isSprintingRef.current) { 
+        if (isSprintingRef.current) {
             isSprintingRef.current = false;
             // Only call reducer if player isn't dead (respawn resets state anyway)
-            if (!isInputDisabled.current) { 
+            if (!isInputDisabled.current) {
                  callSetSprintingReducer(false);
             }
         }
       }
       keysPressed.current.delete(key);
     };
-    
+
     // --- Placement Click Listener ---
     const handleCanvasClick = (event: MouseEvent) => {
         if (isInputDisabled.current) return; // Ignore clicks if dead
@@ -332,7 +378,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         // Check if placing campfire first
         if (isPlacingCampfire && worldMousePosRef.current.x !== null && worldMousePosRef.current.y !== null) {
             // Left click to place
-            if (event.button === 0) { 
+            if (event.button === 0) {
                 handlePlaceCampfire(worldMousePosRef.current.x, worldMousePosRef.current.y);
                 return; // Don't process further if placing
             }
@@ -374,14 +420,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             cancelCampfirePlacement();
         }
     };
-    
+
     // --- Mouse Wheel Listener for Cancelling Placement ---
     const handleWheel = (event: WheelEvent) => {
         if (isPlacingCampfire) {
             console.log("Mouse wheel scrolled, cancelling placement.");
             cancelCampfirePlacement();
             // Optionally prevent default scroll behavior if needed
-            // event.preventDefault(); 
+            // event.preventDefault();
         }
     };
 
@@ -415,18 +461,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     };
   }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, inventoryItems, localPlayerId, connection]);
-  
+
   const updatePlayerBasedOnInput = useCallback(() => {
     if (isInputDisabled.current) return; // Skip input processing if dead
 
     const localPlayer = getLocalPlayer();
     if (!localPlayer) return;
-    
+
     let dx = 0;
     let dy = 0;
     const speed = 5; // Use base speed
     let intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null; // Initialize intended direction
-    
+
     // Handle WASD movement to determine direction and base delta
     // We send 1 or -1 to indicate direction, server calculates actual distance
     if (keysPressed.current.has('w') || keysPressed.current.has('arrowup')) {
@@ -445,7 +491,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       dx += speed;
       intendedDirection = 'right';
     }
-    
+
     // Normalize diagonal movement (optional but good practice)
     if (dx !== 0 && dy !== 0) {
         const magnitude = Math.sqrt(dx * dx + dy * dy);
@@ -460,8 +506,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Client no longer calculates absolute position or checks boundaries
 
   }, [getLocalPlayer, updatePlayerPosition]);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     // Load Hero
     const heroImg = new Image();
     heroImg.src = heroSpriteSheet;
@@ -486,6 +532,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     preloadStoneImage();
     // Preload Campfire Image
     preloadCampfireImage();
+    // Preload Mushroom Images
+    preloadMushroomImages();
     // Also load the main campfire image for placement preview
     const fireImg = new Image();
     fireImg.src = campfireSprite;
@@ -499,14 +547,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     console.log("Preloading item images based on itemDefinitions update...");
     itemDefinitions.forEach(itemDef => {
       // Check if the icon name exists in our mapping and hasn't been loaded yet
-      if (itemDef && itemIcons[itemDef.iconAssetName] && !itemImagesRef.current.has(itemDef.iconAssetName)) {
+      const iconSrc = itemIcons[itemDef.iconAssetName]; // Get potential source
+      if (itemDef && iconSrc && typeof iconSrc === 'string' && !itemImagesRef.current.has(itemDef.iconAssetName)) {
         const img = new Image();
-        img.src = itemIcons[itemDef.iconAssetName]; // Use path from itemIcons map
+        img.src = iconSrc; // Assign the verified string source
         img.onload = () => {
           itemImagesRef.current.set(itemDef.iconAssetName, img);
           console.log(`Preloaded item image: ${itemDef.iconAssetName} from ${img.src}`);
         };
-        img.onerror = () => console.error(`Failed to preload item image asset: ${itemDef.iconAssetName} (Expected path/source: ${itemIcons[itemDef.iconAssetName]})`);
+        img.onerror = () => console.error(`Failed to preload item image asset: ${itemDef.iconAssetName} (Expected path/source: ${iconSrc})`);
         // Add placeholder immediately to prevent repeated load attempts in the same cycle
         itemImagesRef.current.set(itemDef.iconAssetName, img);
       }
@@ -582,7 +631,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!grassImg) { // Draw fallback if image not loaded
       ctx.fillStyle = '#8FBC8F';
       ctx.fillRect(0, 0, gameConfig.worldWidth * gameConfig.tileSize, gameConfig.worldHeight * gameConfig.tileSize );
-      return; 
+      return;
     }
 
     // You can change this value to true if you want to enable grid lines again.
@@ -637,7 +686,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     const maskCtx = maskCanvas.getContext('2d');
     if (!ctx || !maskCtx) return;
-    
+
     const localPlayerData = getLocalPlayer();
     const currentCanvasWidth = canvasSize.width;
     const currentCanvasHeight = canvasSize.height;
@@ -649,16 +698,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, currentCanvasWidth, currentCanvasHeight);
 
-    // --- World Rendering --- 
+    // --- World Rendering ---
     ctx.save();
     ctx.translate(cameraOffsetX, cameraOffsetY);
     drawWorldBackground(ctx);
 
     // Render world entities (EXCLUDING campfires)
-    const worldEntitiesToRender: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone)[] = [
+    const worldEntitiesToRender: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBMushroom)[] = [
         ...Array.from(players.values()),
         ...Array.from(trees.values()),
         ...Array.from(stones.values()),
+        ...Array.from(mushrooms.values()), // Add mushrooms to the render list
         // Campfires removed from this loop
     ];
     worldEntitiesToRender.sort((a, b) => { // Simple posY sort
@@ -669,6 +719,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const now_ms = Date.now();
     const currentWorldMouseX = worldMousePosRef.current.x;
     const currentWorldMouseY = worldMousePosRef.current.y;
+
+    // --- Find Closest Interactable Mushroom --- (Before rendering loop)
+    let closestDistSq = PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED;
+    closestInteractableMushroomIdRef.current = null; // Reset each frame
+    if (localPlayerData) {
+      mushrooms.forEach((mushroom) => {
+        const dx = localPlayerData.positionX - mushroom.posX;
+        const dy = localPlayerData.positionY - mushroom.posY;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < closestDistSq) {
+          closestDistSq = distSq;
+          closestInteractableMushroomIdRef.current = mushroom.id; // Store the BigInt ID
+        }
+      });
+    }
+    // --- End Finding Closest Mushroom ---
 
     // Render Sorted World Entities (No Campfires)
     worldEntitiesToRender.forEach(entity => {
@@ -684,36 +751,36 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                isPlayerMoving = true;
              }
            } else {
-             isPlayerMoving = false; 
+             isPlayerMoving = false;
            }
            lastPositionsRef.current.set(playerId, { x: entity.positionX, y: entity.positionY });
 
            let jumpOffset = 0;
            const jumpStartTime = entity.jumpStartTimeMs;
            if (jumpStartTime > 0) {
-               const elapsedJumpTime = now_ms - Number(jumpStartTime); 
+               const elapsedJumpTime = now_ms - Number(jumpStartTime);
                if (elapsedJumpTime < JUMP_DURATION_MS) {
                    const d = JUMP_DURATION_MS;
                    const h = JUMP_HEIGHT_PX;
                    const x = elapsedJumpTime;
                    jumpOffset = (-4 * h / (d * d)) * x * (x - d);
-               } 
+               }
            }
            const hovered = isPlayerHovered(currentWorldMouseX, currentWorldMouseY, entity);
            const heroImg = heroImageRef.current;
 
-           // --- Get Equipment Data --- 
+           // --- Get Equipment Data ---
            const equipment = activeEquipments.get(playerId);
            let itemDef: SpacetimeDBItemDefinition | null = null;
            let itemImg: HTMLImageElement | null = null;
 
-           if (equipment && equipment.equippedItemDefId) { 
+           if (equipment && equipment.equippedItemDefId) {
              itemDef = itemDefinitions.get(equipment.equippedItemDefId.toString()) || null;
              itemImg = (itemDef ? itemImagesRef.current.get(itemDef.iconAssetName) : null) || null;
            }
            const canRenderItem = itemDef && itemImg && itemImg.complete && itemImg.naturalHeight !== 0;
 
-           // --- Conditional Rendering Order --- 
+           // --- Conditional Rendering Order ---
            if (entity.direction === 'left' || entity.direction === 'up') {
               // Draw Item BEHIND Player
               if (canRenderItem && equipment) {
@@ -738,9 +805,26 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
            renderTree(ctx, entity, now_ms);
        } else if (isStone(entity)) {
            renderStone(ctx, entity, now_ms);
+       } else if (isMushroom(entity)) {
+           renderMushroom(ctx, entity, now_ms);
+
+           // --- Render Interaction Prompt --- 
+           if (closestInteractableMushroomIdRef.current === entity.id) {
+              const text = "Press E to Collect";
+              const textX = entity.posX;
+              const textY = entity.posY - 60; // Position above the mushroom (adjust as needed)
+              ctx.fillStyle = "white";
+              ctx.strokeStyle = "black";
+              ctx.lineWidth = 2;
+              ctx.font = '14px "Press Start 2P", cursive';
+              ctx.textAlign = "center";
+              ctx.strokeText(text, textX, textY);
+              ctx.fillText(text, textX, textY);
+           }
+           // --- End Interaction Prompt --- 
        }
     });
-    
+
     // Render placement preview (in world space)
     if (isPlacingCampfire && currentWorldMouseX !== null && currentWorldMouseY !== null && campfireImageRef.current) {
         ctx.globalAlpha = 0.6;
@@ -758,10 +842,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     ctx.restore(); // Restore from world space rendering
 
-    // --- Screen Space Effects --- 
+    // --- Screen Space Effects ---
 
     // 1. Prepare Off-screen Mask
-    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height); 
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
     let overlayRgba = 'transparent';
     if (worldState) {
         overlayRgba = interpolateRgba(worldState.cycleProgress, currentKeyframes);
@@ -777,9 +861,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             const screenX = fire.posX + cameraOffsetX;
             const screenY = fire.posY + cameraOffsetY;
             const radius = CAMPFIRE_LIGHT_RADIUS_BASE; // Use base radius for mask shape
-            
+
             // Create gradient: Opaque white in inner half -> Transparent white at edge
-            const maskGradient = maskCtx.createRadialGradient(screenX, screenY, radius * 0.5, screenX, screenY, radius); 
+            const maskGradient = maskCtx.createRadialGradient(screenX, screenY, radius * 0.5, screenX, screenY, radius);
             maskGradient.addColorStop(0, 'rgba(255, 255, 255, 1)'); // Opaque white starts at 50% radius
             maskGradient.addColorStop(1, 'rgba(255, 255, 255, 0)'); // Transparent white at the edge
 
@@ -788,8 +872,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             maskCtx.arc(screenX, screenY, radius, 0, Math.PI * 2);
             maskCtx.fill();
         });
-        maskCtx.globalCompositeOperation = 'source-over'; // Reset 
-    } 
+        maskCtx.globalCompositeOperation = 'source-over'; // Reset
+    }
 
     // 2. Draw the Masked Overlay onto the main canvas
     if (overlayRgba !== 'transparent' && overlayRgba !== 'rgba(0,0,0,0.00)') {
@@ -800,12 +884,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     campfires.forEach(fire => {
         const screenX = fire.posX + cameraOffsetX;
         const screenY = fire.posY + cameraOffsetY;
-        renderCampfire(ctx, screenX, screenY); 
+        renderCampfire(ctx, screenX, screenY);
     });
 
     // 4. Draw Campfire Light Glow (Additively)
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter'; 
+    ctx.globalCompositeOperation = 'lighter';
     campfires.forEach(fire => {
         const lightScreenX = fire.posX + cameraOffsetX;
         const lightScreenY = fire.posY + cameraOffsetY;
@@ -814,7 +898,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
         // Use the WARNER gradient colors defined earlier
         const lightGradient = ctx.createRadialGradient(lightScreenX, lightScreenY, 0, lightScreenX, lightScreenY, currentLightRadius);
-        lightGradient.addColorStop(0, CAMPFIRE_LIGHT_INNER_COLOR); 
+        lightGradient.addColorStop(0, CAMPFIRE_LIGHT_INNER_COLOR);
         lightGradient.addColorStop(1, CAMPFIRE_LIGHT_OUTER_COLOR);
         ctx.fillStyle = lightGradient;
         ctx.beginPath();
@@ -831,19 +915,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         });
     }
   }, [
-      getLocalPlayer, 
-      drawWorldBackground, 
-      players, 
+      getLocalPlayer,
+      drawWorldBackground,
+      players,
       trees,
       stones,
       campfires,
+      mushrooms, // Add mushrooms to dependencies
       worldState,
       currentKeyframes,
-      localPlayerId, 
-      isMinimapOpen, 
-      isMouseOverMinimap, 
-      canvasSize.width, 
-      canvasSize.height, 
+      localPlayerId,
+      isMinimapOpen,
+      isMouseOverMinimap,
+      canvasSize.width,
+      canvasSize.height,
       animationFrame,
       isPlacingCampfire,
       placementError,
@@ -857,7 +942,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         updatePlayerBasedOnInput();
     }
     // Always render the game world (or background behind death screen)
-    renderGame(); 
+    renderGame();
     requestIdRef.current = requestAnimationFrame(gameLoop);
   }, [updatePlayerBasedOnInput, renderGame]);
 
@@ -866,7 +951,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return () => {
       cancelAnimationFrame(requestIdRef.current);
     };
-  }, [gameLoop]); 
+  }, [gameLoop]);
 
   // Effect to handle window resizing
   useEffect(() => {
@@ -889,7 +974,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     console.log("Requesting respawn via generated function...");
     try {
       // Call the generated reducer function directly
-      connection.reducers.requestRespawn(); 
+      connection.reducers.requestRespawn();
     } catch (err) {
       console.error("Error calling requestRespawn reducer:", err);
       // Handle potential errors during the call itself
@@ -902,7 +987,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const respawnTimestampMs = useMemo(() => {
     if (localPlayer?.isDead && localPlayer.respawnAt) {
       // Use the correct method name and convert BigInt microseconds to number milliseconds
-      return Number(localPlayer.respawnAt.microsSinceUnixEpoch / 1000n); 
+      return Number(localPlayer.respawnAt.microsSinceUnixEpoch / 1000n);
     }
     return 0;
   }, [localPlayer?.isDead, localPlayer?.respawnAt]);
@@ -925,7 +1010,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
       <canvas
         ref={canvasRef}
-        width={canvasSize.width} 
+        width={canvasSize.width}
         height={canvasSize.height}
         style={{ cursor: isInputDisabled.current ? 'default' : 'crosshair' }} // Change cursor when dead
         onContextMenu={isPlacingCampfire ? (e) => e.preventDefault() : undefined}
