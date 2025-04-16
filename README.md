@@ -28,17 +28,22 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 
 **In Progress (🚧):**
 *   Crafting System: Item recipes, crafting stations
+*   Campfire Mechanics: Fueling with wood, indefinite burn (while fueled)
 
 **Planned ([ ]):**
-*   Authentication/Account System
-*   World Generation: Basic tile rendering (Planned: Procedural generation, biomes, monuments)
-*   Advanced AI: Enemy behaviors, pathfinding
-*   Construction System: Walls, floors, structures
-*   Farming System: Planting, growing, harvesting crops
-*   Cooking System: Using campfire/stations to prepare food
-*   More Item Variety: Tools, weapons, armor, resources, consumables
-*   Combat Improvements: More weapon types, better hit detection, PvP balancing
-*   Team/Social Features
+*   **Core Systems & World:**
+    *   Authentication/Account System
+    *   World Generation: Procedural generation, biomes, monuments
+    *   Advanced AI: Enemy behaviors, pathfinding
+    *   Team/Social Features
+*   **Gameplay Loops & Interaction:**
+    *   Construction System: Base building (walls, floors, etc.)
+    *   Farming System: Planting, growing, harvesting crops
+    *   Cooking System: Preparing food using campfire/stations
+*   **Combat & Items:**
+    *   Combat Improvements: New weapon types (melee, hybrid, ranged), improved hit detection, PvP balancing
+    *   Tool/Weapon Durability
+    *   More Item Variety: Expanded tools, weapons, armor, resources, consumables
 
 ## 🛠️ Tech Stack
 
