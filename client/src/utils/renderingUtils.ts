@@ -5,6 +5,8 @@ import { Player as SpacetimeDBPlayer } from '../generated';
 const IDLE_FRAME_INDEX = 1; // Second frame is idle
 const PLAYER_SHAKE_DURATION_MS = 200; // How long the shake lasts
 const PLAYER_SHAKE_AMOUNT_PX = 3;   // Max pixels to offset
+// Defined here as it depends on spriteWidth from config
+const playerRadius = gameConfig.spriteWidth / 2;
 
 // --- Helper Functions --- 
 
@@ -38,7 +40,8 @@ export const isPlayerHovered = (
   const hoverDX = worldMouseX - player.positionX;
   const hoverDY = worldMouseY - player.positionY;
   const distSq = hoverDX * hoverDX + hoverDY * hoverDY;
-  return distSq < (gameConfig.playerRadius * gameConfig.playerRadius);
+  // Use the local playerRadius constant
+  return distSq < (playerRadius * playerRadius);
 };
 
 // Draws the styled name tag (Make exportable)
@@ -103,9 +106,11 @@ export const renderPlayer = (
       const shadowBaseRadiusX = drawWidth * 0.3;
       const shadowBaseRadiusY = shadowBaseRadiusX * 0.4;
       const shadowMaxJumpOffset = 10; 
-      const shadowYOffsetFromJump = jumpOffsetY * (shadowMaxJumpOffset / gameConfig.playerRadius); 
+      // Use the local playerRadius constant here too
+      const shadowYOffsetFromJump = jumpOffsetY * (shadowMaxJumpOffset / playerRadius); 
       const shadowBaseYOffset = drawHeight * 0.4; 
-      const jumpProgress = Math.min(1, jumpOffsetY / gameConfig.playerRadius); 
+      // And here
+      const jumpProgress = Math.min(1, jumpOffsetY / playerRadius); 
       const shadowScale = 1.0 - jumpProgress * 0.4; 
       const shadowOpacity = 0.5 - jumpProgress * 0.3; 
 

@@ -1,15 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css'; // Removed potentially missing import
 import GameCanvas from './components/GameCanvas';
 import PlayerUI from './components/PlayerUI';
+import { DraggedItemInfo, DragSourceSlotInfo } from './components/PlayerUI';
 import Hotbar from './components/Hotbar'; // Import the new Hotbar component
 import githubLogo from '../public/github.png'; // Import the logo
-
-// Import generated bindings (assuming they are in './generated')
-import * as SpacetimeDB from './generated'; // Make sure Stone is exported from here
-// Import base types from the SDK
+import * as SpacetimeDB from './generated';
 import { Identity as SpacetimeDBIdentity } from '@clockworklabs/spacetimedb-sdk';
-// Use generated Player type and generated DbConnection
 const { DbConnection } = SpacetimeDB; 
 
 // SpacetimeDB connection parameters
@@ -50,6 +47,16 @@ function App() {
   const [isPlacingCampfire, setIsPlacingCampfire] = useState<boolean>(false);
   const [placementError, setPlacementError] = useState<string | null>(null); // Error message for placement
   
+  // LIFTED STATE: Custom Drag/Drop State
+  const [draggedItemInfo, setDraggedItemInfo] = useState<DraggedItemInfo | null>(null);
+  // Ref to hold the latest dragged info for callbacks
+  const draggedItemRef = useRef<DraggedItemInfo | null>(null);
+
+  // Effect to keep the ref synchronized with the state
+  useEffect(() => {
+      draggedItemRef.current = draggedItemInfo;
+  }, [draggedItemInfo]);
+
   useEffect(() => {
     // Use generated DbConnection type
     let connectionInstance: SpacetimeDB.DbConnection | null = null; 
@@ -192,8 +199,8 @@ function App() {
     };
 
     const handleTreeUpdate = (ctx: any, oldTree: SpacetimeDB.Tree, newTree: SpacetimeDB.Tree) => {
-      // Simple update for now, replace with more detailed check if needed
-      console.log(`Tree Updated: ${newTree.id}, State: ${newTree.state}, Health: ${newTree.health}`);
+      // Fix log message - Tree no longer has 'state'
+      console.log(`Tree Updated: ${newTree.id}, Health: ${newTree.health}`); 
       setTrees(prev => {
         const newMap = new Map(prev);
         newMap.set(newTree.id.toString(), newTree);
@@ -549,6 +556,19 @@ function App() {
     }
   }, [isConnected]); // Re-run if connection status changes (e.g., disconnect)
   
+  // --- Prevent global context menu --- 
+  useEffect(() => {
+    const handleGlobalContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('contextmenu', handleGlobalContextMenu);
+
+    // Cleanup listener on component unmount
+    return () => {
+      window.removeEventListener('contextmenu', handleGlobalContextMenu);
+    };
+  }, []); // Empty dependency array ensures this runs only once on mount
+  
   // --- Reducer Calls ---
   // Function to call the updatePlayerPosition reducer
   const updatePlayerPosition = (dx: number, dy: number, intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null) => {
@@ -621,6 +641,86 @@ function App() {
     setIsPlacingCampfire(false);
     setPlacementError(null);
   };
+  
+  // --- LIFTED Drag/Drop Handlers --- 
+  const handleItemDragStart = useCallback((info: DraggedItemInfo) => {
+    console.log("[App] Drag Start:", info);
+    setDraggedItemInfo(info); // Set state, which will update the ref via useEffect
+    document.body.classList.add('item-dragging');
+  }, []); // No dependencies needed here
+
+  const handleItemDrop = useCallback((targetSlot: DragSourceSlotInfo | null) => { // Allow null target
+    console.log("[App] Drop Target:", targetSlot);
+    document.body.classList.remove('item-dragging');
+    const sourceInfo = draggedItemRef.current; // <<< Read from the ref
+
+    // Reset the ref immediately after reading, alongside state
+    draggedItemRef.current = null;
+    setDraggedItemInfo(null);
+
+    // 1. Check if drag was actually started (ref had value)
+    if (!sourceInfo) {
+        console.warn("[App] Drop occurred but no source item info found in ref. Clearing state.");
+        return; // Already cleared state above
+    }
+
+    // 2. Check if target is valid (could be null if dropped outside)
+    if (!targetSlot) {
+        console.log("[App] Dropped outside a valid slot.");
+        return; // State already cleared
+    }
+
+    // 3. Check if dropping on self
+    if (sourceInfo.sourceSlot.type === targetSlot.type && sourceInfo.sourceSlot.index === targetSlot.index) {
+        console.log("[App] Drop cancelled: Dropped on self.");
+        return; // State already cleared
+    }
+
+    // 4. Check connection
+    if (!connection?.reducers) { // Check connection availability
+        console.error("[App] Drop failed: Connection unavailable.");
+        return; // State already cleared
+    }
+
+    // --- All checks passed, proceed with reducer ---
+    const itemInstanceId = BigInt(sourceInfo.item.instance.instanceId);
+    console.log(`[App] Processing drop: Item ${itemInstanceId} from ${sourceInfo.sourceSlot.type}:${sourceInfo.sourceSlot.index} to ${targetSlot.type}:${targetSlot.index}`);
+
+    try {
+        // *** NEW: Check for split quantity ***
+        if (sourceInfo.splitQuantity && sourceInfo.splitQuantity > 0) {
+            console.log(`[App] Calling splitStack: Item ${itemInstanceId}, Qty ${sourceInfo.splitQuantity} to ${targetSlot.type}:${targetSlot.index}`);
+            // Convert target index to number for the reducer (which expects u32)
+            const targetIndexNum = typeof targetSlot.index === 'string' ? parseInt(targetSlot.index, 10) : targetSlot.index;
+            if (isNaN(targetIndexNum)) { // Basic check if string index wasn't a number (e.g., equipment slot)
+                 console.error("[App] Split failed: Target index is not a valid number for splitting.");
+                 // Potentially show user error message
+            } else {
+                connection.reducers.splitStack(
+                    itemInstanceId,
+                    sourceInfo.splitQuantity,
+                    targetSlot.type, // "inventory" or "hotbar"
+                    targetIndexNum   // number
+                );
+            }
+        } 
+        // *** Original move/equip logic if not splitting ***
+        else if (targetSlot.type === 'inventory' && typeof targetSlot.index === 'number') {
+            connection.reducers.moveItemToInventory(itemInstanceId, targetSlot.index);
+        } else if (targetSlot.type === 'hotbar' && typeof targetSlot.index === 'number') {
+            connection.reducers.moveItemToHotbar(itemInstanceId, targetSlot.index);
+        } else if (targetSlot.type === 'equipment' && typeof targetSlot.index === 'string') { 
+             console.log(`[App] Calling equipArmorFromDrag: Item ${itemInstanceId} to ${targetSlot.index}`);
+             connection.reducers.equipArmorFromDrag(itemInstanceId, targetSlot.index);
+        } else {
+            console.warn("[App] Unhandled drop target type or index:", targetSlot);
+        }
+    } catch (error) {
+        console.error("[App] Reducer call failed:", error);
+    }
+    // State was cleared at the beginning of the handler after reading the ref
+
+  }, [connection]); // REMOVED draggedItemInfo from dependencies, only need connection
   
   return (
     <div className="App" style={{ backgroundColor: '#111' }}>
@@ -698,6 +798,15 @@ function App() {
           <PlayerUI 
             identity={connection?.identity || null} 
             players={players}
+            inventoryItems={inventoryItems}
+            itemDefinitions={itemDefinitions}
+            connection={connection}
+            startCampfirePlacement={startCampfirePlacement}
+            cancelCampfirePlacement={cancelCampfirePlacement}
+            activeEquipments={activeEquipments}
+            onItemDragStart={handleItemDragStart}
+            onItemDrop={handleItemDrop}
+            draggedItemInfo={draggedItemInfo}
           />
           <GameCanvas
             players={players}
@@ -726,6 +835,9 @@ function App() {
             startCampfirePlacement={startCampfirePlacement}
             cancelCampfirePlacement={cancelCampfirePlacement}
             connection={connection}
+            onItemDragStart={handleItemDragStart}
+            onItemDrop={handleItemDrop}
+            draggedItemInfo={draggedItemInfo}
           />
         </div>
       )}

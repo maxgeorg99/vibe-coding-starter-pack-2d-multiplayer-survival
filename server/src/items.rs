@@ -4,6 +4,7 @@ use log;
 // use crate::active_equipment::{ActiveEquipment};
 // ADD generated table trait import with alias
 use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
+use std::cmp::min;
 
 // --- Item Enums and Structs ---
 
@@ -262,6 +263,18 @@ fn find_item_in_hotbar_slot(ctx: &ReducerContext, slot: u8) -> Option<InventoryI
         .next()
 }
 
+// NEW Helper: Find the first empty inventory slot (0-23 for now)
+fn find_first_empty_inventory_slot(ctx: &ReducerContext) -> Option<u16> {
+    let occupied_slots: std::collections::HashSet<u16> = ctx.db
+        .inventory_item().iter()
+        .filter(|i| i.player_identity == ctx.sender && i.inventory_slot.is_some())
+        .map(|i| i.inventory_slot.unwrap())
+        .collect();
+
+    // Assuming 24 inventory slots (0-23)
+    (0..24).find(|slot| !occupied_slots.contains(slot))
+}
+
 // Helper to clear an item from any equipment slot it might occupy
 fn clear_item_from_equipment_slots(ctx: &ReducerContext, player_id: spacetimedb::Identity, item_instance_id: u64) {
     let active_equip_table = ctx.db.active_equipment();
@@ -293,47 +306,125 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
     log::info!("Attempting to move item {} to inventory slot {}", item_instance_id, target_inventory_slot);
     let mut item_to_move = get_player_item(ctx, item_instance_id)?;
 
+    // --- Pre-fetch definition for potential merge ---
+    let item_def_to_move = ctx.db.item_definition().iter()
+        .find(|def| def.id == item_to_move.item_def_id)
+        .ok_or_else(|| format!("Definition missing for item {}", item_to_move.item_def_id))?;
+
     let source_hotbar_slot = item_to_move.hotbar_slot;
     let source_inventory_slot = item_to_move.inventory_slot;
+    let from_equipment = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
 
-    if source_inventory_slot == Some(target_inventory_slot) { return Ok(()); }
+    // Prevent dropping onto the exact same slot
+    if source_inventory_slot == Some(target_inventory_slot) { 
+        log::info!("Item {} already in target slot {}. No action.", item_instance_id, target_inventory_slot);
+        return Ok(()); 
+    }
 
-    // --- Clear from equipment BEFORE handling swaps/moves --- 
     clear_item_from_equipment_slots(ctx, ctx.sender, item_instance_id);
 
-    // Check if the target slot is occupied
+    let mut operation_complete = false; // Flag to track if merge/swap handled everything
+
     if let Some(mut occupant) = find_item_in_inventory_slot(ctx, target_inventory_slot) {
-        log::info!("Target inventory slot {} is occupied by item {}. Swapping.", target_inventory_slot, occupant.instance_id);
-        // Swap: Move occupant to where item_to_move came from
-        occupant.inventory_slot = source_inventory_slot;
-        occupant.hotbar_slot = source_hotbar_slot;
-        ctx.db.inventory_item().instance_id().update(occupant);
-    } else {
-         // If target inventory slot is empty, check if the item came from the hotbar
-         // and if that original hotbar slot is now occupied by something else (edge case)
+        // Target slot is occupied
+
+        // Prevent merging/swapping with self (shouldn't happen with UI, but good check)
+        if occupant.instance_id == item_to_move.instance_id {
+             log::warn!("Attempted to merge/swap item {} with itself in slot {}. No action.", item_instance_id, target_inventory_slot);
+            return Ok(());
+        }
+
+        // --- Attempt Stack Combine ---
+        if item_def_to_move.is_stackable && item_to_move.item_def_id == occupant.item_def_id {
+            let space_available = item_def_to_move.stack_size.saturating_sub(occupant.quantity);
+            if space_available > 0 {
+                let transfer_qty = min(item_to_move.quantity, space_available);
+                log::info!("[StackCombine Inv] Merging {} item(s) (ID {}) onto stack {} (ID {}).", 
+                         transfer_qty, item_to_move.instance_id, occupant.quantity, occupant.instance_id);
+                         
+                occupant.quantity += transfer_qty;
+                item_to_move.quantity -= transfer_qty;
+
+                // Update target stack, pass clone
+                ctx.db.inventory_item().instance_id().update(occupant.clone()); 
+
+                if item_to_move.quantity == 0 {
+                    log::info!("[StackCombine Inv] Source stack (ID {}) depleted, deleting.", item_to_move.instance_id);
+                    ctx.db.inventory_item().instance_id().delete(item_to_move.instance_id);
+                } else {
+                     log::info!("[StackCombine Inv] Source stack (ID {}) has {} remaining, updating.", item_to_move.instance_id, item_to_move.quantity);
+                    // Update source stack, pass clone
+                    ctx.db.inventory_item().instance_id().update(item_to_move.clone()); 
+                }
+                operation_complete = true; // Merge handled everything
+            } else {
+                log::info!("[StackCombine Inv] Target stack (ID {}) is full.", occupant.instance_id);
+                // Fall through to swap logic
+            }
+        } else {
+             log::info!("[StackCombine Inv] Items cannot be combined (Diff type/Not stackable). Falling back to swap.");
+             // Fall through to swap logic
+        }
+
+        // --- Fallback to Swap Logic (only if merge didn't happen) ---
+        if !operation_complete {
+            log::info!("Performing swap: Target slot {} occupied by item {}. Moving occupant.", target_inventory_slot, occupant.instance_id);
+            if from_equipment {
+                // Move occupant to first available inventory slot
+                if let Some(empty_slot) = find_first_empty_inventory_slot(ctx) {
+                    log::info!("Moving occupant {} to first empty inventory slot: {}", occupant.instance_id, empty_slot);
+                    occupant.inventory_slot = Some(empty_slot);
+                    occupant.hotbar_slot = None;
+                } else {
+                    return Err("Inventory full, cannot swap item.".to_string());
+                }
+            } else {
+                // Move occupant to where item_to_move came from
+                log::info!("Moving occupant {} to source slot (Inv: {:?}, Hotbar: {:?}).", 
+                         occupant.instance_id, source_inventory_slot, source_hotbar_slot);
+                occupant.inventory_slot = source_inventory_slot;
+                occupant.hotbar_slot = source_hotbar_slot;
+            }
+            ctx.db.inventory_item().instance_id().update(occupant); // Update the occupant first
+
+            // Now, explicitly move item_to_move to the target slot
+            item_to_move.inventory_slot = Some(target_inventory_slot);
+            item_to_move.hotbar_slot = None;
+            log::info!("Moving dragged item {} to target slot {}", item_to_move.instance_id, target_inventory_slot);
+            ctx.db.inventory_item().instance_id().update(item_to_move);
+            operation_complete = true; // Swap handled everything
+        }
+
+    } else { 
+        // Target slot is empty - handle edge case where original slot gets filled
         if let Some(hotbar_slot) = source_hotbar_slot {
             if let Some(mut new_hotbar_occupant) = find_item_in_hotbar_slot(ctx, hotbar_slot) {
                  if new_hotbar_occupant.instance_id != item_instance_id {
                      log::warn!("Item {} moved from hotbar slot {} but another item {} now occupies it. Moving {} to first available slot.", item_instance_id, hotbar_slot, new_hotbar_occupant.instance_id, new_hotbar_occupant.instance_id);
-                     // Ideally find the first empty inventory slot for new_hotbar_occupant
-                     // For simplicity now, we might just clear its hotbar slot, or error
-                     new_hotbar_occupant.hotbar_slot = None;
+                     if let Some(empty_slot) = find_first_empty_inventory_slot(ctx) {
+                          new_hotbar_occupant.inventory_slot = Some(empty_slot);
+                          new_hotbar_occupant.hotbar_slot = None;
+                     } else {
+                          new_hotbar_occupant.hotbar_slot = None;
+                          log::error!("Inventory full, cannot find slot for displaced hotbar item {}. Clearing its slot.", new_hotbar_occupant.instance_id);
+                     }
                      ctx.db.inventory_item().instance_id().update(new_hotbar_occupant);
                  }
             }
         }
+         // No merge or swap needed, just move the item to the empty target slot
+        item_to_move.inventory_slot = Some(target_inventory_slot);
+        item_to_move.hotbar_slot = None;
+        log::info!("Moving item {} to empty inventory slot {}", item_to_move.instance_id, target_inventory_slot);
+        ctx.db.inventory_item().instance_id().update(item_to_move);
+        operation_complete = true;
     }
 
-    // Move the item into the inventory slot
-    item_to_move.inventory_slot = Some(target_inventory_slot);
-    item_to_move.hotbar_slot = None;
-
-    // Log the state RIGHT BEFORE update
-    log::info!("[Reducer Debug] Updating item instance {} with data: {:?}",
-             item_to_move.instance_id, // Use the ID from the struct itself
-             item_to_move);
-
-    ctx.db.inventory_item().instance_id().update(item_to_move);
+    if !operation_complete {
+        // This should ideally not be reached if logic is correct, but as a fallback
+        log::error!("Item move to inventory slot {} failed to complete via merge, swap, or direct move.", target_inventory_slot);
+        return Err("Failed to move item: Unknown state.".to_string());
+    }
 
     Ok(())
 }
@@ -343,45 +434,125 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
      log::info!("Attempting to move item {} to hotbar slot {}", item_instance_id, target_hotbar_slot);
     let mut item_to_move = get_player_item(ctx, item_instance_id)?;
 
+    // --- Pre-fetch definition for potential merge ---
+    let item_def_to_move = ctx.db.item_definition().iter()
+        .find(|def| def.id == item_to_move.item_def_id)
+        .ok_or_else(|| format!("Definition missing for item {}", item_to_move.item_def_id))?;
+
     let source_hotbar_slot = item_to_move.hotbar_slot;
     let source_inventory_slot = item_to_move.inventory_slot;
+    let from_equipment = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
 
-     if source_hotbar_slot == Some(target_hotbar_slot) { return Ok(()); }
-     
-    // --- Clear from equipment BEFORE handling swaps/moves --- 
+    // Prevent dropping onto the exact same slot
+     if source_hotbar_slot == Some(target_hotbar_slot) { 
+        log::info!("Item {} already in target hotbar slot {}. No action.", item_instance_id, target_hotbar_slot);
+        return Ok(()); 
+     }
+
     clear_item_from_equipment_slots(ctx, ctx.sender, item_instance_id);
 
-    // Check if the target slot is occupied
+    let mut operation_complete = false; // Flag to track if merge/swap handled everything
+
     if let Some(mut occupant) = find_item_in_hotbar_slot(ctx, target_hotbar_slot) {
-        log::info!("Target hotbar slot {} is occupied by item {}. Swapping.", target_hotbar_slot, occupant.instance_id);
-        // Swap: Move occupant to where item_to_move came from
-        occupant.inventory_slot = source_inventory_slot;
-        occupant.hotbar_slot = source_hotbar_slot;
-        ctx.db.inventory_item().instance_id().update(occupant);
-    } else {
-        // If target hotbar slot is empty, check if the item came from inventory
-        // and if that original inventory slot is now occupied (edge case)
+        // Target slot is occupied
+
+        // Prevent merging/swapping with self
+        if occupant.instance_id == item_to_move.instance_id {
+            log::warn!("Attempted to merge/swap item {} with itself in hotbar slot {}. No action.", item_instance_id, target_hotbar_slot);
+            return Ok(());
+        }
+
+        // --- Attempt Stack Combine ---
+        if item_def_to_move.is_stackable && item_to_move.item_def_id == occupant.item_def_id {
+             let space_available = item_def_to_move.stack_size.saturating_sub(occupant.quantity);
+             if space_available > 0 {
+                let transfer_qty = min(item_to_move.quantity, space_available);
+                log::info!("[StackCombine Hotbar] Merging {} item(s) (ID {}) onto stack {} (ID {}).", 
+                         transfer_qty, item_to_move.instance_id, occupant.quantity, occupant.instance_id);
+                
+                occupant.quantity += transfer_qty;
+                item_to_move.quantity -= transfer_qty;
+
+                // Update target stack, pass clone
+                ctx.db.inventory_item().instance_id().update(occupant.clone()); 
+
+                if item_to_move.quantity == 0 {
+                    log::info!("[StackCombine Hotbar] Source stack (ID {}) depleted, deleting.", item_to_move.instance_id);
+                    ctx.db.inventory_item().instance_id().delete(item_to_move.instance_id);
+                } else {
+                    log::info!("[StackCombine Hotbar] Source stack (ID {}) has {} remaining, updating.", item_to_move.instance_id, item_to_move.quantity);
+                    // Update source stack, pass clone
+                    ctx.db.inventory_item().instance_id().update(item_to_move.clone()); 
+                }
+                operation_complete = true; // Merge handled everything
+            } else {
+                log::info!("[StackCombine Hotbar] Target stack (ID {}) is full.", occupant.instance_id);
+                // Fall through to swap logic
+            }
+        } else {
+             log::info!("[StackCombine Hotbar] Items cannot be combined (Diff type/Not stackable). Falling back to swap.");
+             // Fall through to swap logic
+        }
+        
+        // --- Fallback to Swap Logic (only if merge didn't happen) ---
+        if !operation_complete {
+            log::info!("Performing swap: Target hotbar slot {} occupied by item {}. Moving occupant.", target_hotbar_slot, occupant.instance_id);
+            if from_equipment {
+                // Move occupant to first available inventory slot
+                if let Some(empty_slot) = find_first_empty_inventory_slot(ctx) {
+                    log::info!("Moving occupant {} to first empty inventory slot: {}", occupant.instance_id, empty_slot);
+                    occupant.inventory_slot = Some(empty_slot);
+                    occupant.hotbar_slot = None;
+                } else {
+                    return Err("Inventory full, cannot swap item.".to_string());
+                }
+            } else {
+                // Move occupant to where item_to_move came from
+                log::info!("Moving occupant {} to source slot (Inv: {:?}, Hotbar: {:?}).", 
+                         occupant.instance_id, source_inventory_slot, source_hotbar_slot);
+                occupant.inventory_slot = source_inventory_slot;
+                occupant.hotbar_slot = source_hotbar_slot;
+            }
+            ctx.db.inventory_item().instance_id().update(occupant); // Update the occupant first
+
+            // Now, explicitly move item_to_move to the target slot
+            item_to_move.inventory_slot = None;
+            item_to_move.hotbar_slot = Some(target_hotbar_slot);
+            log::info!("Moving dragged item {} to target hotbar slot {}", item_to_move.instance_id, target_hotbar_slot);
+            ctx.db.inventory_item().instance_id().update(item_to_move);
+            operation_complete = true; // Swap handled everything
+        }
+
+    } else { // Target slot is empty
+        // (Existing logic for handling edge case where original slot gets filled)
         if let Some(inv_slot) = source_inventory_slot {
             if let Some(mut new_inv_occupant) = find_item_in_inventory_slot(ctx, inv_slot) {
                  if new_inv_occupant.instance_id != item_instance_id {
                     log::warn!("Item {} moved from inventory slot {} but another item {} now occupies it. Moving {} to first available slot.", item_instance_id, inv_slot, new_inv_occupant.instance_id, new_inv_occupant.instance_id);
-                    new_inv_occupant.inventory_slot = None;
+                     if let Some(empty_slot) = find_first_empty_inventory_slot(ctx) {
+                          new_inv_occupant.inventory_slot = Some(empty_slot);
+                          new_inv_occupant.hotbar_slot = None;
+                     } else {
+                          new_inv_occupant.inventory_slot = None;
+                          log::error!("Inventory full, cannot find slot for displaced inventory item {}. Clearing its slot.", new_inv_occupant.instance_id);
+                     }
                     ctx.db.inventory_item().instance_id().update(new_inv_occupant);
                  }
             }
         }
+        // No merge or swap needed, just move the item to the empty target slot
+        item_to_move.hotbar_slot = Some(target_hotbar_slot);
+        item_to_move.inventory_slot = None;
+        log::info!("Moving item {} to empty hotbar slot {}", item_to_move.instance_id, target_hotbar_slot);
+        ctx.db.inventory_item().instance_id().update(item_to_move);
+        operation_complete = true;
     }
 
-    // Move the item into the hotbar slot
-    item_to_move.hotbar_slot = Some(target_hotbar_slot);
-    item_to_move.inventory_slot = None;
-
-    // Log the state RIGHT BEFORE update
-    log::info!("[Reducer Debug] Updating item instance {} with data: {:?}",
-             item_to_move.instance_id, // Use the ID from the struct itself
-             item_to_move);
-
-    ctx.db.inventory_item().instance_id().update(item_to_move);
+    if !operation_complete {
+        // Fallback error
+        log::error!("Item move to hotbar slot {} failed to complete via merge, swap, or direct move.", target_hotbar_slot);
+        return Err("Failed to move item: Unknown state.".to_string());
+    }
 
     Ok(())
 }
@@ -396,10 +567,7 @@ pub fn equip_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_hotba
         .next()
         .ok_or_else(|| format!("Definition not found for item ID {}", item_to_equip.item_def_id))?;
 
-    // Validation: Must be equippable and NOT Armor (armor goes to equipment slots, handled separately later)
-    if !item_def.is_equippable {
-        return Err(format!("Item '{}' is not equippable.", item_def.name));
-    }
+    // Validation: Removed is_equippable check. Still check for Armor.
     if item_def.category == ItemCategory::Armor {
          return Err(format!("Cannot equip armor '{}' to hotbar. Use equipment slots.", item_def.name));
     }
@@ -422,4 +590,188 @@ pub fn equip_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_hotba
 
     // Call the move reducer
     move_item_to_hotbar(ctx, item_instance_id, final_target_slot)
+}
+
+// Reducer to equip armor from a drag-and-drop operation
+#[spacetimedb::reducer]
+pub fn equip_armor_from_drag(ctx: &ReducerContext, item_instance_id: u64, target_slot_name: String) -> Result<(), String> {
+    log::info!("[EquipArmorDrag] Attempting to equip item {} to slot {}", item_instance_id, target_slot_name);
+    let mut item_to_equip = get_player_item(ctx, item_instance_id)?;
+
+    // Get item definition
+    let item_def = ctx.db.item_definition().iter()
+        .filter(|def| def.id == item_to_equip.item_def_id)
+        .next()
+        .ok_or_else(|| format!("Definition not found for item ID {}", item_to_equip.item_def_id))?;
+
+    // --- Validations ---
+    // 1. Must be Armor category
+    if item_def.category != ItemCategory::Armor {
+        return Err(format!("Item '{}' is not armor.", item_def.name));
+    }
+    // 2. Must have a defined equipment slot
+    let required_slot_enum = item_def.equipment_slot.ok_or_else(|| format!("Armor '{}' has no defined equipment slot in its definition.", item_def.name))?;
+    // 3. Target slot name must match the item's defined equipment slot
+    let target_slot_enum = match target_slot_name.as_str() {
+        "Head" => EquipmentSlot::Head,
+        "Chest" => EquipmentSlot::Chest,
+        "Legs" => EquipmentSlot::Legs,
+        "Feet" => EquipmentSlot::Feet,
+        "Hands" => EquipmentSlot::Hands,
+        "Back" => EquipmentSlot::Back,
+        _ => return Err(format!("Invalid target equipment slot name: {}", target_slot_name)),
+    };
+    if required_slot_enum != target_slot_enum {
+        return Err(format!("Cannot equip '{}' ({:?}) into {} slot ({:?}).", item_def.name, required_slot_enum, target_slot_name, target_slot_enum));
+    }
+
+    // --- Logic ---
+    let active_equip_table = ctx.db.active_equipment();
+    let mut equip = active_equip_table.player_identity().find(ctx.sender)
+                     .ok_or_else(|| "ActiveEquipment entry not found for player.".to_string())?;
+
+    // Check if something is already in the target slot and unequip it
+    let current_item_in_slot: Option<u64> = match target_slot_enum {
+        EquipmentSlot::Head => equip.head_item_instance_id,
+        EquipmentSlot::Chest => equip.chest_item_instance_id,
+        EquipmentSlot::Legs => equip.legs_item_instance_id,
+        EquipmentSlot::Feet => equip.feet_item_instance_id,
+        EquipmentSlot::Hands => equip.hands_item_instance_id,
+        EquipmentSlot::Back => equip.back_item_instance_id,
+    };
+
+    if let Some(currently_equipped_id) = current_item_in_slot {
+        if currently_equipped_id == item_instance_id { return Ok(()); } // Already equipped
+
+        log::info!("[EquipArmorDrag] Unequipping item {} from slot {:?}", currently_equipped_id, target_slot_enum);
+        // Try to move the currently equipped item to the first available inventory slot
+        match find_first_empty_inventory_slot(ctx) {
+            Some(empty_slot) => {
+                if let Ok(mut currently_equipped_item) = get_player_item(ctx, currently_equipped_id) {
+                    currently_equipped_item.inventory_slot = Some(empty_slot);
+                    currently_equipped_item.hotbar_slot = None;
+                    ctx.db.inventory_item().instance_id().update(currently_equipped_item);
+                    log::info!("[EquipArmorDrag] Moved previously equipped item {} to inventory slot {}", currently_equipped_id, empty_slot);
+                } else {
+                    log::error!("[EquipArmorDrag] Failed to find InventoryItem for previously equipped item {}!", currently_equipped_id);
+                    // Continue anyway, clearing the slot, but log the error
+                }
+            }
+            None => {
+                log::error!("[EquipArmorDrag] Inventory full! Cannot unequip item {} from slot {:?}. Aborting equip.", currently_equipped_id, target_slot_enum);
+                return Err("Inventory full, cannot unequip existing item.".to_string());
+            }
+        }
+    }
+
+    // Equip the new item
+    log::info!("[EquipArmorDrag] Equipping item {} to slot {:?}", item_instance_id, target_slot_enum);
+    match target_slot_enum {
+        EquipmentSlot::Head => equip.head_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Chest => equip.chest_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Legs => equip.legs_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Feet => equip.feet_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Hands => equip.hands_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Back => equip.back_item_instance_id = Some(item_instance_id),
+    };
+
+    // Update ActiveEquipment table
+    active_equip_table.player_identity().update(equip);
+
+    // Clear the inventory/hotbar slot of the equipped item
+    item_to_equip.inventory_slot = None;
+    item_to_equip.hotbar_slot = None;
+    ctx.db.inventory_item().instance_id().update(item_to_equip);
+
+    Ok(())
+}
+
+// Reducer to split a stack of items
+#[spacetimedb::reducer]
+pub fn split_stack(
+    ctx: &ReducerContext,
+    source_item_instance_id: u64,
+    quantity_to_split: u32,        // How many to move to the NEW stack
+    target_slot_type: String,    // "inventory" or "hotbar"
+    target_slot_index: u32,    // Use u32 to accept both potential u8/u16 client values easily
+) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    log::info!(
+        "[SplitStack] Player {:?} attempting to split {} from item {} to {} slot {}",
+        sender_id, quantity_to_split, source_item_instance_id, target_slot_type, target_slot_index
+    );
+
+    // 1. Get the original item stack
+    let mut source_item = get_player_item(ctx, source_item_instance_id)?;
+
+    // 2. Get Item Definition
+    let item_def = ctx.db.item_definition().iter()
+        .find(|def| def.id == source_item.item_def_id)
+        .ok_or_else(|| format!("Definition not found for item ID {}", source_item.item_def_id))?;
+
+    // --- Validations ---
+    // a. Must be stackable
+    if !item_def.is_stackable {
+        return Err(format!("Item '{}' is not stackable.", item_def.name));
+    }
+    // b. Cannot split zero or negative quantity
+    if quantity_to_split == 0 {
+        return Err("Cannot split a quantity of 0.".to_string());
+    }
+    // c. Cannot split more than available (leave at least 1 in original stack)
+    if quantity_to_split >= source_item.quantity {
+        return Err(format!("Cannot split {} items, only {} available.", quantity_to_split, source_item.quantity));
+    }
+    // d. Validate target slot type
+    let target_is_inventory = match target_slot_type.as_str() {
+        "inventory" => true,
+        "hotbar" => false,
+        _ => return Err(format!("Invalid target slot type: {}. Must be 'inventory' or 'hotbar'.", target_slot_type)),
+    };
+    // e. Basic range check for target index (adjust ranges if needed)
+    if target_is_inventory && target_slot_index >= 24 { // Assuming 24 inventory slots (0-23)
+        return Err(format!("Invalid target inventory slot index: {} (must be 0-23).", target_slot_index));
+    }
+    if !target_is_inventory && target_slot_index >= 6 { // Assuming 6 hotbar slots (0-5)
+        return Err(format!("Invalid target hotbar slot index: {} (must be 0-5).", target_slot_index));
+    }
+
+    // --- Check if target slot is empty ---
+    let target_inventory_slot_check = if target_is_inventory { Some(target_slot_index as u16) } else { None };
+    let target_hotbar_slot_check = if !target_is_inventory { Some(target_slot_index as u8) } else { None };
+
+    let target_occupied = ctx.db.inventory_item().iter().any(|i| {
+        i.player_identity == sender_id &&
+        ((target_is_inventory && i.inventory_slot == target_inventory_slot_check) ||
+         (!target_is_inventory && i.hotbar_slot == target_hotbar_slot_check))
+    });
+
+    if target_occupied {
+        return Err(format!("Target {} slot {} is already occupied.", target_slot_type, target_slot_index));
+    }
+
+    // --- Perform the split ---
+
+    // a. Decrease quantity of the source item
+    source_item.quantity -= quantity_to_split;
+    ctx.db.inventory_item().instance_id().update(source_item.clone()); // Update original stack
+
+    // b. Create the new item stack
+    let new_item = InventoryItem {
+        instance_id: 0, // Will be auto-generated
+        player_identity: sender_id,
+        item_def_id: source_item.item_def_id,
+        quantity: quantity_to_split,
+        hotbar_slot: if !target_is_inventory { Some(target_slot_index as u8) } else { None },
+        inventory_slot: if target_is_inventory { Some(target_slot_index as u16) } else { None },
+    };
+    ctx.db.inventory_item().insert(new_item);
+
+    log::info!(
+        "[SplitStack] Successfully split {} of item {} (Def: {}) to {} slot {}. Original stack quantity now {}.",
+        quantity_to_split, source_item_instance_id, source_item.item_def_id, 
+        target_slot_type, target_slot_index, source_item.quantity
+    );
+
+    Ok(())
 } 

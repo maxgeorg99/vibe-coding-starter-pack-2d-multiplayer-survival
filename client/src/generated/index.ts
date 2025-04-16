@@ -34,14 +34,24 @@ import {
 // Import and reexport all reducer arg types
 import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
 export { CheckResourceRespawns };
+import { EquipArmor } from "./equip_armor_reducer.ts";
+export { EquipArmor };
+import { EquipArmorFromDrag } from "./equip_armor_from_drag_reducer.ts";
+export { EquipArmorFromDrag };
 import { EquipItem } from "./equip_item_reducer.ts";
 export { EquipItem };
+import { EquipToHotbar } from "./equip_to_hotbar_reducer.ts";
+export { EquipToHotbar };
 import { IdentityConnected } from "./identity_connected_reducer.ts";
 export { IdentityConnected };
 import { IdentityDisconnected } from "./identity_disconnected_reducer.ts";
 export { IdentityDisconnected };
 import { Jump } from "./jump_reducer.ts";
 export { Jump };
+import { MoveItemToHotbar } from "./move_item_to_hotbar_reducer.ts";
+export { MoveItemToHotbar };
+import { MoveItemToInventory } from "./move_item_to_inventory_reducer.ts";
+export { MoveItemToInventory };
 import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
 import { RegisterPlayer } from "./register_player_reducer.ts";
@@ -56,6 +66,8 @@ import { SeedWorldState } from "./seed_world_state_reducer.ts";
 export { SeedWorldState };
 import { SetSprinting } from "./set_sprinting_reducer.ts";
 export { SetSprinting };
+import { SplitStack } from "./split_stack_reducer.ts";
+export { SplitStack };
 import { TickWorldState } from "./tick_world_state_reducer.ts";
 export { TickWorldState };
 import { UnequipItem } from "./unequip_item_reducer.ts";
@@ -88,6 +100,8 @@ import { ActiveEquipment } from "./active_equipment_type.ts";
 export { ActiveEquipment };
 import { Campfire } from "./campfire_type.ts";
 export { Campfire };
+import { EquipmentSlot } from "./equipment_slot_type.ts";
+export { EquipmentSlot };
 import { InventoryItem } from "./inventory_item_type.ts";
 export { InventoryItem };
 import { ItemCategory } from "./item_category_type.ts";
@@ -155,9 +169,21 @@ const REMOTE_MODULE = {
       reducerName: "check_resource_respawns",
       argsType: CheckResourceRespawns.getTypeScriptAlgebraicType(),
     },
+    equip_armor: {
+      reducerName: "equip_armor",
+      argsType: EquipArmor.getTypeScriptAlgebraicType(),
+    },
+    equip_armor_from_drag: {
+      reducerName: "equip_armor_from_drag",
+      argsType: EquipArmorFromDrag.getTypeScriptAlgebraicType(),
+    },
     equip_item: {
       reducerName: "equip_item",
       argsType: EquipItem.getTypeScriptAlgebraicType(),
+    },
+    equip_to_hotbar: {
+      reducerName: "equip_to_hotbar",
+      argsType: EquipToHotbar.getTypeScriptAlgebraicType(),
     },
     identity_connected: {
       reducerName: "identity_connected",
@@ -170,6 +196,14 @@ const REMOTE_MODULE = {
     jump: {
       reducerName: "jump",
       argsType: Jump.getTypeScriptAlgebraicType(),
+    },
+    move_item_to_hotbar: {
+      reducerName: "move_item_to_hotbar",
+      argsType: MoveItemToHotbar.getTypeScriptAlgebraicType(),
+    },
+    move_item_to_inventory: {
+      reducerName: "move_item_to_inventory",
+      argsType: MoveItemToInventory.getTypeScriptAlgebraicType(),
     },
     place_campfire: {
       reducerName: "place_campfire",
@@ -198,6 +232,10 @@ const REMOTE_MODULE = {
     set_sprinting: {
       reducerName: "set_sprinting",
       argsType: SetSprinting.getTypeScriptAlgebraicType(),
+    },
+    split_stack: {
+      reducerName: "split_stack",
+      argsType: SplitStack.getTypeScriptAlgebraicType(),
     },
     tick_world_state: {
       reducerName: "tick_world_state",
@@ -243,10 +281,15 @@ const REMOTE_MODULE = {
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
+| { name: "EquipArmor", args: EquipArmor }
+| { name: "EquipArmorFromDrag", args: EquipArmorFromDrag }
 | { name: "EquipItem", args: EquipItem }
+| { name: "EquipToHotbar", args: EquipToHotbar }
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
 | { name: "Jump", args: Jump }
+| { name: "MoveItemToHotbar", args: MoveItemToHotbar }
+| { name: "MoveItemToInventory", args: MoveItemToInventory }
 | { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RequestRespawn", args: RequestRespawn }
@@ -254,6 +297,7 @@ export type Reducer = never
 | { name: "SeedItems", args: SeedItems }
 | { name: "SeedWorldState", args: SeedWorldState }
 | { name: "SetSprinting", args: SetSprinting }
+| { name: "SplitStack", args: SplitStack }
 | { name: "TickWorldState", args: TickWorldState }
 | { name: "UnequipItem", args: UnequipItem }
 | { name: "UpdatePlayerPosition", args: UpdatePlayerPosition }
@@ -275,6 +319,38 @@ export class RemoteReducers {
     this.connection.offReducer("check_resource_respawns", callback);
   }
 
+  equipArmor(itemInstanceId: bigint) {
+    const __args = { itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    EquipArmor.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("equip_armor", __argsBuffer, this.setCallReducerFlags.equipArmorFlags);
+  }
+
+  onEquipArmor(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("equip_armor", callback);
+  }
+
+  removeOnEquipArmor(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("equip_armor", callback);
+  }
+
+  equipArmorFromDrag(itemInstanceId: bigint, targetSlotName: string) {
+    const __args = { itemInstanceId, targetSlotName };
+    let __writer = new BinaryWriter(1024);
+    EquipArmorFromDrag.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("equip_armor_from_drag", __argsBuffer, this.setCallReducerFlags.equipArmorFromDragFlags);
+  }
+
+  onEquipArmorFromDrag(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetSlotName: string) => void) {
+    this.connection.onReducer("equip_armor_from_drag", callback);
+  }
+
+  removeOnEquipArmorFromDrag(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetSlotName: string) => void) {
+    this.connection.offReducer("equip_armor_from_drag", callback);
+  }
+
   equipItem(itemInstanceId: bigint) {
     const __args = { itemInstanceId };
     let __writer = new BinaryWriter(1024);
@@ -289,6 +365,22 @@ export class RemoteReducers {
 
   removeOnEquipItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
     this.connection.offReducer("equip_item", callback);
+  }
+
+  equipToHotbar(itemInstanceId: bigint, targetHotbarSlot: number | undefined) {
+    const __args = { itemInstanceId, targetHotbarSlot };
+    let __writer = new BinaryWriter(1024);
+    EquipToHotbar.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("equip_to_hotbar", __argsBuffer, this.setCallReducerFlags.equipToHotbarFlags);
+  }
+
+  onEquipToHotbar(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetHotbarSlot: number | undefined) => void) {
+    this.connection.onReducer("equip_to_hotbar", callback);
+  }
+
+  removeOnEquipToHotbar(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetHotbarSlot: number | undefined) => void) {
+    this.connection.offReducer("equip_to_hotbar", callback);
   }
 
   onIdentityConnected(callback: (ctx: ReducerEventContext) => void) {
@@ -317,6 +409,38 @@ export class RemoteReducers {
 
   removeOnJump(callback: (ctx: ReducerEventContext) => void) {
     this.connection.offReducer("jump", callback);
+  }
+
+  moveItemToHotbar(itemInstanceId: bigint, targetHotbarSlot: number) {
+    const __args = { itemInstanceId, targetHotbarSlot };
+    let __writer = new BinaryWriter(1024);
+    MoveItemToHotbar.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_item_to_hotbar", __argsBuffer, this.setCallReducerFlags.moveItemToHotbarFlags);
+  }
+
+  onMoveItemToHotbar(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetHotbarSlot: number) => void) {
+    this.connection.onReducer("move_item_to_hotbar", callback);
+  }
+
+  removeOnMoveItemToHotbar(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetHotbarSlot: number) => void) {
+    this.connection.offReducer("move_item_to_hotbar", callback);
+  }
+
+  moveItemToInventory(itemInstanceId: bigint, targetInventorySlot: number) {
+    const __args = { itemInstanceId, targetInventorySlot };
+    let __writer = new BinaryWriter(1024);
+    MoveItemToInventory.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_item_to_inventory", __argsBuffer, this.setCallReducerFlags.moveItemToInventoryFlags);
+  }
+
+  onMoveItemToInventory(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetInventorySlot: number) => void) {
+    this.connection.onReducer("move_item_to_inventory", callback);
+  }
+
+  removeOnMoveItemToInventory(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetInventorySlot: number) => void) {
+    this.connection.offReducer("move_item_to_inventory", callback);
   }
 
   placeCampfire(targetX: number, targetY: number) {
@@ -415,6 +539,22 @@ export class RemoteReducers {
     this.connection.offReducer("set_sprinting", callback);
   }
 
+  splitStack(sourceItemInstanceId: bigint, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) {
+    const __args = { sourceItemInstanceId, quantityToSplit, targetSlotType, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    SplitStack.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_stack", __argsBuffer, this.setCallReducerFlags.splitStackFlags);
+  }
+
+  onSplitStack(callback: (ctx: ReducerEventContext, sourceItemInstanceId: bigint, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.onReducer("split_stack", callback);
+  }
+
+  removeOnSplitStack(callback: (ctx: ReducerEventContext, sourceItemInstanceId: bigint, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.offReducer("split_stack", callback);
+  }
+
   tickWorldState(timestamp: Timestamp) {
     const __args = { timestamp };
     let __writer = new BinaryWriter(1024);
@@ -479,14 +619,39 @@ export class SetReducerFlags {
     this.checkResourceRespawnsFlags = flags;
   }
 
+  equipArmorFlags: CallReducerFlags = 'FullUpdate';
+  equipArmor(flags: CallReducerFlags) {
+    this.equipArmorFlags = flags;
+  }
+
+  equipArmorFromDragFlags: CallReducerFlags = 'FullUpdate';
+  equipArmorFromDrag(flags: CallReducerFlags) {
+    this.equipArmorFromDragFlags = flags;
+  }
+
   equipItemFlags: CallReducerFlags = 'FullUpdate';
   equipItem(flags: CallReducerFlags) {
     this.equipItemFlags = flags;
   }
 
+  equipToHotbarFlags: CallReducerFlags = 'FullUpdate';
+  equipToHotbar(flags: CallReducerFlags) {
+    this.equipToHotbarFlags = flags;
+  }
+
   jumpFlags: CallReducerFlags = 'FullUpdate';
   jump(flags: CallReducerFlags) {
     this.jumpFlags = flags;
+  }
+
+  moveItemToHotbarFlags: CallReducerFlags = 'FullUpdate';
+  moveItemToHotbar(flags: CallReducerFlags) {
+    this.moveItemToHotbarFlags = flags;
+  }
+
+  moveItemToInventoryFlags: CallReducerFlags = 'FullUpdate';
+  moveItemToInventory(flags: CallReducerFlags) {
+    this.moveItemToInventoryFlags = flags;
   }
 
   placeCampfireFlags: CallReducerFlags = 'FullUpdate';
@@ -522,6 +687,11 @@ export class SetReducerFlags {
   setSprintingFlags: CallReducerFlags = 'FullUpdate';
   setSprinting(flags: CallReducerFlags) {
     this.setSprintingFlags = flags;
+  }
+
+  splitStackFlags: CallReducerFlags = 'FullUpdate';
+  splitStack(flags: CallReducerFlags) {
+    this.splitStackFlags = flags;
   }
 
   tickWorldStateFlags: CallReducerFlags = 'FullUpdate';

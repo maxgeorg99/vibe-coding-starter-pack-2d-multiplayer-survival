@@ -424,11 +424,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     
     let dx = 0;
     let dy = 0;
-    const speed = gameConfig.playerSpeed; // Use base speed
+    const speed = 5; // Use base speed
     let intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null; // Initialize intended direction
     
-    // Handle WASD movement to calculate deltas AND determine intended direction
-    // Prioritize last key check for direction (e.g., pressing D after W makes direction 'right')
+    // Handle WASD movement to determine direction and base delta
+    // We send 1 or -1 to indicate direction, server calculates actual distance
     if (keysPressed.current.has('w') || keysPressed.current.has('arrowup')) {
       dy -= speed;
       intendedDirection = 'up';
@@ -449,12 +449,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Normalize diagonal movement (optional but good practice)
     if (dx !== 0 && dy !== 0) {
         const magnitude = Math.sqrt(dx * dx + dy * dy);
-        dx = (dx / magnitude) * speed;
-        dy = (dy / magnitude) * speed;
+        dx = (dx / magnitude) * 5;
+        dy = (dy / magnitude) * 5;
     }
 
     // Always call updatePlayerPosition to allow server to process passive changes (like stamina regen) AND direction changes
     // Pass intendedDirection as the third argument
+    // Send the normalized (or 0, +/-1) dx/dy values
     updatePlayerPosition(dx, dy, intendedDirection);
     // Client no longer calculates absolute position or checks boundaries
 

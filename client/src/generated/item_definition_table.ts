@@ -32,6 +32,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { ItemDefinition } from "./item_definition_type";
 import { ItemCategory as __ItemCategory } from "./item_category_type";
+import { EquipmentSlot as __EquipmentSlot } from "./equipment_slot_type";
 
 import { EventContext, Reducer, RemoteReducers, RemoteTables } from ".";
 

@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ItemDefinition, InventoryItem, DbConnection } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
-import { itemIcons } from '../utils/itemIconUtils';
+
+// Import Custom Components
+import DraggableItem from './DraggableItem';
+import DroppableSlot from './DroppableSlot';
+
+// Import shared types
+import { PopulatedItem } from './InventoryUI'; // Assuming PopulatedItem is exported from InventoryUI
+import { DragSourceSlotInfo, DraggedItemInfo } from './PlayerUI'; // Assuming types are exported from PlayerUI
 
 // Style constants similar to PlayerUI
 const UI_BG_COLOR = 'rgba(40, 40, 60, 0.85)';
@@ -12,184 +19,158 @@ const SLOT_SIZE = 60; // Size of each hotbar slot in pixels
 const SLOT_MARGIN = 6;
 const SELECTED_BORDER_COLOR = '#ffffff';
 
-// Define the props the Hotbar component expects
+// Update HotbarProps
 interface HotbarProps {
   playerIdentity: Identity | null;
   itemDefinitions: Map<string, ItemDefinition>;
   inventoryItems: Map<string, InventoryItem>;
-  startCampfirePlacement: () => void; // Add prop for starting placement
-  cancelCampfirePlacement: () => void; // Add prop for cancelling placement
-  connection: DbConnection | null; // Add connection prop
+  startCampfirePlacement: () => void;
+  cancelCampfirePlacement: () => void;
+  connection: DbConnection | null;
+  // Add props for custom drag/drop handlers
+  onItemDragStart: (info: DraggedItemInfo) => void; // Required
+  onItemDrop: (targetSlotInfo: DragSourceSlotInfo | null) => void; // Required
+  draggedItemInfo: DraggedItemInfo | null; // Required
 }
 
-const Hotbar: React.FC<HotbarProps> = ({ 
-  playerIdentity, 
-  itemDefinitions, 
-  inventoryItems, 
-  startCampfirePlacement, // Receive the prop
-  cancelCampfirePlacement, // Receive the prop
-  connection // Receive the prop
+// --- Hotbar Component ---
+const Hotbar: React.FC<HotbarProps> = ({
+    playerIdentity,
+    itemDefinitions,
+    inventoryItems,
+    startCampfirePlacement,
+    cancelCampfirePlacement,
+    connection,
+    onItemDragStart,
+    onItemDrop,
+    draggedItemInfo,
 }) => {
   // console.log("Hotbar Props:", { playerIdentity, itemDefinitions, inventoryItems }); // Log received props
   const [selectedSlot, setSelectedSlot] = useState<number>(0); // 0-indexed (0-5)
   const numSlots = 6;
+  const currentInventoryItems = inventoryItems || new Map<string, InventoryItem>();
+  const currentItemDefinitions = itemDefinitions || new Map<string, ItemDefinition>();
 
-  // Helper function to find the item for a specific hotbar slot
-  const findItemForSlot = (slotIndex: number, identity: Identity | null, items: Map<string, InventoryItem>): InventoryItem | null => {
-    if (!identity) return null;
-    for (const item of items.values()) {
-      if (item.playerIdentity.isEqual(identity) && item.hotbarSlot === slotIndex) {
-        return item;
+  // Updated findItemForSlot to return PopulatedItem, wrapped in useCallback
+  const findItemForSlot = useCallback((slotIndex: number): PopulatedItem | null => {
+    if (!playerIdentity) return null;
+    // Use props directly inside useCallback dependencies
+    for (const itemInstance of inventoryItems.values()) { 
+      if (itemInstance.playerIdentity.isEqual(playerIdentity) && itemInstance.hotbarSlot === slotIndex) {
+        const definition = itemDefinitions.get(itemInstance.itemDefId.toString());
+        if (definition) {
+            return { instance: itemInstance, definition };
+        }
       }
     }
     return null;
-  };
+  }, [playerIdentity, inventoryItems, itemDefinitions]); // Dependencies for useCallback
 
   // Find the currently selected item
-  const selectedInventoryItem = findItemForSlot(selectedSlot, playerIdentity, inventoryItems);
-  const selectedItemDef = selectedInventoryItem ? itemDefinitions.get(selectedInventoryItem.itemDefId.toString()) : null;
+  const selectedInventoryItem = findItemForSlot(selectedSlot);
+  const selectedItemDef = selectedInventoryItem ? itemDefinitions.get(selectedInventoryItem.instance.itemDefId.toString()) : null;
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const keyNum = parseInt(event.key);
-      if (!isNaN(keyNum) && keyNum >= 1 && keyNum <= numSlots) {
-        const newSlotIndex = keyNum - 1; // Adjust to 0-based index
-        setSelectedSlot(newSlotIndex);
-
-        const itemInNewSlot = findItemForSlot(newSlotIndex, playerIdentity, inventoryItems);
-        const itemDefInNewSlot = itemInNewSlot ? itemDefinitions.get(itemInNewSlot.itemDefId.toString()) : null;
-
-        if (connection?.reducers) {
-          if (itemDefInNewSlot?.name === 'Camp Fire') {
-            // Special case: Campfire - Start placement, unequip others
-            console.log(`Hotbar Key ${keyNum}: Starting campfire placement.`);
-            startCampfirePlacement(); 
-            try {
-              connection.reducers.unequipItem();
-            } catch (err) {
-              console.error("Error calling unequipItem for campfire selection:", err);
-            }
-          } else if (itemInNewSlot && itemDefInNewSlot?.isEquippable) {
-            // Equippable item (not campfire) - Equip it, cancel placement
-            console.log(`Hotbar Key ${keyNum}: Equipping item instance ${itemInNewSlot.instanceId} (${itemDefInNewSlot.name})`);
-            cancelCampfirePlacement(); // Cancel placement if switching to a tool
-            try {
-              connection.reducers.equipItem(BigInt(itemInNewSlot.instanceId)); 
-            } catch (err) {
-              console.error("Error calling equipItem reducer:", err);
-            }
-          } else {
-            // Empty slot or non-equippable item - Unequip, cancel placement
-            console.log(`Hotbar Key ${keyNum}: Slot empty or non-equippable, unequipping.`);
-            cancelCampfirePlacement();
-            try {
-              connection.reducers.unequipItem();
-            } catch (err) {
-              console.error("Error calling unequipItem reducer:", err);
-            }
-          }
-        } else {
-           console.warn("Cannot equip/unequip: Connection or reducers not available.");
-        }
-      }
-    };
-
-    const handleWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const delta = Math.sign(event.deltaY);
-      let newSlotIndex = -1;
-
-      setSelectedSlot(prev => {
-        let nextSlot = prev + delta;
-        if (nextSlot < 0) nextSlot = numSlots - 1;
-        else if (nextSlot >= numSlots) nextSlot = 0;
-        newSlotIndex = nextSlot;
-        return nextSlot;
+  // Define handleKeyDown with useCallback
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    const inventoryPanel = document.querySelector('.inventoryPanel');
+    if (inventoryPanel) return;
+    const keyNum = parseInt(event.key);
+    if (!isNaN(keyNum) && keyNum >= 1 && keyNum <= numSlots) {
+      const newSlotIndex = keyNum - 1;
+      // Use functional update form (or direct, both should work now)
+      setSelectedSlot(prevSlot => {
+          console.log(`[Hotbar KeyDown Handler] Updating slot from ${prevSlot} to ${newSlotIndex}`);
+          return newSlotIndex;
       });
-
-      // Use setTimeout to ensure state update is processed before checking item
-      setTimeout(() => {
-        if (newSlotIndex !== -1 && connection?.reducers) {
-          const itemInNewSlot = findItemForSlot(newSlotIndex, playerIdentity, inventoryItems);
-          const itemDefInNewSlot = itemInNewSlot ? itemDefinitions.get(itemInNewSlot.itemDefId.toString()) : null;
-
-          if (itemDefInNewSlot?.name === 'Camp Fire') {
-            console.log(`Hotbar Wheel: Starting campfire placement (Slot ${newSlotIndex + 1}).`);
+      // Find item for equipping logic
+      const itemInNewSlot = findItemForSlot(newSlotIndex);
+      if (connection?.reducers) {
+        if (itemInNewSlot?.definition?.category.tag === 'Armor') {
+             console.log(`Hotbar Key ${keyNum}: Equipping ARMOR instance ${itemInNewSlot.instance.instanceId} (${itemInNewSlot.definition.name})`);
+             cancelCampfirePlacement();
+             try { connection.reducers.equipArmor(BigInt(itemInNewSlot.instance.instanceId)); } catch (err) { console.error("Error equipArmor:", err); }
+        } else if (itemInNewSlot?.definition?.name === 'Camp Fire') {
+            console.log(`Hotbar Key ${keyNum}: Starting campfire placement.`);
             startCampfirePlacement();
-            try {
-              connection.reducers.unequipItem();
-            } catch (err) {
-              console.error("Error calling unequipItem for campfire selection:", err);
-            }
-          } else if (itemInNewSlot && itemDefInNewSlot?.isEquippable) {
-            console.log(`Hotbar Wheel: Equipping item instance ${itemInNewSlot.instanceId} (${itemDefInNewSlot.name}) in slot ${newSlotIndex + 1}`);
+            try { connection.reducers.unequipItem(); } catch (err) { console.error("Error unequip:", err); }
+        } else if (itemInNewSlot && itemInNewSlot.definition?.isEquippable) {
+            console.log(`Hotbar Key ${keyNum}: Equipping item instance ${itemInNewSlot.instance.instanceId} (${itemInNewSlot.definition.name})`);
             cancelCampfirePlacement();
-            try {
-              connection.reducers.equipItem(BigInt(itemInNewSlot.instanceId)); 
-            } catch (err) {
-              console.error("Error calling equipItem reducer:", err);
-            }
-          } else {
-            console.log(`Hotbar Wheel: Slot ${newSlotIndex + 1} empty or non-equippable, unequipping.`);
+            try { connection.reducers.equipItem(BigInt(itemInNewSlot.instance.instanceId)); } catch (err) { console.error("Error equip:", err); }
+        } else {
+            console.log(`Hotbar Key ${keyNum}: Slot empty or non-equippable/non-armor, unequipping.`);
             cancelCampfirePlacement();
-            try {
-              connection.reducers.unequipItem();
-            } catch (err) {
-              console.error("Error calling unequipItem reducer:", err);
-            }
-          }
-        } else if (newSlotIndex !== -1) {
-           console.warn("Cannot equip/unequip via wheel: Connection or reducers not available.");
+            try { connection.reducers.unequipItem(); } catch (err) { console.error("Error unequip:", err); }
         }
-      }, 0);
-    };
+      } else {
+         console.warn("No connection/reducers for keydown equip");
+      }
+    }
+  }, [numSlots, findItemForSlot, connection, startCampfirePlacement, cancelCampfirePlacement]);
 
+  // Effect for handling hotbar interaction (keyboard only now)
+  useEffect(() => {
+    // Add the memoized listener
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('wheel', handleWheel, { passive: false });
 
+    // Remove the memoized listener on cleanup
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('wheel', handleWheel);
     };
-    // Add dependencies: Need to re-run if inventory/definitions change to correctly check the new item
-  }, [numSlots, playerIdentity, inventoryItems, itemDefinitions, startCampfirePlacement, cancelCampfirePlacement]);
+    // Only depend on the memoized handler function
+  }, [handleKeyDown]);
 
   // --- Click Handler for Slots --- 
   const handleSlotClick = (index: number) => {
       setSelectedSlot(index);
-      const clickedItem = findItemForSlot(index, playerIdentity, inventoryItems);
-      const clickedItemDef = clickedItem ? itemDefinitions.get(clickedItem.itemDefId.toString()) : null;
-
+      const clickedItem = findItemForSlot(index);
       if (connection?.reducers) {
-        if (clickedItemDef?.name === 'Camp Fire') {
+        if (clickedItem?.definition?.category.tag === 'Armor') {
+             console.log(`Hotbar Click: Equipping ARMOR instance ${clickedItem.instance.instanceId} (${clickedItem.definition.name}) in slot ${index + 1}`);
+             cancelCampfirePlacement();
+             try { connection.reducers.equipArmor(BigInt(clickedItem.instance.instanceId)); } catch (err) { console.error("Error equipArmor:", err); }
+        } else if (clickedItem?.definition?.name === 'Camp Fire') {
           console.log(`Hotbar Click: Starting campfire placement (Slot ${index + 1}).`);
           startCampfirePlacement();
-          try {
-            connection.reducers.unequipItem();
-          } catch (err) {
-            console.error("Error calling unequipItem for campfire selection:", err);
-          }
-        } else if (clickedItem && clickedItemDef?.isEquippable) {
-          console.log(`Hotbar Click: Equipping item instance ${clickedItem.instanceId} (${clickedItemDef.name}) in slot ${index + 1}`);
+          try { connection.reducers.unequipItem(); } catch (err) { console.error("Error unequip:", err); }
+        } else if (clickedItem && clickedItem.definition?.isEquippable) {
+          console.log(`Hotbar Click: Equipping item instance ${clickedItem.instance.instanceId} (${clickedItem.definition.name}) in slot ${index + 1}`);
           cancelCampfirePlacement();
-          try {
-            connection.reducers.equipItem(BigInt(clickedItem.instanceId)); 
-          } catch (err) {
-            console.error("Error calling equipItem reducer:", err);
-          }
+          try { connection.reducers.equipItem(BigInt(clickedItem.instance.instanceId)); } catch (err) { console.error("Error equip:", err); }
         } else {
-          console.log(`Hotbar Click: Slot ${index + 1} empty or non-equippable, unequipping.`);
+          console.log(`Hotbar Click: Slot ${index + 1} empty or non-equippable/non-armor, unequipping.`);
           cancelCampfirePlacement();
-          try {
-            connection.reducers.unequipItem();
-          } catch (err) {
-            console.error("Error calling unequipItem reducer:", err);
-          }
+          try { connection.reducers.unequipItem(); } catch (err) { console.error("Error unequip:", err); }
         }
       } else {
-         console.warn("Cannot equip/unequip: Connection or reducers not available.");
+         console.warn("No connection/reducers for click equip");
       }
   };
+
+  // --- Context Menu Handler for Items --- 
+  const handleItemContextMenu = (event: React.MouseEvent<HTMLDivElement>, itemInfo: PopulatedItem) => {
+      event.preventDefault(); // Prevent browser context menu
+      event.stopPropagation();
+      console.log(`[Hotbar ContextMenu] Right-clicked on:`, itemInfo.definition.name);
+
+      // Check connection and item category
+      if (connection?.reducers && itemInfo.definition.category.tag === 'Armor') {
+          console.log(`[Hotbar ContextMenu] Equipping ARMOR instance ${itemInfo.instance.instanceId}`);
+          cancelCampfirePlacement(); // Cancel placement if trying to equip
+          try {
+              connection.reducers.equipArmor(BigInt(itemInfo.instance.instanceId));
+          } catch (err) { 
+              console.error("[Hotbar ContextMenu] Error calling equipArmor:", err);
+          }
+      } else if (!connection?.reducers) {
+           console.warn("[Hotbar ContextMenu] No connection/reducers available.");
+      } else {
+          // Optional: Handle right-click on non-armor items if needed later
+          console.log("[Hotbar ContextMenu] Right-clicked on non-armor item, no action defined yet.");
+      }
+  };
+
+  console.log(`[Hotbar Render] selectedSlot is: ${selectedSlot}`);
 
   return (
     <div style={{
@@ -204,80 +185,55 @@ const Hotbar: React.FC<HotbarProps> = ({
       border: `1px solid ${UI_BORDER_COLOR}`,
       boxShadow: UI_SHADOW,
       fontFamily: UI_FONT_FAMILY,
+      zIndex: 100, // Ensure hotbar can be dropped onto
     }}>
       {Array.from({ length: numSlots }).map((_, index) => {
-        // console.log(`Rendering slot ${index}`); // Optional: Log each slot rendering
-        // Find the inventory item for this slot
-        const inventoryItem = findItemForSlot(index, playerIdentity, inventoryItems);
-        // Find the corresponding item definition if an item exists
-        const itemDef = inventoryItem ? itemDefinitions.get(inventoryItem.itemDefId.toString()) : null;
-
-        // console.log(`Slot ${index}: InvItem=`, inventoryItem, "ItemDef=", itemDef); // Log lookup results
+        const populatedItem = findItemForSlot(index);
+        const currentSlotInfo: DragSourceSlotInfo = { type: 'hotbar', index: index };
 
         return (
-          <div
-            key={index}
-            onClick={() => handleSlotClick(index)} // Add onClick handler
-            style={{
-              width: `${SLOT_SIZE}px`,
-              height: `${SLOT_SIZE}px`,
-              border: `2px solid ${index === selectedSlot ? SELECTED_BORDER_COLOR : UI_BORDER_COLOR}`,
-              backgroundColor: 'rgba(0, 0, 0, 0.3)', // Inner slot background
-              borderRadius: '3px',
-              marginLeft: index > 0 ? `${SLOT_MARGIN}px` : '0px',
-              position: 'relative', // Needed for absolute positioning of the number
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              transition: 'border-color 0.1s ease-in-out', // Smooth selection transition
-              boxSizing: 'border-box', // Include border in size calculation
-              cursor: 'pointer', // Add pointer cursor
+          <DroppableSlot
+            key={`hotbar-${index}`}
+            slotInfo={currentSlotInfo}
+            onItemDrop={onItemDrop}
+            // Use a generic slot style class if available, or rely on inline style
+            className={undefined} // Example: styles.slot if imported
+            onClick={() => handleSlotClick(index)}
+            style={{ // Apply Hotbar specific layout/border styles here
+                position: 'relative',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: `${SLOT_SIZE}px`,
+                height: `${SLOT_SIZE}px`,
+                border: `2px solid ${index === selectedSlot ? SELECTED_BORDER_COLOR : UI_BORDER_COLOR}`,
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                borderRadius: '3px',
+                marginLeft: index > 0 ? `${SLOT_MARGIN}px` : '0px',
+                transition: 'border-color 0.1s ease-in-out',
+                boxSizing: 'border-box',
+                cursor: 'pointer',
             }}
+            isDraggingOver={false} // TODO: Logic needed
           >
             {/* Slot Number */}
-            <span style={{
-              position: 'absolute',
-              bottom: '2px',
-              right: '4px',
-              fontSize: '10px',
-              color: 'rgba(255, 255, 255, 0.7)',
-              userSelect: 'none', // Prevent text selection
-            }}>
+            <span
+                style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '10px', color: 'rgba(255, 255, 255, 0.7)', userSelect: 'none', pointerEvents: 'none'}}
+            >
               {index + 1}
             </span>
-            {/* Item content will go here later */}
-            {itemDef && (
-              <>
-                <img 
-                  src={itemIcons[itemDef.iconAssetName] || ''}
-                  alt={itemDef.name}
-                  title={`${itemDef.name}${itemDef.description ? ' - ' + itemDef.description : ''}`}
-                  style={{ 
-                    width: '75%',  // Adjust size as needed
-                    height: '75%',
-                    objectFit: 'contain', // Prevent stretching
-                    imageRendering: 'pixelated', // Keep pixel art sharp
-                  }} 
-                />
-                {/* Display quantity if stackable and > 1 */} 
-                {itemDef.isStackable && inventoryItem && inventoryItem.quantity > 1 && (
-                    <span style={{
-                         position: 'absolute',
-                         bottom: '2px',
-                         left: '4px',
-                         fontSize: '10px',
-                         color: 'rgba(255, 255, 255, 0.9)',
-                         backgroundColor: 'rgba(0, 0, 0, 0.5)', // slight background for readability
-                         padding: '0 2px',
-                         borderRadius: '2px',
-                         userSelect: 'none',
-                    }}>
-                        {inventoryItem.quantity}
-                    </span>
-                )}
-              </>
+
+            {/* Render Draggable Item if present */}
+            {populatedItem && (
+                <DraggableItem
+                    item={populatedItem}
+                    sourceSlot={currentSlotInfo}
+                    onItemDragStart={onItemDragStart}
+                    onItemDrop={onItemDrop}
+                    onContextMenu={(event) => handleItemContextMenu(event, populatedItem)}
+                 />
             )}
-          </div>
+          </DroppableSlot>
         );
       })}
     </div>

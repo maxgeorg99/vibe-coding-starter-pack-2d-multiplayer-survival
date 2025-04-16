@@ -32,14 +32,12 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 
 ### Game Parameters (`client/src/config/gameConfig.ts`)
 
-This file centralizes various client-side game parameters. Modify these values to tweak game behavior:
+This file centralizes client-side values needed primarily for rendering the game world. 
+The server uses its own authoritative values for game logic. Modifying these client values only affects local visuals.
 
-*   `tileSize`: The width and height of each world tile in pixels.
-*   `worldWidth`, `worldHeight`: The dimensions of the game world, measured in tiles.
-*   `playerRadius`: The radius used for simple collision detection and mouse hover checks, typically half the sprite width.
-*   `playerSpeed`: How many pixels the player moves per frame when input is detected.
-*   `spriteWidth`, `spriteHeight`: The dimensions of a single frame within the player's spritesheet.
-*   `fps`: The target frames per second; primarily informational as the game loop uses `requestAnimationFrame`.
+*   `tileSize`: Visual pixel size for grid tiles.
+*   `worldWidth`, `worldHeight`: Visual dimensions of the world grid (in tiles).
+*   `spriteWidth`, `spriteHeight`: Pixel dimensions of a single sprite frame for rendering.
 
 ### SpacetimeDB Connection (`client/src/App.tsx`)
 

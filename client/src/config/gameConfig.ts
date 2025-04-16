@@ -1,17 +1,23 @@
+// client/src/config/gameConfig.ts
+// ------------------------------------
+// Centralizes client-side configuration values primarily used for rendering.
+// These values define how the game world *looks* on the client.
+// The server maintains its own authoritative values for game logic and validation,
+// so modifying these client-side values does not pose a security risk.
+// ------------------------------------
+
 export const gameConfig = {
-  // Tile settings
-  tileSize: 48, // pixels
-  
-  // World dimensions (in tiles)
+  // Visual size of each grid tile in pixels.
+  // Used for drawing the background grid and scaling visual elements.
+  tileSize: 48,
+
+  // Visual dimensions of the game world in tiles.
+  // Used for rendering the background area and minimap calculations.
   worldWidth: 100,
   worldHeight: 100,
-  
-  // Player settings
-  playerRadius: 24, // Radius for collision/hover checks (spriteWidth / 2)
-  playerSpeed: 5, // pixels per frame
-  spriteWidth: 48, // Intrinsic width of one sprite frame
-  spriteHeight: 48, // Intrinsic height of one sprite frame
-  
-  // Game settings
-  fps: 60,
+
+  // Intrinsic pixel dimensions of a single frame within player/entity spritesheets.
+  // Essential for selecting and drawing the correct sprite visuals.
+  spriteWidth: 48,
+  spriteHeight: 48,
 }; 

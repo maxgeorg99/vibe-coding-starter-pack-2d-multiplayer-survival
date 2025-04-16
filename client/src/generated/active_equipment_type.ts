@@ -35,6 +35,12 @@ export type ActiveEquipment = {
   equippedItemDefId: bigint | undefined,
   equippedItemInstanceId: bigint | undefined,
   swingStartTimeMs: bigint,
+  headItemInstanceId: bigint | undefined,
+  chestItemInstanceId: bigint | undefined,
+  legsItemInstanceId: bigint | undefined,
+  feetItemInstanceId: bigint | undefined,
+  handsItemInstanceId: bigint | undefined,
+  backItemInstanceId: bigint | undefined,
 };
 
 /**
@@ -51,6 +57,12 @@ export namespace ActiveEquipment {
       new ProductTypeElement("equippedItemDefId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
       new ProductTypeElement("equippedItemInstanceId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
       new ProductTypeElement("swingStartTimeMs", AlgebraicType.createU64Type()),
+      new ProductTypeElement("headItemInstanceId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("chestItemInstanceId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("legsItemInstanceId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("feetItemInstanceId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("handsItemInstanceId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("backItemInstanceId", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
     ]);
   }
 

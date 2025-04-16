@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Player } from '../generated'; // DbConnection is not needed here anymore
+import React, { useState, useEffect, useCallback } from 'react';
+import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
+import InventoryUI, { PopulatedItem } from './InventoryUI';
+import Hotbar from './Hotbar';
+import { itemIcons } from '../utils/itemIconUtils';
 
 // Define the StatusBar component inline for simplicity
 interface StatusBarProps {
@@ -39,15 +42,50 @@ const StatusBar: React.FC<StatusBarProps> = ({ label, icon, value, maxValue, bar
   );
 };
 
-
 interface PlayerUIProps {
   identity: Identity | null;
   players: Map<string, Player>;
+  inventoryItems: Map<string, InventoryItem>;
+  itemDefinitions: Map<string, ItemDefinition>;
+  connection: DbConnection | null;
+  startCampfirePlacement: () => void;
+  cancelCampfirePlacement: () => void;
+  onItemDragStart: (info: DraggedItemInfo) => void;
+  onItemDrop: (targetSlotInfo: DragSourceSlotInfo | null) => void;
+  draggedItemInfo: DraggedItemInfo | null;
+  activeEquipments: Map<string, ActiveEquipment>;
 }
 
-const PlayerUI: React.FC<PlayerUIProps> = ({ identity, players }) => {
-    const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
+// --- Define Types for Custom Drag State ---
+// (These might move to a shared types file later)
+export interface DragSourceSlotInfo {
+    type: 'inventory' | 'hotbar' | 'equipment';
+    index: number | string; // number for inv/hotbar, string for equip name
+}
 
+export interface DraggedItemInfo {
+    item: PopulatedItem;
+    sourceSlot: DragSourceSlotInfo;
+    splitQuantity?: number;
+    // Add split info later if needed
+}
+
+const PlayerUI: React.FC<PlayerUIProps> = ({
+    identity,
+    players,
+    inventoryItems,
+    itemDefinitions,
+    connection,
+    startCampfirePlacement,
+    cancelCampfirePlacement,
+    onItemDragStart,
+    onItemDrop,
+    draggedItemInfo,
+    activeEquipments,
+ }) => {
+    const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
+    const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+    
     useEffect(() => {
         if (!identity) {
             setLocalPlayer(null);
@@ -57,61 +95,120 @@ const PlayerUI: React.FC<PlayerUIProps> = ({ identity, players }) => {
         setLocalPlayer(player || null);
     }, [identity, players]);
 
+    // Effect for inventory toggle keybind
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Tab') {
+                event.preventDefault();
+                setIsInventoryOpen(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
+
+    // Effect to disable background scrolling when inventory is open
+    useEffect(() => {
+        const preventBackgroundScroll = (event: WheelEvent) => {
+            const target = event.target as Element;
+
+            // 1. Find the inventory panel itself
+            const inventoryPanel = document.querySelector('.inventoryPanel'); // Use a more specific ID or ref if possible for reliability
+
+            // 2. If the inventory panel doesn't exist, do nothing (shouldn't happen if listener is added correctly)
+            if (!inventoryPanel) return;
+
+            // 3. Check if the event target is *outside* the inventory panel entirely
+            if (!inventoryPanel.contains(target)) {
+                // If outside, prevent default (stops page scroll)
+                console.log("Scroll outside inventory, preventing.");
+                event.preventDefault();
+                return;
+            }
+
+            // 4. If inside the panel, check if it's within designated scrollable children
+            const scrollableCrafting = target.closest('.craftableItemsSection');
+            const scrollableQueue = target.closest('.craftingQueueList');
+
+            // 5. If it IS within a designated scrollable child, allow the default behavior
+            if (scrollableCrafting || scrollableQueue) {
+                console.log("Scroll inside designated scrollable area, allowing.");
+                return; // Allow scroll within these areas
+            }
+
+            // 6. If it's inside the panel but *not* within a designated scrollable child, prevent default
+            console.log("Scroll inside inventory but outside scrollable areas, preventing.");
+            event.preventDefault();
+        };
+
+        if (isInventoryOpen) {
+            // Add the listener to the window
+            window.addEventListener('wheel', preventBackgroundScroll, { passive: false });
+            document.body.style.overflow = 'hidden'; // Hide body scrollbar
+        } else {
+            // Clean up listener and body style
+            window.removeEventListener('wheel', preventBackgroundScroll);
+            document.body.style.overflow = 'auto';
+        }
+
+        // Cleanup function
+        return () => {
+            window.removeEventListener('wheel', preventBackgroundScroll);
+            document.body.style.overflow = 'auto';
+        };
+    }, [isInventoryOpen]);
+
     if (!localPlayer) {
         return null;
     }
 
-    // Retro SNES RPG Style - Compact
+    // --- Render without DndContext/Overlay ---
     return (
-        <div style={{
-            position: 'fixed',
-            bottom: '15px',
-            right: '15px',
-            backgroundColor: 'rgba(40, 40, 60, 0.85)',
-            color: 'white',
-            padding: '10px',
-            borderRadius: '4px',
-            border: '1px solid #a0a0c0',
-            fontFamily: '"Press Start 2P", cursive',
-            minWidth: '200px',
-            boxShadow: '2px 2px 0px rgba(0,0,0,0.5)',
-        }}>
-            <StatusBar
-                label="HP"
-                icon="❤️"
-                value={localPlayer.health}
-                maxValue={100}
-                barColor="#ff4040"
-            />
-            <StatusBar
-                label="SP"
-                icon="⚡"
-                value={localPlayer.stamina}
-                maxValue={100}
-                barColor="#40ff40"
-            />
-            <StatusBar
-                label="Thirst"
-                icon="💧"
-                value={localPlayer.thirst}
-                maxValue={100}
-                barColor="#40a0ff"
-            />
-            <StatusBar
-                label="Hunger"
-                icon="🍖"
-                value={localPlayer.hunger}
-                maxValue={100}
-                barColor="#ffa040"
-            />
-            <StatusBar
-                label="Warmth"
-                icon="🔥"
-                value={localPlayer.warmth}
-                maxValue={100}
-                barColor="#ffcc00"
-            />
-        </div>
+      // <DndContext...> // Remove wrapper
+        <>
+            {/* Status Bars UI */}
+            <div style={{
+                position: 'fixed',
+                bottom: '15px',
+                right: '15px',
+                backgroundColor: 'rgba(40, 40, 60, 0.85)',
+                color: 'white',
+                padding: '10px',
+                borderRadius: '4px',
+                border: '1px solid #a0a0c0',
+                fontFamily: '"Press Start 2P", cursive',
+                minWidth: '200px',
+                boxShadow: '2px 2px 0px rgba(0,0,0,0.5)',
+                zIndex: 50, // Keep below inventory/overlay
+            }}>
+                {/* Status Bars mapping */}
+                <StatusBar label="HP" icon="❤️" value={localPlayer.health} maxValue={100} barColor="#ff4040" />
+                <StatusBar label="SP" icon="⚡" value={localPlayer.stamina} maxValue={100} barColor="#40ff40" />
+                <StatusBar label="Thirst" icon="💧" value={localPlayer.thirst} maxValue={100} barColor="#40a0ff" />
+                <StatusBar label="Hunger" icon="🍖" value={localPlayer.hunger} maxValue={100} barColor="#ffa040" />
+                <StatusBar label="Warmth" icon="🔥" value={localPlayer.warmth} maxValue={100} barColor="#ffcc00" />
+            </div>
+
+            {/* Render Inventory UI conditionally - Pass props down */}
+            {isInventoryOpen && (
+                <InventoryUI
+                    playerIdentity={identity}
+                    onClose={() => setIsInventoryOpen(false)}
+                    inventoryItems={inventoryItems}
+                    itemDefinitions={itemDefinitions}
+                    connection={connection}
+                    activeEquipments={activeEquipments}
+                    onItemDragStart={onItemDragStart}
+                    onItemDrop={onItemDrop}
+                    draggedItemInfo={draggedItemInfo}
+                 />
+             )}
+
+            {/* Drag Overlay is removed - ghost handled by DraggableItem */}
+       </>
+      // </DndContext...> // Remove wrapper
     );
 };
 

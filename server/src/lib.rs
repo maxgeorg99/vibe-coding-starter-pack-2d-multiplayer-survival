@@ -257,12 +257,12 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
                 // Tools/Resources on Hotbar
                 ("Stone Hatchet", 1, Some(0u8), None), 
                 ("Stone Pickaxe", 1, Some(1u8), None),
-                ("Wood", 500, Some(2u8), None),
-                ("Stone", 500, Some(3u8), None),
+                // ("Wood", 500, Some(2u8), None), // REMOVED
+                // ("Stone", 500, Some(3u8), None), // REMOVED
                 ("Camp Fire", 1, Some(4u8), None),
                 ("Rock", 1, Some(5u8), None), 
                 
-                // Armor in Inventory (2 instances of each in specific slots)
+                // Armor in Inventory 
                 ("Cloth Shirt", 1, None, Some(0u16)), 
                 ("Cloth Shirt", 1, None, Some(1u16)), 
                 ("Cloth Pants", 1, None, Some(2u16)),
@@ -275,6 +275,11 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
                 ("Cloth Gloves", 1, None, Some(9u16)),
                 ("Burlap Backpack", 1, None, Some(10u16)),
                 ("Burlap Backpack", 1, None, Some(11u16)),
+
+                // NEW: Add starting materials to inventory
+                ("Wood", 600, None, Some(12u16)), // Add 600 Wood to inv slot 12
+                ("Wood", 500, None, Some(13u16)), // Add 500 Wood to inv slot 13
+                ("Stone", 500, None, Some(14u16)), // Add 500 Stone to inv slot 14
             ];
 
             log::info!("[Register Player] Defined {} starting item entries.", starting_items.len());

@@ -30,42 +30,38 @@ import {
   Timestamp,
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
-export type InventoryItem = {
-  instanceId: bigint,
-  playerIdentity: Identity,
-  itemDefId: bigint,
-  quantity: number,
-  hotbarSlot: number | undefined,
-  inventorySlot: number | undefined,
+
+export type SplitStack = {
+  sourceItemInstanceId: bigint,
+  quantityToSplit: number,
+  targetSlotType: string,
+  targetSlotIndex: number,
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace InventoryItem {
+export namespace SplitStack {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("instanceId", AlgebraicType.createU64Type()),
-      new ProductTypeElement("playerIdentity", AlgebraicType.createIdentityType()),
-      new ProductTypeElement("itemDefId", AlgebraicType.createU64Type()),
-      new ProductTypeElement("quantity", AlgebraicType.createU32Type()),
-      new ProductTypeElement("hotbarSlot", AlgebraicType.createOptionType(AlgebraicType.createU8Type())),
-      new ProductTypeElement("inventorySlot", AlgebraicType.createOptionType(AlgebraicType.createU16Type())),
+      new ProductTypeElement("sourceItemInstanceId", AlgebraicType.createU64Type()),
+      new ProductTypeElement("quantityToSplit", AlgebraicType.createU32Type()),
+      new ProductTypeElement("targetSlotType", AlgebraicType.createStringType()),
+      new ProductTypeElement("targetSlotIndex", AlgebraicType.createU32Type()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: InventoryItem): void {
-    InventoryItem.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: SplitStack): void {
+    SplitStack.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): InventoryItem {
-    return InventoryItem.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): SplitStack {
+    return SplitStack.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
-
 
