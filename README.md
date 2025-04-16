@@ -9,13 +9,9 @@
 
 A lightweight 2D multiplayer survival game starter kit built with modern web technologies. Create interactive survival experiences with persistent player state, real-time multiplayer synchronization, and modular game logic.
 
-<details>
-  <summary>Watch Demo</summary>
-  <video controls>
-    <source src="recording.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
-</details>
+<video src="https://github.com/SeloSlav/vibe-coding-starter-pack-2d-multiplayer-survival/raw/main/recording.mp4" controls width="600">
+  Your browser does not support the video tag.
+</video>
 
 ## ✨ Features
 
