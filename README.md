@@ -9,7 +9,7 @@
 
 A lightweight 2D multiplayer survival game starter kit built with modern web technologies. Create interactive survival experiences with persistent player state, real-time multiplayer synchronization, and modular game logic.
 
-![Gameplay Preview](recording.gif)
+![Gameplay Preview](preview.png)
 
 ## ✨ Features
 
