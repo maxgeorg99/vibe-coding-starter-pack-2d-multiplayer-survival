@@ -42,6 +42,8 @@ import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
 export { CheckResourceRespawns };
 import { ConsumeItem } from "./consume_item_reducer.ts";
 export { ConsumeItem };
+import { DespawnExpiredItems } from "./despawn_expired_items_reducer.ts";
+export { DespawnExpiredItems };
 import { DropItem } from "./drop_item_reducer.ts";
 export { DropItem };
 import { EquipArmor } from "./equip_armor_reducer.ts";
@@ -112,6 +114,8 @@ import { CampfireTableHandle } from "./campfire_table.ts";
 export { CampfireTableHandle };
 import { DroppedItemTableHandle } from "./dropped_item_table.ts";
 export { DroppedItemTableHandle };
+import { DroppedItemDespawnScheduleTableHandle } from "./dropped_item_despawn_schedule_table.ts";
+export { DroppedItemDespawnScheduleTableHandle };
 import { InventoryItemTableHandle } from "./inventory_item_table.ts";
 export { InventoryItemTableHandle };
 import { ItemDefinitionTableHandle } from "./item_definition_table.ts";
@@ -134,6 +138,8 @@ import { Campfire } from "./campfire_type.ts";
 export { Campfire };
 import { DroppedItem } from "./dropped_item_type.ts";
 export { DroppedItem };
+import { DroppedItemDespawnSchedule } from "./dropped_item_despawn_schedule_type.ts";
+export { DroppedItemDespawnSchedule };
 import { EquipmentSlot } from "./equipment_slot_type.ts";
 export { EquipmentSlot };
 import { InventoryItem } from "./inventory_item_type.ts";
@@ -172,6 +178,11 @@ const REMOTE_MODULE = {
     dropped_item: {
       tableName: "dropped_item",
       rowType: DroppedItem.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    dropped_item_despawn_schedule: {
+      tableName: "dropped_item_despawn_schedule",
+      rowType: DroppedItemDespawnSchedule.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     inventory_item: {
@@ -230,6 +241,10 @@ const REMOTE_MODULE = {
     consume_item: {
       reducerName: "consume_item",
       argsType: ConsumeItem.getTypeScriptAlgebraicType(),
+    },
+    despawn_expired_items: {
+      reducerName: "despawn_expired_items",
+      argsType: DespawnExpiredItems.getTypeScriptAlgebraicType(),
     },
     drop_item: {
       reducerName: "drop_item",
@@ -387,6 +402,7 @@ export type Reducer = never
 | { name: "CheckCampfireFuelConsumption", args: CheckCampfireFuelConsumption }
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
 | { name: "ConsumeItem", args: ConsumeItem }
+| { name: "DespawnExpiredItems", args: DespawnExpiredItems }
 | { name: "DropItem", args: DropItem }
 | { name: "EquipArmor", args: EquipArmor }
 | { name: "EquipArmorFromDrag", args: EquipArmorFromDrag }
@@ -493,6 +509,22 @@ export class RemoteReducers {
 
   removeOnConsumeItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
     this.connection.offReducer("consume_item", callback);
+  }
+
+  despawnExpiredItems(schedule: DroppedItemDespawnSchedule) {
+    const __args = { schedule };
+    let __writer = new BinaryWriter(1024);
+    DespawnExpiredItems.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("despawn_expired_items", __argsBuffer, this.setCallReducerFlags.despawnExpiredItemsFlags);
+  }
+
+  onDespawnExpiredItems(callback: (ctx: ReducerEventContext, schedule: DroppedItemDespawnSchedule) => void) {
+    this.connection.onReducer("despawn_expired_items", callback);
+  }
+
+  removeOnDespawnExpiredItems(callback: (ctx: ReducerEventContext, schedule: DroppedItemDespawnSchedule) => void) {
+    this.connection.offReducer("despawn_expired_items", callback);
   }
 
   dropItem(itemInstanceId: bigint, quantityToDrop: number) {
@@ -975,6 +1007,11 @@ export class SetReducerFlags {
     this.consumeItemFlags = flags;
   }
 
+  despawnExpiredItemsFlags: CallReducerFlags = 'FullUpdate';
+  despawnExpiredItems(flags: CallReducerFlags) {
+    this.despawnExpiredItemsFlags = flags;
+  }
+
   dropItemFlags: CallReducerFlags = 'FullUpdate';
   dropItem(flags: CallReducerFlags) {
     this.dropItemFlags = flags;
@@ -1135,6 +1172,10 @@ export class RemoteTables {
 
   get droppedItem(): DroppedItemTableHandle {
     return new DroppedItemTableHandle(this.connection.clientCache.getOrCreateTable<DroppedItem>(REMOTE_MODULE.tables.dropped_item));
+  }
+
+  get droppedItemDespawnSchedule(): DroppedItemDespawnScheduleTableHandle {
+    return new DroppedItemDespawnScheduleTableHandle(this.connection.clientCache.getOrCreateTable<DroppedItemDespawnSchedule>(REMOTE_MODULE.tables.dropped_item_despawn_schedule));
   }
 
   get inventoryItem(): InventoryItemTableHandle {

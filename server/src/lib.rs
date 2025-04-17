@@ -30,6 +30,8 @@ use crate::items::inventory_item as InventoryItemTableTrait; // Already present
 use crate::items::item_definition as ItemDefinitionTableTrait; // Already present
 use crate::player as PlayerTableTrait; // Needed for ctx.db.player()
 use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
+// Import the schedule table trait
+use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
 
 // Use specific items needed globally (or use qualified paths)
 // use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
@@ -103,6 +105,9 @@ pub struct Player {
 #[spacetimedb::reducer(init)]
 pub fn init_module(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Initializing module...");
+
+    // Initialize the dropped item despawn schedule
+    crate::dropped_item::init_dropped_item_schedule(ctx)?;
 
     // Remove commented-out schedule init logic
     /*

@@ -1,5 +1,9 @@
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 use log;
+// Use the specific import path from Blackholio
+use spacetimedb::spacetimedb_lib::ScheduleAt;
+// Import Duration for interval
+use std::time::Duration;
 
 // Import necessary items from other modules
 // Need to use the generated table trait alias for InventoryItemTable operations
@@ -25,10 +29,24 @@ pub struct DroppedItem {
     pub created_at: Timestamp, // When the item was dropped (for potential cleanup)
 }
 
+// --- NEW: Schedule Table --- 
+// Link reducer via scheduled(), remove public for now, ensure field is scheduled_at
+#[spacetimedb::table(name = dropped_item_despawn_schedule, scheduled(despawn_expired_items))]
+#[derive(Clone)]
+pub struct DroppedItemDespawnSchedule {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64, 
+    pub scheduled_at: ScheduleAt, 
+}
+
 // Constants
 const PICKUP_RADIUS: f32 = 64.0; // How close the player needs to be to pick up (adjust as needed)
 const PICKUP_RADIUS_SQUARED: f32 = PICKUP_RADIUS * PICKUP_RADIUS;
 pub(crate) const DROP_OFFSET: f32 = 40.0; // How far in front of the player to drop the item
+// Ensure constant is i64
+const DROPPED_ITEM_DESPAWN_DURATION_SECS: i64 = 1800; // 30 minutes
+const DESPAWN_CHECK_INTERVAL_SECS: u64 = 60; // Check every 1 minute
 
 // --- Reducers ---
 
@@ -82,6 +100,50 @@ pub fn pickup_dropped_item(ctx: &ReducerContext, dropped_item_id: u64) -> Result
             Err(format!("Could not pick up item: {}", e)) // Propagate the error (e.g., "Inventory is full")
         }
     }
+}
+
+// --- Scheduled Despawn Reducer ---
+
+/// Scheduled reducer that runs periodically to remove expired dropped items.
+// Add the reducer macro back
+#[spacetimedb::reducer]
+pub fn despawn_expired_items(ctx: &ReducerContext, _schedule: DroppedItemDespawnSchedule) -> Result<(), String> {
+    let current_time = ctx.timestamp;
+    let dropped_items_table = ctx.db.dropped_item();
+    let mut items_to_despawn: Vec<u64> = Vec::new();
+    let mut despawn_count = 0;
+
+    log::trace!("[DespawnCheck] Running scheduled check for expired dropped items at {:?}", current_time);
+
+    for item in dropped_items_table.iter() {
+        // Calculate elapsed time in microseconds
+        let elapsed_micros = current_time.to_micros_since_unix_epoch()
+                               .saturating_sub(item.created_at.to_micros_since_unix_epoch());
+        // Ensure comparison is between i64
+        let elapsed_seconds = (elapsed_micros / 1_000_000) as i64;
+
+        if elapsed_seconds >= DROPPED_ITEM_DESPAWN_DURATION_SECS {
+            log::info!("[DespawnCheck] Despawning item ID {} (created at {:?}, elapsed: {}s)", 
+                     item.id, item.created_at, elapsed_seconds);
+            items_to_despawn.push(item.id);
+        }
+    }
+
+    // Delete the expired items
+    for item_id in items_to_despawn {
+        if dropped_items_table.id().find(item_id).is_some() { // Check if still exists
+            dropped_items_table.id().delete(item_id);
+            despawn_count += 1;
+        } else {
+            log::warn!("[DespawnCheck] Tried to despawn item ID {}, but it was already gone.", item_id);
+        }
+    }
+
+    if despawn_count > 0 {
+        log::info!("[DespawnCheck] Despawned {} items.", despawn_count);
+    }
+
+    Ok(())
 }
 
 // --- Helper Functions (Internal to this module) ---
@@ -138,6 +200,19 @@ pub(crate) fn calculate_drop_position(player: &Player) -> (f32, f32) {
     (drop_x, drop_y)
 }
 
-// TODO: Implement despawn logic for items left on the ground too long.
-// This could be a scheduled reducer checking `created_at` or integrated into a general world update tick.
-// For now, items persist indefinitely. 
+// --- Init Helper (Called from lib.rs) ---
+pub(crate) fn init_dropped_item_schedule(ctx: &ReducerContext) -> Result<(), String> {
+    let schedule_table = ctx.db.dropped_item_despawn_schedule();
+    if schedule_table.iter().count() == 0 {
+        log::info!("Starting dropped item despawn schedule (every {}s).", DESPAWN_CHECK_INTERVAL_SECS);
+        let interval = Duration::from_secs(DESPAWN_CHECK_INTERVAL_SECS);
+        // Insert the schedule row (insert returns the row, not Result)
+        schedule_table.insert(DroppedItemDespawnSchedule {
+            id: 0, // Auto-incremented
+            scheduled_at: ScheduleAt::Interval(interval.into()),
+        });
+    } else {
+        log::debug!("Dropped item despawn schedule already exists.");
+    }
+    Ok(())
+}
