@@ -2,25 +2,34 @@ use spacetimedb::{ Identity, ReducerContext, Table, Timestamp };
 use log;
 use std::time::Duration;
 
+// Import specific constants directly from their modules
+use crate::tree::{TREE_COLLISION_Y_OFFSET, PLAYER_TREE_COLLISION_DISTANCE_SQUARED};
+use crate::stone::{STONE_COLLISION_Y_OFFSET, PLAYER_STONE_COLLISION_DISTANCE_SQUARED};
+
 // Import table traits needed for ctx.db access
-use crate::player;
-use crate::environment::tree;
-use crate::environment::stone;
-use crate::items::inventory_item;
-use crate::items::item_definition as item_definition_table_trait; // Alias to avoid conflict with struct
+use crate::tree::tree as TreeTableTrait;
+use crate::stone::stone as StoneTableTrait;
+use crate::items::item_definition as ItemDefinitionTableTrait;
+use crate::items::inventory_item as InventoryItemTableTrait;
+use crate::player as PlayerTableTrait;
+use crate::active_equipment as ActiveEquipmentTableTrait;
+
 // Import structs used
 // use crate::environment::Tree; // Remove - Not used directly here
 // use crate::items::ItemDefinition; // Remove - Not used directly here
 // use crate::{Player, PLAYER_RADIUS}; // Remove - Not used directly here
-use crate::environment::{TREE_COLLISION_Y_OFFSET, STONE_COLLISION_Y_OFFSET}; // Import offset constants
 use crate::PLAYER_RADIUS; // Add back the import for PLAYER_RADIUS
 use std::f32::consts::PI;
 use crate::items::{InventoryItem, ItemDefinition, ItemCategory, EquipmentSlot};
+use crate::Player; // Corrected import path
 
 // --- Constants ---
 pub(crate) const RESPAWN_TIME_MS: u64 = 5000; // 5 seconds respawn time
 const PVP_DAMAGE_MULTIPLIER: f32 = 6.0;
 pub(crate) const RESOURCE_RESPAWN_DURATION_SECS: u64 = 300; // 5 minutes respawn time for trees/stones
+
+const PLAYER_INTERACT_DISTANCE: f32 = 80.0;
+const PLAYER_INTERACT_DISTANCE_SQUARED: f32 = PLAYER_INTERACT_DISTANCE * PLAYER_INTERACT_DISTANCE;
 
 #[spacetimedb::table(name = active_equipment, public)]
 #[derive(Clone, Default, Debug)]
@@ -94,6 +103,7 @@ pub fn equip_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), Str
 pub fn unequip_item(ctx: &ReducerContext) -> Result<(), String> {
     let sender_id = ctx.sender;
     let active_equipments = ctx.db.active_equipment();
+    let inventory_items = ctx.db.inventory_item();
 
     if let Some(mut equipment) = active_equipments.player_identity().find(sender_id) {
         // Only clear the main hand fields. Leave armor slots untouched.

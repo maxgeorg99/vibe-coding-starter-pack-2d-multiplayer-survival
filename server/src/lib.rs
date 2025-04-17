@@ -4,6 +4,8 @@ use std::time::Duration;
 
 // Declare the module
 mod environment;
+mod tree; // Add tree module
+mod stone; // Add stone module
 // Declare the items module
 mod items;
 // Declare the world_state module
@@ -18,20 +20,39 @@ mod mushroom;
 mod consumables;
 
 // Use the public items from the module
-use environment::*; 
+// use environment::*; 
+// use crate::tree::*; // Use tree items
+// use crate::stone::*; // Use stone items
 // Use the public items from the items module
-use crate::items::*; 
+// use crate::items::*; 
 // Use the public items from the world_state module
-use crate::world_state::*;
+// use crate::world_state::*;
 // Use the public items from the campfire module
-use crate::campfire::*;
+// use crate::campfire::*;
 // Use the public items from the mushroom module
 // use crate::mushroom::*; // Removed unused import
 // Use the public items from the active_equipment module
 // use crate::active_equipment::*; // Remove this - module accessed via reducers
 // Import generated table traits with aliases to avoid name conflicts
-use crate::campfire::campfire as CampfireTableTrait;
-use crate::world_state::world_state as WorldStateTableTrait;
+// use crate::campfire::campfire as CampfireTableTrait;
+// use crate::world_state::world_state as WorldStateTableTrait;
+
+// Import Table Traits needed in this module
+use crate::tree::tree as TreeTableTrait; 
+use crate::stone::stone as StoneTableTrait;
+use crate::campfire::campfire as CampfireTableTrait; // Already present, but good to keep together
+use crate::world_state::world_state as WorldStateTableTrait; // Already present
+use crate::items::inventory_item as InventoryItemTableTrait; // Already present
+use crate::items::item_definition as ItemDefinitionTableTrait; // Already present
+use crate::player as PlayerTableTrait; // Needed for ctx.db.player()
+
+// Use specific items needed globally (or use qualified paths)
+// use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
+use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
+use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED };
+// use crate::mushroom::*; // Removed unused import
+// use crate::active_equipment::*; // Remove this - module accessed via reducers
+// Import generated table traits with aliases to avoid name conflicts
 
 // --- World/Player Constants --- 
 pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
@@ -90,10 +111,10 @@ pub struct Player {
 // When a client connects, we need to create a player for them
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
-    // Call seeders
-    environment::seed_environment(ctx)?; // Call the updated seeder
-    items::seed_items(ctx)?; // Call the item seeder
-    world_state::seed_world_state(ctx)?; // Call the world state seeder
+    // Call seeders using qualified paths
+    crate::environment::seed_environment(ctx)?; // Call the updated seeder
+    crate::items::seed_items(ctx)?; // Call the item seeder
+    crate::world_state::seed_world_state(ctx)?; // Call the world state seeder
     // No seeder needed for Campfire yet, table will be empty initially
     Ok(())
 }
@@ -161,9 +182,9 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         if !collision {
             for tree in trees.iter() {
                 let dx = spawn_x - tree.pos_x;
-                let dy = spawn_y - (tree.pos_y - environment::TREE_COLLISION_Y_OFFSET);
+                let dy = spawn_y - (tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET); // Already qualified
                 let dist_sq = dx * dx + dy * dy;
-                if dist_sq < environment::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
+                if dist_sq < crate::tree::PLAYER_TREE_COLLISION_DISTANCE_SQUARED { // Already qualified
                     collision = true;
                     break;
                 }
@@ -174,9 +195,9 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         if !collision {
             for stone in stones.iter() {
                 let dx = spawn_x - stone.pos_x;
-                let dy = spawn_y - (stone.pos_y - environment::STONE_COLLISION_Y_OFFSET);
+                let dy = spawn_y - (stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET); // Already qualified
                 let dist_sq = dx * dx + dy * dy;
-                if dist_sq < environment::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
+                if dist_sq < crate::stone::PLAYER_STONE_COLLISION_DISTANCE_SQUARED { // Already qualified
                     collision = true;
                     break;
                 }
@@ -293,7 +314,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
             for (item_name, quantity, hotbar_slot_opt, inventory_slot_opt) in starting_items.iter() {
                  log::debug!("[Register Player] Processing entry: {}", item_name);
                 if let Some(item_def) = item_defs.iter().find(|def| def.name == *item_name) {
-                    let item_to_insert = items::InventoryItem {
+                    let item_to_insert = crate::items::InventoryItem { // Qualify struct path
                         instance_id: 0,
                         player_identity: sender_id,
                         item_def_id: item_def.id,
@@ -370,10 +391,10 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
     // Collision with Trees
     for tree in trees.iter() {
         let dx = target_x - tree.pos_x;
-        let dy = target_y - (tree.pos_y - TREE_COLLISION_Y_OFFSET); // Use tree's collision offset
+        let dy = target_y - (tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET); // Already qualified
         // Check if campfire placement overlaps tree collision area
         // Use a combined radius check (tree trunk + campfire radius)
-        let combined_radius = TREE_TRUNK_RADIUS + CAMPFIRE_COLLISION_RADIUS;
+        let combined_radius = crate::tree::TREE_TRUNK_RADIUS + CAMPFIRE_COLLISION_RADIUS; // Already qualified
         if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
              return Err("Cannot place campfire too close to a tree".to_string());
         }
@@ -382,8 +403,8 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
     // Collision with Stones
     for stone in stones.iter() {
         let dx = target_x - stone.pos_x;
-        let dy = target_y - (stone.pos_y - STONE_COLLISION_Y_OFFSET); // Use stone's collision offset
-        let combined_radius = STONE_RADIUS + CAMPFIRE_COLLISION_RADIUS;
+        let dy = target_y - (stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET); // Already qualified
+        let combined_radius = crate::stone::STONE_RADIUS + CAMPFIRE_COLLISION_RADIUS; // Already qualified
         if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
             return Err("Cannot place campfire too close to a stone".to_string());
         }
@@ -694,12 +715,12 @@ pub fn update_player_position(
         for tree in trees.iter() {
             if tree.health == 0 { continue; }
 
-            let tree_collision_y = tree.pos_y - environment::TREE_COLLISION_Y_OFFSET;
+            let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
             let dx = clamped_x - tree.pos_x;
             let dy = clamped_y - tree_collision_y;
             let dist_sq = dx * dx + dy * dy;
 
-            if dist_sq < environment::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
+            if dist_sq < crate::tree::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
                 log::debug!("Player-Tree collision detected between {:?} and tree {}. Calculating slide.", sender_id, tree.id);
 
                 let intended_dx = clamped_x - current_player.position_x;
@@ -736,12 +757,12 @@ pub fn update_player_position(
         for stone in stones.iter() {
             if stone.health == 0 { continue; }
 
-            let stone_collision_y = stone.pos_y - environment::STONE_COLLISION_Y_OFFSET;
+            let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
             let dx = clamped_x - stone.pos_x;
             let dy = clamped_y - stone_collision_y;
             let dist_sq = dx * dx + dy * dy;
 
-            if dist_sq < environment::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
+            if dist_sq < crate::stone::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
                 log::debug!("Player-Stone collision detected between {:?} and stone {}. Calculating slide.", sender_id, stone.id);
 
                 let intended_dx = clamped_x - current_player.position_x;
@@ -852,11 +873,11 @@ pub fn update_player_position(
         for tree in trees.iter() {
             if tree.health == 0 { continue; }
 
-            let tree_collision_y = tree.pos_y - environment::TREE_COLLISION_Y_OFFSET;
+            let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
             let dx = resolved_x - tree.pos_x;
             let dy = resolved_y - tree_collision_y;
             let dist_sq = dx * dx + dy * dy;
-            let min_dist = PLAYER_RADIUS + environment::TREE_TRUNK_RADIUS;
+            let min_dist = PLAYER_RADIUS + crate::tree::TREE_TRUNK_RADIUS;
             let min_dist_sq = min_dist * min_dist;
 
             if dist_sq < min_dist_sq && dist_sq > 0.0 {
@@ -875,11 +896,11 @@ pub fn update_player_position(
         for stone in stones.iter() {
             if stone.health == 0 { continue; }
 
-            let stone_collision_y = stone.pos_y - environment::STONE_COLLISION_Y_OFFSET;
+            let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
             let dx = resolved_x - stone.pos_x;
             let dy = resolved_y - stone_collision_y;
             let dist_sq = dx * dx + dy * dy;
-            let min_dist = PLAYER_RADIUS + environment::STONE_RADIUS;
+            let min_dist = PLAYER_RADIUS + crate::stone::STONE_RADIUS;
             let min_dist_sq = min_dist * min_dist;
 
             if dist_sq < min_dist_sq && dist_sq > 0.0 {
@@ -957,15 +978,15 @@ pub fn update_player_position(
         players.identity().update(player);
     }
 
-    // --- Tick World State ---
+    // --- Tick World State --- using qualified path
     // We pass the current context and its timestamp
-    match world_state::tick_world_state(ctx, ctx.timestamp) {
+    match crate::world_state::tick_world_state(ctx, ctx.timestamp) {
         Ok(_) => { /* Time ticked successfully (or no update needed) */ }
         Err(e) => log::error!("Error ticking world state: {}", e),
     }
 
-    // --- Check Resource Respawns ---
-    match environment::check_resource_respawns(ctx) {
+    // --- Check Resource Respawns --- using qualified path
+    match crate::environment::check_resource_respawns(ctx) {
         Ok(_) => { /* Resources checked successfully */ }
         Err(e) => log::error!("Error checking resource respawns: {}", e),
     }
@@ -1051,7 +1072,7 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     // --- Grant Starting Rock ---
     log::info!("Granting starting Rock to respawned player: {}", player.username);
     if let Some(rock_def) = item_defs.iter().find(|def| def.name == "Rock") {
-        match inventory.try_insert(items::InventoryItem {
+        match inventory.try_insert(crate::items::InventoryItem { // Qualify struct path
             instance_id: 0, // Auto-incremented
             player_identity: sender_id,
             item_def_id: rock_def.id,

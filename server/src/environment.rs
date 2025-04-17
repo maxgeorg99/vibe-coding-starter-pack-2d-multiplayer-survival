@@ -1,85 +1,36 @@
 // server/src/environment.rs
-use spacetimedb::{ReducerContext, SpacetimeType, Table, Timestamp};
-use crate::{WORLD_WIDTH_PX, WORLD_HEIGHT_PX, TILE_SIZE_PX, PLAYER_RADIUS}; // Removed WORLD_WIDTH_TILES, WORLD_HEIGHT_TILES
-use crate::mushroom::{
-    MUSHROOM_DENSITY_PERCENT,
-    MIN_MUSHROOM_DISTANCE_SQ,
-    MIN_MUSHROOM_TREE_DISTANCE_SQ,
-    MIN_MUSHROOM_STONE_DISTANCE_SQ
-};
+use spacetimedb::{ReducerContext, Table, Timestamp};
+use crate::{WORLD_WIDTH_PX, WORLD_HEIGHT_PX, TILE_SIZE_PX, WORLD_WIDTH_TILES, WORLD_HEIGHT_TILES};
+
+// Import from specific resource modules using qualified paths mostly
+use crate::tree;
+use crate::stone;
+
+// Import table traits specifically needed for ctx.db access
+use crate::tree::tree as TreeTableTrait;
+use crate::stone::stone as StoneTableTrait;
 use crate::mushroom::mushroom as MushroomTableTrait;
+
 use noise::{NoiseFn, Perlin, Fbm};
 use rand::Rng;
 use std::collections::HashSet;
 use log;
 
-// --- Tree-Specific Constants ---
+// --- Tree-Specific Constants --- REMOVED - These should not be here ---
 
-// Tree Collision settings
-pub(crate) const TREE_TRUNK_RADIUS: f32 = 30.0; // Reduced radius for trunk base (was 20.0)
-pub(crate) const TREE_COLLISION_Y_OFFSET: f32 = 20.0; // Offset the collision check upwards from the root
-pub(crate) const PLAYER_TREE_COLLISION_DISTANCE_SQUARED: f32 = (PLAYER_RADIUS + TREE_TRUNK_RADIUS) * (PLAYER_RADIUS + TREE_TRUNK_RADIUS);
+// --- Stone-Specific Constants --- REMOVED - These should not be here ---
 
-// Tree Spawning Parameters
-const TREE_DENSITY_PERCENT: f32 = 0.01; // Target 1% of map tiles (was 0.05)
-const TREE_SPAWN_NOISE_FREQUENCY: f64 = 8.0; // Keep noise frequency moderate for filtering
-const TREE_SPAWN_NOISE_THRESHOLD: f64 = 0.7; // Increased threshold significantly (was 0.55)
-const TREE_SPAWN_WORLD_MARGIN_TILES: u32 = 3; // Don't spawn in the outer 3 tiles (margin in tiles)
-const MAX_TREE_SEEDING_ATTEMPTS_FACTOR: u32 = 5; // Try up to 5x the target number of trees
-const MIN_TREE_DISTANCE_PX: f32 = 200.0; // Minimum distance between tree centers
-const MIN_TREE_DISTANCE_SQ: f32 = MIN_TREE_DISTANCE_PX * MIN_TREE_DISTANCE_PX; // Squared for comparison
+// --- Tree Enums and Structs --- REMOVED - These should not be here ---
 
-// --- Stone-Specific Constants ---
-pub(crate) const STONE_RADIUS: f32 = 40.0; // Collision radius for stone nodes
-pub(crate) const PLAYER_STONE_COLLISION_DISTANCE_SQUARED: f32 = (PLAYER_RADIUS + STONE_RADIUS) * (PLAYER_RADIUS + STONE_RADIUS);
-pub(crate) const STONE_COLLISION_Y_OFFSET: f32 = 50.0; // Offset the collision check upwards from the root (reduced)
-const STONE_DENSITY_PERCENT: f32 = TREE_DENSITY_PERCENT / 5.0; // Make stones 2.5x less populous than original (1/5th of trees)
-const MIN_STONE_DISTANCE_PX: f32 = 150.0; // Minimum distance between stone centers
-const MIN_STONE_DISTANCE_SQ: f32 = MIN_STONE_DISTANCE_PX * MIN_STONE_DISTANCE_PX;
-const MIN_STONE_TREE_DISTANCE_PX: f32 = 100.0; // Min distance between a stone and a tree
-const MIN_STONE_TREE_DISTANCE_SQ: f32 = MIN_STONE_TREE_DISTANCE_PX * MIN_STONE_TREE_DISTANCE_PX;
+// --- Stone Struct and Table --- REMOVED - These should not be here ---
 
-// --- Tree Enums and Structs ---
-
-// Define the different types of trees
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, SpacetimeType)]
-pub enum TreeType {
-    Oak, // Represents tree.png
-}
-
-#[spacetimedb::table(name = tree, public)]
-#[derive(Clone)]
-pub struct Tree {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    pub pos_x: f32,
-    pub pos_y: f32,
-    pub health: u32,
-    pub tree_type: TreeType,
-    pub last_hit_time: Option<Timestamp>,
-    pub respawn_at: Option<Timestamp>, // Added for respawn timer
-}
-
-// --- Stone Struct and Table ---
-#[spacetimedb::table(name = stone, public)]
-#[derive(Clone)]
-pub struct Stone {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    pub pos_x: f32,
-    pub pos_y: f32,
-    pub health: u32, // Stones just disappear when health is 0
-    pub last_hit_time: Option<Timestamp>, // Added for shake effect
-    pub respawn_at: Option<Timestamp>, // Added for respawn timer
-}
 
 // --- Environment Seeding ---
 
 // Reducer to seed trees, stones, AND MUSHROOMS if none exist
 #[spacetimedb::reducer]
 pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
+    // Use table traits for clarity
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
     let mushrooms = ctx.db.mushroom(); // Get mushroom table
@@ -102,17 +53,17 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
 
     let total_tiles = crate::WORLD_WIDTH_TILES * crate::WORLD_HEIGHT_TILES;
 
-    // Calculate targets and limits for trees
-    let target_tree_count = (total_tiles as f32 * TREE_DENSITY_PERCENT) as u32;
-    let max_tree_attempts = target_tree_count * MAX_TREE_SEEDING_ATTEMPTS_FACTOR;
+    // Calculate targets and limits for trees (using constants from tree module)
+    let target_tree_count = (total_tiles as f32 * crate::tree::TREE_DENSITY_PERCENT) as u32;
+    let max_tree_attempts = target_tree_count * crate::tree::MAX_TREE_SEEDING_ATTEMPTS_FACTOR;
 
-    // Calculate targets and limits for stones
-    let target_stone_count = (total_tiles as f32 * STONE_DENSITY_PERCENT) as u32;
-    let max_stone_attempts = target_stone_count * MAX_TREE_SEEDING_ATTEMPTS_FACTOR;
+    // Calculate targets and limits for stones (using constants from stone module)
+    let target_stone_count = (total_tiles as f32 * crate::stone::STONE_DENSITY_PERCENT) as u32;
+    let max_stone_attempts = target_stone_count * crate::tree::MAX_TREE_SEEDING_ATTEMPTS_FACTOR; // Re-use tree factor intentionally?
 
-    // Calculate targets and limits for mushrooms
-    let target_mushroom_count = (total_tiles as f32 * MUSHROOM_DENSITY_PERCENT) as u32;
-    let max_mushroom_attempts = target_mushroom_count * MAX_TREE_SEEDING_ATTEMPTS_FACTOR; // Reuse factor
+    // Calculate targets and limits for mushrooms (using constants from mushroom module)
+    let target_mushroom_count = (total_tiles as f32 * crate::mushroom::MUSHROOM_DENSITY_PERCENT) as u32;
+    let max_mushroom_attempts = target_mushroom_count * crate::tree::MAX_TREE_SEEDING_ATTEMPTS_FACTOR; // Reuse factor
 
     log::info!(
         "Target Trees: {}, Max Attempts: {}",
@@ -127,10 +78,10 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
         target_mushroom_count, max_mushroom_attempts
     );
 
-    let min_tile_x = TREE_SPAWN_WORLD_MARGIN_TILES; // Use same margin for all
-    let max_tile_x = crate::WORLD_WIDTH_TILES - TREE_SPAWN_WORLD_MARGIN_TILES;
-    let min_tile_y = TREE_SPAWN_WORLD_MARGIN_TILES;
-    let max_tile_y = crate::WORLD_HEIGHT_TILES - TREE_SPAWN_WORLD_MARGIN_TILES;
+    let min_tile_x = crate::tree::TREE_SPAWN_WORLD_MARGIN_TILES; // Use tree margin for all
+    let max_tile_x = crate::WORLD_WIDTH_TILES - crate::tree::TREE_SPAWN_WORLD_MARGIN_TILES;
+    let min_tile_y = crate::tree::TREE_SPAWN_WORLD_MARGIN_TILES;
+    let max_tile_y = crate::WORLD_HEIGHT_TILES - crate::tree::TREE_SPAWN_WORLD_MARGIN_TILES;
 
     let mut spawned_tree_count = 0;
     let mut spawned_stone_count = 0;
@@ -162,31 +113,31 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
 
         // Noise check for density filtering
         let noise_val = fbm.get([
-            (pos_x as f64 / WORLD_WIDTH_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
-            (pos_y as f64 / WORLD_HEIGHT_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
+            (pos_x as f64 / WORLD_WIDTH_PX as f64) * crate::tree::TREE_SPAWN_NOISE_FREQUENCY,
+            (pos_y as f64 / WORLD_HEIGHT_PX as f64) * crate::tree::TREE_SPAWN_NOISE_FREQUENCY,
         ]);
         let normalized_noise = (noise_val + 1.0) / 2.0;
 
-        if normalized_noise > TREE_SPAWN_NOISE_THRESHOLD {
+        if normalized_noise > crate::tree::TREE_SPAWN_NOISE_THRESHOLD {
             // Distance check against other trees
             let mut too_close = false;
             for (existing_x, existing_y) in &spawned_tree_positions {
                 let dx = pos_x - existing_x;
                 let dy = pos_y - existing_y;
-                if (dx * dx + dy * dy) < MIN_TREE_DISTANCE_SQ {
+                if (dx * dx + dy * dy) < crate::tree::MIN_TREE_DISTANCE_SQ {
                     too_close = true;
                     break;
                 }
             }
             if too_close { continue; }
 
-            // Spawn the tree
-            match trees.try_insert(Tree {
+            // Spawn the tree (using Tree struct from tree module)
+            match trees.try_insert(crate::tree::Tree {
                 id: 0, // Auto-incremented by SpacetimeDB
                 pos_x,
                 pos_y,
-                health: TREE_INITIAL_HEALTH, // Use constant
-                tree_type: TreeType::Oak, // Only Oak for now
+                health: crate::tree::TREE_INITIAL_HEALTH, // Use constant from tree module
+                tree_type: crate::tree::TreeType::Oak, // Use enum from tree module
                 last_hit_time: None,
                 respawn_at: None, // Initialize respawn_at
             }) {
@@ -218,20 +169,20 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
         let pos_x = (tile_x as f32 + 0.5) * TILE_SIZE_PX as f32;
         let pos_y = (tile_y as f32 + 0.5) * TILE_SIZE_PX as f32;
 
-        // Noise check (using the same noise parameters for simplicity)
+        // Noise check (using the same noise parameters for simplicity - referencing tree module)
         let noise_val = fbm.get([
-            (pos_x as f64 / WORLD_WIDTH_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
-            (pos_y as f64 / WORLD_HEIGHT_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
+            (pos_x as f64 / WORLD_WIDTH_PX as f64) * crate::tree::TREE_SPAWN_NOISE_FREQUENCY,
+            (pos_y as f64 / WORLD_HEIGHT_PX as f64) * crate::tree::TREE_SPAWN_NOISE_FREQUENCY,
         ]);
         let normalized_noise = (noise_val + 1.0) / 2.0;
 
-        if normalized_noise > TREE_SPAWN_NOISE_THRESHOLD { // Use tree threshold for stones too
+        if normalized_noise > crate::tree::TREE_SPAWN_NOISE_THRESHOLD { // Use tree threshold for stones too
             // Distance check against other stones
             let mut too_close_stone = false;
             for (existing_x, existing_y) in &spawned_stone_positions {
                 let dx = pos_x - existing_x;
                 let dy = pos_y - existing_y;
-                if (dx * dx + dy * dy) < MIN_STONE_DISTANCE_SQ {
+                if (dx * dx + dy * dy) < crate::stone::MIN_STONE_DISTANCE_SQ { // Use constant from stone module
                     too_close_stone = true;
                     break;
                 }
@@ -243,16 +194,16 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             for (existing_x, existing_y) in &spawned_tree_positions {
                 let dx = pos_x - existing_x;
                 let dy = pos_y - existing_y;
-                if (dx * dx + dy * dy) < MIN_STONE_TREE_DISTANCE_SQ {
+                if (dx * dx + dy * dy) < crate::stone::MIN_STONE_TREE_DISTANCE_SQ { // Use constant from stone module
                     too_close_tree = true;
                     break;
                 }
             }
              if too_close_tree { continue; }
 
-            // Spawn the stone
-            match stones.try_insert(Stone {
-                id: 0, pos_x, pos_y, health: 100,
+            // Spawn the stone (using Stone struct from stone module)
+            match stones.try_insert(crate::stone::Stone {
+                id: 0, pos_x, pos_y, health: crate::stone::STONE_INITIAL_HEALTH, // Use constant from stone module
                 last_hit_time: None,
                 respawn_at: None,
             }) {
@@ -285,10 +236,10 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
         let pos_x = (tile_x as f32 + 0.5) * TILE_SIZE_PX as f32;
         let pos_y = (tile_y as f32 + 0.5) * TILE_SIZE_PX as f32;
 
-        // Noise check (using the same noise parameters for simplicity)
+        // Noise check (using the same noise parameters for simplicity - referencing tree module)
         let noise_val = fbm.get([
-            (pos_x as f64 / WORLD_WIDTH_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
-            (pos_y as f64 / WORLD_HEIGHT_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
+            (pos_x as f64 / WORLD_WIDTH_PX as f64) * crate::tree::TREE_SPAWN_NOISE_FREQUENCY,
+            (pos_y as f64 / WORLD_HEIGHT_PX as f64) * crate::tree::TREE_SPAWN_NOISE_FREQUENCY,
         ]);
         let normalized_noise = (noise_val + 1.0) / 2.0;
 
@@ -299,7 +250,7 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             for (existing_x, existing_y) in &spawned_mushroom_positions {
                 let dx = pos_x - existing_x;
                 let dy = pos_y - existing_y;
-                if (dx * dx + dy * dy) < MIN_MUSHROOM_DISTANCE_SQ {
+                if (dx * dx + dy * dy) < crate::mushroom::MIN_MUSHROOM_DISTANCE_SQ { // Use constant from mushroom module
                     too_close_mushroom = true;
                     break;
                 }
@@ -311,7 +262,7 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             for (existing_x, existing_y) in &spawned_tree_positions {
                 let dx = pos_x - existing_x;
                 let dy = pos_y - existing_y;
-                if (dx * dx + dy * dy) < MIN_MUSHROOM_TREE_DISTANCE_SQ {
+                if (dx * dx + dy * dy) < crate::mushroom::MIN_MUSHROOM_TREE_DISTANCE_SQ { // Use constant from mushroom module
                     too_close_tree = true;
                     break;
                 }
@@ -323,14 +274,14 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             for (existing_x, existing_y) in &spawned_stone_positions {
                 let dx = pos_x - existing_x;
                 let dy = pos_y - existing_y;
-                if (dx * dx + dy * dy) < MIN_MUSHROOM_STONE_DISTANCE_SQ {
+                if (dx * dx + dy * dy) < crate::mushroom::MIN_MUSHROOM_STONE_DISTANCE_SQ { // Use constant from mushroom module
                     too_close_stone = true;
                     break;
                 }
             }
             if too_close_stone { continue; }
 
-            // Spawn the mushroom
+            // Spawn the mushroom (using Mushroom struct from mushroom module)
             match mushrooms.try_insert(crate::mushroom::Mushroom {
                 id: 0, // Auto-inc
                 pos_x,
@@ -356,8 +307,7 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 // --- Resource Respawn Reducer ---
-const TREE_INITIAL_HEALTH: u32 = 100;
-const STONE_INITIAL_HEALTH: u32 = 100;
+// REMOVED TREE_INITIAL_HEALTH and STONE_INITIAL_HEALTH constants (moved to respective modules)
 
 #[spacetimedb::reducer]
 pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
@@ -395,9 +345,9 @@ pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
 
     // Respawn stones
     for stone_id in stones_to_respawn {
-        if let Some(mut stone) = ctx.db.stone().id().find(stone_id) {
+        if let Some(mut stone) = ctx.db.stone().id().find(stone_id) { // Uses Stone from stone module implicitly via ctx.db
             log::info!("Respawning Stone {}", stone_id);
-            stone.health = STONE_INITIAL_HEALTH;
+            stone.health = crate::stone::STONE_INITIAL_HEALTH; // Use constant from stone module
             stone.respawn_at = None; // Clear respawn timer
             stone.last_hit_time = None; // Clear last hit time
             ctx.db.stone().id().update(stone);
@@ -408,9 +358,9 @@ pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
 
     // Respawn trees
     for tree_id in trees_to_respawn {
-        if let Some(mut tree) = ctx.db.tree().id().find(tree_id) {
+        if let Some(mut tree) = ctx.db.tree().id().find(tree_id) { // Uses Tree from tree module implicitly via ctx.db
             log::info!("Respawning Tree {}", tree_id);
-            tree.health = TREE_INITIAL_HEALTH;
+            tree.health = crate::tree::TREE_INITIAL_HEALTH; // Use constant from tree module
             tree.respawn_at = None; // Clear respawn timer
             tree.last_hit_time = None; // Clear last hit time
             ctx.db.tree().id().update(tree);
@@ -421,7 +371,7 @@ pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
 
     // Respawn mushrooms
     for mushroom_id in mushrooms_to_respawn {
-        if let Some(mut mushroom) = ctx.db.mushroom().id().find(mushroom_id) {
+        if let Some(mut mushroom) = ctx.db.mushroom().id().find(mushroom_id) { // Uses Mushroom from mushroom module implicitly via ctx.db
             log::info!("Respawning Mushroom {}", mushroom_id);
             mushroom.respawn_at = None; // Clear respawn timer
             ctx.db.mushroom().id().update(mushroom);
