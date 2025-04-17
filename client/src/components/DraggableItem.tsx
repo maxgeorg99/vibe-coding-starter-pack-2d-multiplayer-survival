@@ -206,7 +206,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     document.addEventListener('mouseup', handleMouseUp);
     
     // Pass the calculated split quantity (can be null) to the drag start info
-    const dragInfo: DraggedItemInfo = { item, sourceSlot, splitQuantity };
+    const dragInfo: DraggedItemInfo = { item, sourceSlot, splitQuantity: splitQuantity ?? undefined };
     console.log('[DraggableItem] Calling onItemDragStart with:', dragInfo);
     onItemDragStart(dragInfo);
 

@@ -36,8 +36,6 @@ pub struct Mushroom {
 
 // --- Interaction Reducer ---
 
-// REMOVED Helper function to add an item to inventory (moved to items.rs)
-
 #[spacetimedb::reducer]
 pub fn interact_with_mushroom(ctx: &ReducerContext, mushroom_id: u64) -> Result<(), String> {
     let sender_id = ctx.sender;

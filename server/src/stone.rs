@@ -30,5 +30,3 @@ pub struct Stone {
     pub last_hit_time: Option<Timestamp>, // Added for shake effect
     pub respawn_at: Option<Timestamp>, // Added for respawn timer
 }
-
-// Placeholder for future stone-specific reducers or functions

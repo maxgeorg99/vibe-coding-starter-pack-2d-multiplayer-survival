@@ -41,6 +41,3 @@ pub struct Tree {
     pub last_hit_time: Option<Timestamp>,
     pub respawn_at: Option<Timestamp>,
 }
-
-// Placeholder for future tree-specific reducers or functions
-// e.g., fn handle_tree_hit(...) {}

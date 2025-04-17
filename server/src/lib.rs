@@ -18,24 +18,7 @@ mod active_equipment;
 mod mushroom;
 // Declare the consumables module
 mod consumables;
-
-// Use the public items from the module
-// use environment::*; 
-// use crate::tree::*; // Use tree items
-// use crate::stone::*; // Use stone items
-// Use the public items from the items module
-// use crate::items::*; 
-// Use the public items from the world_state module
-// use crate::world_state::*;
-// Use the public items from the campfire module
-// use crate::campfire::*;
-// Use the public items from the mushroom module
-// use crate::mushroom::*; // Removed unused import
-// Use the public items from the active_equipment module
-// use crate::active_equipment::*; // Remove this - module accessed via reducers
-// Import generated table traits with aliases to avoid name conflicts
-// use crate::campfire::campfire as CampfireTableTrait;
-// use crate::world_state::world_state as WorldStateTableTrait;
+mod utils; // Declare utils module
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait; 
@@ -50,8 +33,7 @@ use crate::player as PlayerTableTrait; // Needed for ctx.db.player()
 // use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
 use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
 use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED };
-// use crate::mushroom::*; // Removed unused import
-// use crate::active_equipment::*; // Remove this - module accessed via reducers
+
 // Import generated table traits with aliases to avoid name conflicts
 
 // --- World/Player Constants --- 
@@ -78,7 +60,6 @@ const HEALTH_LOSS_PER_SEC_LOW_HUNGER: f32 = 0.4;
 const HEALTH_LOSS_MULTIPLIER_AT_ZERO: f32 = 2.0; 
 const HEALTH_RECOVERY_THRESHOLD: f32 = 80.0;    
 const HEALTH_RECOVERY_PER_SEC: f32 = 1.0;      
-// const MIN_HEALTH_FROM_NEEDS: f32 = 1.0; // Removed - allowing death from needs
 
 // New Warmth Penalties
 const HEALTH_LOSS_PER_SEC_LOW_WARMTH: f32 = 0.6; // Slightly higher than thirst/hunger
@@ -455,7 +436,7 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
     Ok(())
 }
 
-// NEW Reducer: Called by the client to set the sprinting state
+// Called by the client to set the sprinting state
 #[spacetimedb::reducer]
 pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String> {
     let sender_id = ctx.sender;
