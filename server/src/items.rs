@@ -1086,8 +1086,8 @@ pub fn split_stack_from_campfire(
     source_campfire_id: u32,
     source_slot_index: u8,
     quantity_to_split: u32,
-    target_slot_type: String, // "inventory" or "hotbar"
-    target_slot_index: u32,   // Index for inventory/hotbar
+    target_slot_type: String,    // "inventory" or "hotbar"
+    target_slot_index: u32,     // Numeric index for inventory/hotbar
 ) -> Result<(), String> {
     let sender_id = ctx.sender;
     let mut inventory_items = ctx.db.inventory_item();
@@ -1297,4 +1297,173 @@ pub fn drop_item(
              quantity_to_drop, item_def.id, item_instance_id, drop_x, drop_y, sender_id);
 
     Ok(())
+}
+
+// --- NEW Reducer: Split and Move/Merge --- 
+
+/// Splits a specified quantity from a source stack and attempts to move/merge 
+/// the new stack onto a target slot.
+#[spacetimedb::reducer]
+pub fn split_and_move(
+    ctx: &ReducerContext,
+    source_item_instance_id: u64,
+    quantity_to_split: u32,     
+    target_slot_type: String,    // "inventory", "hotbar", or "campfire_fuel"
+    target_slot_index: u32,     // Numeric index for inventory/hotbar/campfire
+    target_campfire_id: Option<u32>, // Required only if target_slot_type is campfire_fuel
+) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    log::info!(
+        "[SplitAndMove] Player {:?} splitting {} from item {} to {} slot {} (Campfire: {:?})",
+        sender_id, quantity_to_split, source_item_instance_id, target_slot_type, target_slot_index, target_campfire_id
+    );
+
+    // --- 1. Get Source Item & Validate Split --- 
+    // Use try_find as item might be gone
+    let mut source_item = ctx.db.inventory_item().instance_id().find(source_item_instance_id)
+        .ok_or_else(|| format!("Source item instance {} not found.", source_item_instance_id))?;
+
+    // Basic ownership check (item must be owned if not coming from campfire)
+    // Note: This reducer currently doesn't support splitting *from* campfire directly.
+    // That would require a separate reducer like split_from_campfire_and_move.
+    if source_item.player_identity != sender_id {
+         return Err(format!("Source item {} not owned by caller.", source_item_instance_id));
+    }
+     if source_item.inventory_slot.is_none() && source_item.hotbar_slot.is_none() {
+        return Err("Source item must be in inventory or hotbar to split this way".to_string());
+    }
+
+    // Get Item Definition for stackability check
+    let item_def = ctx.db.item_definition().id().find(source_item.item_def_id)
+        .ok_or_else(|| format!("Definition not found for item ID {}", source_item.item_def_id))?;
+    
+    if !item_def.is_stackable {
+        return Err(format!("Item '{}' is not stackable.", item_def.name));
+    }
+    if quantity_to_split == 0 {
+        return Err("Cannot split a quantity of 0.".to_string());
+    }
+    if quantity_to_split >= source_item.quantity {
+        return Err(format!("Cannot split {} items, only {} available.", quantity_to_split, source_item.quantity));
+    }
+
+    // --- 2. Perform Split --- 
+    // The helper updates the original stack and returns the ID of the new stack.
+    let new_item_instance_id = split_stack_helper(ctx, &mut source_item, quantity_to_split)?;
+
+    // --- 3. Move/Merge the NEW Stack --- 
+    log::debug!("[SplitAndMove] Calling appropriate move/add reducer for new stack {}", new_item_instance_id);
+    match target_slot_type.as_str() {
+        "inventory" => {
+            // Call move_item_to_inventory, which handles merging
+            move_item_to_inventory(ctx, new_item_instance_id, target_slot_index as u16)
+        },
+        "hotbar" => {
+             // Call move_item_to_hotbar, which handles merging
+            move_item_to_hotbar(ctx, new_item_instance_id, target_slot_index as u8)
+        },
+        "campfire_fuel" => {
+            // Call add_fuel_to_campfire, which handles merging
+            let campfire_id = target_campfire_id.ok_or("target_campfire_id is required for campfire_fuel target".to_string())?;
+            crate::campfire::add_fuel_to_campfire(ctx, campfire_id, target_slot_index as u8, new_item_instance_id)
+        },
+        _ => {
+            log::error!("[SplitAndMove] Invalid target_slot_type: {}", target_slot_type);
+            // Attempt to delete the orphaned split stack to prevent item loss
+            ctx.db.inventory_item().instance_id().delete(new_item_instance_id);
+            Err(format!("Invalid target slot type for split: {}", target_slot_type))
+        }
+    }
+}
+
+// --- NEW Reducer: Split From Campfire and Move/Merge ---
+
+/// Splits a specified quantity from a source stack within a campfire and attempts 
+/// to move/merge the new stack onto a target slot (inv, hotbar, or another campfire slot).
+#[spacetimedb::reducer]
+pub fn split_and_move_from_campfire(
+    ctx: &ReducerContext,
+    source_campfire_id: u32,
+    source_slot_index: u8,
+    quantity_to_split: u32,
+    target_slot_type: String,    // "inventory", "hotbar", or "campfire_fuel"
+    target_slot_index: u32,     // Numeric index for inventory/hotbar/campfire
+    // target_campfire_id is only needed if target_slot_type is campfire_fuel, 
+    // and it will be the SAME as source_campfire_id if moving within the same fire.
+    // We already have source_campfire_id, so we don't need a separate target one.
+) -> Result<(), String> {
+    let sender_id = ctx.sender; // Needed for potential move to inventory/hotbar
+    let campfires = ctx.db.campfire();
+    let mut inventory_items = ctx.db.inventory_item(); // Mutable for split helper and move reducers
+
+    log::info!(
+        "[SplitMoveFromCampfire] Player {:?} splitting {} from campfire {} slot {} to {} slot {}",
+        sender_id, quantity_to_split, source_campfire_id, source_slot_index, target_slot_type, target_slot_index
+    );
+
+    // --- 1. Find Source Campfire & Item ID --- 
+    let campfire = campfires.id().find(source_campfire_id)
+        .ok_or(format!("Source campfire {} not found", source_campfire_id))?;
+    
+    if source_slot_index >= crate::campfire::NUM_FUEL_SLOTS as u8 {
+        return Err(format!("Invalid source fuel slot index: {}", source_slot_index));
+    }
+
+    let source_instance_id = match source_slot_index {
+        0 => campfire.fuel_instance_id_0,
+        1 => campfire.fuel_instance_id_1,
+        2 => campfire.fuel_instance_id_2,
+        3 => campfire.fuel_instance_id_3,
+        4 => campfire.fuel_instance_id_4,
+        _ => None, // Should be caught by index check above
+    }.ok_or(format!("No item found in source campfire slot {}", source_slot_index))?;
+
+    // --- 2. Get Source Item & Validate Split --- 
+    let mut source_item = inventory_items.instance_id().find(source_instance_id)
+        .ok_or("Source item instance not found in inventory table")?;
+
+    // Note: Ownership check isn't strictly needed here as item is in world container,
+    // but we might add checks later if campfires become player-specific.
+
+    // Get Item Definition for stackability check
+    let item_def = ctx.db.item_definition().id().find(source_item.item_def_id)
+        .ok_or_else(|| format!("Definition not found for item ID {}", source_item.item_def_id))?;
+    
+    if !item_def.is_stackable {
+        return Err(format!("Item '{}' is not stackable.", item_def.name));
+    }
+    if quantity_to_split == 0 {
+        return Err("Cannot split a quantity of 0.".to_string());
+    }
+    if quantity_to_split >= source_item.quantity {
+        return Err(format!("Cannot split {} items, only {} available.", quantity_to_split, source_item.quantity));
+    }
+
+    // --- 3. Perform Split --- 
+    // The helper updates the original source_item stack and returns the ID of the new stack.
+    let new_item_instance_id = split_stack_helper(ctx, &mut source_item, quantity_to_split)?;
+
+    // --- 4. Move/Merge the NEW Stack --- 
+    log::debug!("[SplitMoveFromCampfire] Calling appropriate move/add reducer for new stack {}", new_item_instance_id);
+    match target_slot_type.as_str() {
+        "inventory" => {
+            // Call move_item_to_inventory, which handles merging
+            move_item_to_inventory(ctx, new_item_instance_id, target_slot_index as u16)
+        },
+        "hotbar" => {
+             // Call move_item_to_hotbar, which handles merging
+            move_item_to_hotbar(ctx, new_item_instance_id, target_slot_index as u8)
+        },
+        "campfire_fuel" => {
+            // Call add_fuel_to_campfire, which handles merging onto existing stack or placing in empty slot.
+            // We use the source_campfire_id because we are moving *within* the same fire if target is campfire.
+            crate::campfire::add_fuel_to_campfire(ctx, source_campfire_id, target_slot_index as u8, new_item_instance_id)
+        },
+        _ => {
+            log::error!("[SplitMoveFromCampfire] Invalid target_slot_type: {}", target_slot_type);
+            // Attempt to delete the orphaned split stack to prevent item loss
+            ctx.db.inventory_item().instance_id().delete(new_item_instance_id);
+            Err(format!("Invalid target slot type for split: {}", target_slot_type))
+        }
+    }
 } 

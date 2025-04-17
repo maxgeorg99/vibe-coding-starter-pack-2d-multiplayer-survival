@@ -806,96 +806,88 @@ function App() {
             const quantityToSplit = sourceInfo.splitQuantity;
             const sourceSlotType = sourceInfo.sourceSlot.type;
             const targetSlotType = targetSlot.type;
-            // We need the Campfire ID if either source or target is a campfire slot
-            // Let's assume it's passed via sourceSlot.parentId or targetSlot.parentId for now
-            // This might need adjustment based on how InventoryUI passes the info.
-            const campfireId = sourceInfo.sourceSlot.parentId ?? targetSlot.parentId;
-            const campfireIdNum = campfireId ? Number(campfireId) : null;
+            const sourceInstanceId = BigInt(sourceInfo.item.instance.instanceId);
 
-            console.log(`[App Drop] Initiating SPLIT: Qty ${quantityToSplit} onto ${targetSlotType}:${targetSlot.index} (Campfire context: ${campfireIdNum})`);
+            console.log(`[App Drop] Initiating SPLIT: Qty ${quantityToSplit} from ${sourceSlotType}:${sourceInfo.sourceSlot.index} to ${targetSlotType}:${targetSlot.index}`);
 
-            // Ensure target index is a number (can be string for equipment)
-            let targetIndexNum: number | null = null;
-            if (typeof targetSlot.index === 'number') {
-                targetIndexNum = targetSlot.index;
-            } else if (typeof targetSlot.index === 'string') {
-                if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
-                    targetIndexNum = parseInt(targetSlot.index, 10);
-                    if (isNaN(targetIndexNum)) {
-                        console.error("[App Drop] Split failed: Target index string is not a valid number for inv/hotbar.");
-                        setError("Invalid split target slot.");
-                        return;
-                    }
-                } else if (targetSlotType !== 'equipment') { // Allow string index only for equipment
-                    console.error("[App Drop] Split failed: Target index string invalid for type:", targetSlotType);
-                    setError("Invalid split target slot.");
-                    return;
-                }
-            } else {
-                 console.error("[App Drop] Split failed: Target index is invalid type.");
-                 setError("Invalid split target slot.");
-                 return;
-            }
+            // --- Refactored Split Logic --- 
 
-            // Call appropriate split reducer based on source and target
             if (sourceSlotType === 'inventory' || sourceSlotType === 'hotbar') {
-                 if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
-                     if (targetIndexNum === null) { console.error("Target index null for inv/hotbar split"); return; }
-                     console.log(`Calling splitStack with target ${targetSlotType}, index ${targetIndexNum}`);
-                     connection.reducers.splitStack(itemInstanceId, quantityToSplit, targetSlotType, targetIndexNum);
-                 } else if (targetSlotType === 'campfire_fuel') {
-                     // --- FIX #2: Use interactingWith for splitting INTO campfire --- 
-                     const targetFuelIndex = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                // Splitting FROM Inventory/Hotbar
+                let targetSlotIndexNum: number | null = null;
+                let targetCampfireIdNum: number | null = null;
 
-                     // Get campfire ID from interaction context when splitting INTO it
-                     const targetCampfireId = interactingWith?.type === 'campfire' ? Number(interactingWith.id) : null;
-                     
-                     if (targetCampfireId === null || isNaN(targetFuelIndex)) { 
-                         console.error("[App Drop] Missing CampfireID (from interactingWith) or TargetIndex for split INTO campfire"); 
-                         setError("Could not determine target campfire slot for split.");
+                if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
+                    // Target is Inv/Hotbar -> Parse Index
+                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                    if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum)) {
+                         console.error("[App Drop] Split failed: Invalid target index for inv/hotbar.");
+                         setError("Invalid target slot for split.");
+                         return;
+                    }
+                } else if (targetSlotType === 'campfire_fuel') {
+                    // Target is Campfire -> Parse Index & Get ID
+                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                    targetCampfireIdNum = interactingWith?.type === 'campfire' ? Number(interactingWith.id) : (targetSlot.parentId ? Number(targetSlot.parentId) : null);
+                     if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum) || targetCampfireIdNum === null || isNaN(targetCampfireIdNum)) {
+                         console.error("[App Drop] Split failed: Invalid target index or missing CampfireID for campfire target.");
+                         setError("Invalid target slot or context for campfire split.");
                          return; 
                      }
-                     
-                     console.log(`Calling splitStackIntoCampfire: Item ${itemInstanceId}, Qty ${quantityToSplit} to Campfire ${targetCampfireId} Slot ${targetFuelIndex}`);
-                     if (connection.reducers.splitStackIntoCampfire) {
-                         connection.reducers.splitStackIntoCampfire(itemInstanceId, quantityToSplit, targetCampfireId, targetFuelIndex);
-                     } else {
-                         console.error("Reducer 'splitStackIntoCampfire' not found!");
-                         setError("Splitting into campfire not supported.");
-                     }
-                 } else {
-                      console.warn(`[App Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
-                      setError("Cannot split item to that location.");
-                 }
-            } else if (sourceSlotType === 'campfire_fuel') {
-                 // Splitting FROM campfire should use parentId from sourceSlot
-                 const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
-                 const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
-                 
-                 if (sourceCampfireId === null || isNaN(sourceIndexNum)) { 
-                    console.error("[App Drop] Missing CampfireID or SourceIndex for split FROM campfire"); 
-                    setError("Could not determine source campfire slot for split.");
-                    return; 
-                 }
+                } else {
+                     // Invalid target for split from inv/hotbar (e.g., equipment)
+                    console.warn(`[App Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
+                    setError("Cannot split item to that location.");
+                    return;
+                }
+                
+                // Call splitAndMove (targetSlotIndexNum is guaranteed non-null here for valid targets)
+                console.log(`[App Drop] Calling splitAndMove for source ${sourceInstanceId}`);
+                 connection.reducers.splitAndMove(
+                    sourceInstanceId, 
+                    quantityToSplit, 
+                    targetSlotType, 
+                    targetSlotIndexNum!, // Assert non-null
+                    targetCampfireIdNum ?? undefined
+                );
 
-                 if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
-                     if (targetIndexNum === null) { console.error("Target index null for inv/hotbar split from campfire"); return; }
-                     console.log(`Calling splitStackFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum}, Item ${itemInstanceId}, Qty ${quantityToSplit} to ${targetSlotType}:${targetIndexNum}`);
-                     connection.reducers.splitStackFromCampfire(sourceCampfireId, sourceIndexNum, quantityToSplit, targetSlotType, targetIndexNum);
-                 } else if (targetSlotType === 'campfire_fuel') {
-                     // Splitting WITHIN campfire - Target index already parsed, sourceCampfireId is correct.
-                     if (targetIndexNum === null) { console.error("Target index null for within-campfire split"); return; }
-                     console.log(`Calling splitStackWithinCampfire: Campfire ${sourceCampfireId}, Source Slot ${sourceIndexNum}, Item ${itemInstanceId}, Qty ${quantityToSplit} to Target Slot ${targetIndexNum}`);
-                     if (connection.reducers.splitStackWithinCampfire) {
-                         connection.reducers.splitStackWithinCampfire(sourceCampfireId, sourceIndexNum, quantityToSplit, targetIndexNum);
-                     } else {
-                         console.error("Reducer 'splitStackWithinCampfire' not found!");
-                         setError("Splitting within campfire not supported.");
-                     }
-                 } else {
-                      console.warn(`[App Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
-                      setError("Cannot split item to that location.");
-                 }
+            } else if (sourceSlotType === 'campfire_fuel') {
+                // Splitting FROM Campfire
+                const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                
+                if (sourceCampfireId === null || isNaN(sourceIndexNum)) { 
+                   console.error("[App Drop] Missing CampfireID or SourceIndex for split FROM campfire"); 
+                   setError("Could not determine source campfire slot for split.");
+                   return; 
+                }
+                
+                // Parse target index generically (could be inv, hotbar, or campfire)
+                let targetSlotIndexNum: number | null = null; 
+                if (typeof targetSlot.index === 'number') {
+                    targetSlotIndexNum = targetSlot.index;
+                } else if (typeof targetSlot.index === 'string') { 
+                     targetSlotIndexNum = parseInt(targetSlot.index, 10);
+                     if (isNaN(targetSlotIndexNum)) targetSlotIndexNum = null;
+                }
+
+                // Target index must be valid for any split target
+                if (targetSlotIndexNum === null) { 
+                    console.error("[App Drop] Invalid target index number for split from campfire."); 
+                    setError("Invalid target slot for split.");
+                    return; 
+                }
+
+                // Call the new dedicated reducer
+                console.log(`[App Drop] Calling splitAndMoveFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum} -> ${targetSlotType}:${targetSlotIndexNum}`);
+                connection.reducers.splitAndMoveFromCampfire(
+                    sourceCampfireId, 
+                    sourceIndexNum, 
+                    quantityToSplit, 
+                    targetSlotType, 
+                    targetSlotIndexNum,
+                    // No target campfire ID needed as separate arg for this reducer
+                );
             } else {
                 console.warn(`[App Drop] Split ignored: Cannot split from source type ${sourceSlotType}`);
                 setError("Cannot split from this item source.");

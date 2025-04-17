@@ -217,7 +217,7 @@ const Hotbar: React.FC<HotbarProps> = ({
                connection.reducers.equipArmor(itemInstanceId);
            } catch (error: any) {
                console.error("[Hotbar ContextMenu] Failed to call equipArmor reducer:", error);
-           }
+          }
       } else {
           // Default behavior for right-clicking other items in hotbar (if any desired later)
           console.log("[Hotbar ContextMenu] No specific action for this item/context (Not Wood in Campfire context, Not Armor).");

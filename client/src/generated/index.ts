@@ -88,6 +88,10 @@ import { SeedWorldState } from "./seed_world_state_reducer.ts";
 export { SeedWorldState };
 import { SetSprinting } from "./set_sprinting_reducer.ts";
 export { SetSprinting };
+import { SplitAndMove } from "./split_and_move_reducer.ts";
+export { SplitAndMove };
+import { SplitAndMoveFromCampfire } from "./split_and_move_from_campfire_reducer.ts";
+export { SplitAndMoveFromCampfire };
 import { SplitStack } from "./split_stack_reducer.ts";
 export { SplitStack };
 import { SplitStackFromCampfire } from "./split_stack_from_campfire_reducer.ts";
@@ -343,6 +347,14 @@ const REMOTE_MODULE = {
       reducerName: "set_sprinting",
       argsType: SetSprinting.getTypeScriptAlgebraicType(),
     },
+    split_and_move: {
+      reducerName: "split_and_move",
+      argsType: SplitAndMove.getTypeScriptAlgebraicType(),
+    },
+    split_and_move_from_campfire: {
+      reducerName: "split_and_move_from_campfire",
+      argsType: SplitAndMoveFromCampfire.getTypeScriptAlgebraicType(),
+    },
     split_stack: {
       reducerName: "split_stack",
       argsType: SplitStack.getTypeScriptAlgebraicType(),
@@ -434,6 +446,8 @@ export type Reducer = never
 | { name: "SeedItems", args: SeedItems }
 | { name: "SeedWorldState", args: SeedWorldState }
 | { name: "SetSprinting", args: SetSprinting }
+| { name: "SplitAndMove", args: SplitAndMove }
+| { name: "SplitAndMoveFromCampfire", args: SplitAndMoveFromCampfire }
 | { name: "SplitStack", args: SplitStack }
 | { name: "SplitStackFromCampfire", args: SplitStackFromCampfire }
 | { name: "SplitStackIntoCampfire", args: SplitStackIntoCampfire }
@@ -856,6 +870,38 @@ export class RemoteReducers {
     this.connection.offReducer("set_sprinting", callback);
   }
 
+  splitAndMove(sourceItemInstanceId: bigint, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number, targetCampfireId: number | undefined) {
+    const __args = { sourceItemInstanceId, quantityToSplit, targetSlotType, targetSlotIndex, targetCampfireId };
+    let __writer = new BinaryWriter(1024);
+    SplitAndMove.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_and_move", __argsBuffer, this.setCallReducerFlags.splitAndMoveFlags);
+  }
+
+  onSplitAndMove(callback: (ctx: ReducerEventContext, sourceItemInstanceId: bigint, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number, targetCampfireId: number | undefined) => void) {
+    this.connection.onReducer("split_and_move", callback);
+  }
+
+  removeOnSplitAndMove(callback: (ctx: ReducerEventContext, sourceItemInstanceId: bigint, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number, targetCampfireId: number | undefined) => void) {
+    this.connection.offReducer("split_and_move", callback);
+  }
+
+  splitAndMoveFromCampfire(sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) {
+    const __args = { sourceCampfireId, sourceSlotIndex, quantityToSplit, targetSlotType, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    SplitAndMoveFromCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_and_move_from_campfire", __argsBuffer, this.setCallReducerFlags.splitAndMoveFromCampfireFlags);
+  }
+
+  onSplitAndMoveFromCampfire(callback: (ctx: ReducerEventContext, sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.onReducer("split_and_move_from_campfire", callback);
+  }
+
+  removeOnSplitAndMoveFromCampfire(callback: (ctx: ReducerEventContext, sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.offReducer("split_and_move_from_campfire", callback);
+  }
+
   splitStack(sourceItemInstanceId: bigint, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) {
     const __args = { sourceItemInstanceId, quantityToSplit, targetSlotType, targetSlotIndex };
     let __writer = new BinaryWriter(1024);
@@ -1123,6 +1169,16 @@ export class SetReducerFlags {
   setSprintingFlags: CallReducerFlags = 'FullUpdate';
   setSprinting(flags: CallReducerFlags) {
     this.setSprintingFlags = flags;
+  }
+
+  splitAndMoveFlags: CallReducerFlags = 'FullUpdate';
+  splitAndMove(flags: CallReducerFlags) {
+    this.splitAndMoveFlags = flags;
+  }
+
+  splitAndMoveFromCampfireFlags: CallReducerFlags = 'FullUpdate';
+  splitAndMoveFromCampfire(flags: CallReducerFlags) {
+    this.splitAndMoveFromCampfireFlags = flags;
   }
 
   splitStackFlags: CallReducerFlags = 'FullUpdate';
