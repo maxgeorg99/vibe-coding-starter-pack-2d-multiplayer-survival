@@ -36,7 +36,7 @@ use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnSche
 // Use specific items needed globally (or use qualified paths)
 // use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
 use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
-use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED };
+use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED, PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED };
 
 // Remove commented-out schedule imports
 // use crate::campfire::{CampfireUpdateSchedule, CAMPFIRE_UPDATE_INTERVAL_SECS}; // Temporarily disabled
@@ -74,6 +74,10 @@ const HEALTH_RECOVERY_PER_SEC: f32 = 1.0;
 // New Warmth Penalties
 const HEALTH_LOSS_PER_SEC_LOW_WARMTH: f32 = 0.6; // Slightly higher than thirst/hunger
 const LOW_WARMTH_SPEED_PENALTY: f32 = 0.8; // 20% speed reduction when cold
+
+// NEW: Campfire placement range constant
+const CAMPFIRE_PLACEMENT_MAX_DISTANCE: f32 = 96.0;
+const CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED: f32 = CAMPFIRE_PLACEMENT_MAX_DISTANCE * CAMPFIRE_PLACEMENT_MAX_DISTANCE;
 
 // Player table to store position and color
 #[spacetimedb::table(name = player, public)]
@@ -404,6 +408,14 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
     // --- 1. Check if player exists ---
     let player = players.identity().find(sender_id)
         .ok_or_else(|| "Player not found".to_string())?;
+
+    // --- NEW: 1.5 Check Placement Distance --- 
+    let dist_sq = crate::utils::get_distance_squared(player.position_x, player.position_y, target_x, target_y);
+    if dist_sq > CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED {
+        log::warn!("[PlaceCampfire] Player {:?} tried to place campfire too far away (DistSq: {:.1} > {:.1})",
+                  sender_id, dist_sq, CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED);
+        return Err("Too far away to place campfire".to_string());
+    }
 
     // --- 2. Find the "Camp Fire" item definition ---
     let campfire_placeable_def = item_defs.iter()

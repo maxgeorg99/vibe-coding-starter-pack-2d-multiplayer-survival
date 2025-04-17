@@ -245,6 +245,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const closestInteractableCampfireIdRef = useRef<number | null>(null); // Ref for nearby campfire ID (u32 maps to number)
   const closestInteractableDroppedItemIdRef = useRef<bigint | null>(null); // Ref for closest interactable dropped item ID
   const isEHeldDownRef = useRef<boolean>(false);
+  const isMouseDownRef = useRef<boolean>(false);
+  const lastClientSwingAttemptRef = useRef<number>(0); // Store timestamp of last attempt
   const eKeyDownTimestampRef = useRef<number>(0);
   const eKeyHoldTimerRef = useRef<number | null>(null);
   const [interactionProgress, setInteractionProgress] = useState<{ targetId: number | bigint | null; startTime: number } | null>(null);
@@ -319,6 +321,48 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [players, localPlayerId, getLocalPlayer]);
 
+  // --- Calculate Respawn Time ---
+  const localPlayer = getLocalPlayer();
+  const respawnTimestampMs = useMemo(() => {
+    if (localPlayer?.isDead && localPlayer.respawnAt) {
+      // Use the correct method name and convert BigInt microseconds to number milliseconds
+      return Number(localPlayer.respawnAt.microsSinceUnixEpoch / 1000n);
+    }
+    return 0;
+  }, [localPlayer?.isDead, localPlayer?.respawnAt]);
+
+  // --- NEW: Swing Attempt Helper (Moved Before useEffect) ---
+  const attemptSwing = useCallback(() => {
+    if (!connection?.reducers || !localPlayerId) return;
+    
+    const localEquipment = activeEquipments.get(localPlayerId);
+    if (!localEquipment || localEquipment.equippedItemDefId === null) {
+        return; 
+    }
+
+    const now = Date.now();
+    const SWING_COOLDOWN_MS = 500;
+
+    // Client-side cooldown
+    if (now - lastClientSwingAttemptRef.current < SWING_COOLDOWN_MS) {
+      return;
+    }
+    
+    // Server-side cooldown
+    if (now - Number(localEquipment.swingStartTimeMs) < SWING_COOLDOWN_MS) {
+       return; 
+    }
+
+    // Attempt the swing
+    try {
+        connection.reducers.useEquippedItem();
+        lastClientSwingAttemptRef.current = now;
+    } catch (err) {
+        console.error("[AttemptSwing] Error calling useEquippedItem reducer:", err);
+    }
+  }, [connection, localPlayerId, activeEquipments]); // Dependencies
+
+  // --- Input Handling useEffect ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore input if player is dead or placing campfire (except escape)
@@ -466,45 +510,24 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       // --- End 'E' Key Up Logic ---
     };
 
-    // --- Placement Click Listener ---
+    // --- REMOVE Swing Logic from Click Listener --- 
     const handleCanvasClick = (event: MouseEvent) => {
-        if (isInputDisabled.current) return; // Ignore clicks if dead
+        if (isInputDisabled.current) return;
 
-        // Check if placing campfire first
+        // Only handle placement clicks now
         if (isPlacingCampfire && worldMousePosRef.current.x !== null && worldMousePosRef.current.y !== null) {
-            // Left click to place
             if (event.button === 0) {
                 handlePlaceCampfire(worldMousePosRef.current.x, worldMousePosRef.current.y);
-                return; // Don't process further if placing
+                return; 
             }
         }
 
-        // Handle using equipped item on left click (if not placing)
-        if (event.button === 0 && !isPlacingCampfire) { // Left mouse button and not placing
-            if (localPlayerId && connection?.reducers) {
-                const localEquipment = activeEquipments.get(localPlayerId);
-                if (localEquipment && localEquipment.equippedItemDefId !== null) {
-                    // Check if currently swinging? Optional cooldown.
-                    const now = Date.now();
-                    const SWING_COOLDOWN_MS = 500; // Example cooldown
-                    if (now - Number(localEquipment.swingStartTimeMs) > SWING_COOLDOWN_MS) {
-                        console.log("Left click: Using equipped item.");
-                        try {
-                            connection.reducers.useEquippedItem();
-                        } catch (err) {
-                            console.error("Error calling useEquippedItem reducer:", err);
-                        }
-                    } else {
-                        console.log("Left click: Still on swing cooldown.");
-                    }
-                } else {
-                    console.log("Left click: No item equipped.");
-                    // Potentially trigger punching animation/logic here later
-                }
-            } else {
-                console.warn("Cannot use item: Local player ID or connection reducers not available.");
-            }
+        // --- REMOVED Item usage logic --- 
+        /*
+        if (event.button === 0 && !isPlacingCampfire) { 
+           // ... removed swing logic ...
         }
+        */
     };
 
     // --- Placement Right-Click/Context Menu Listener ---
@@ -526,16 +549,31 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
     };
 
+    // --- NEW: Mouse Down/Up Listeners for Swinging ---
+    const handleMouseDown = (event: MouseEvent) => {
+        if (isInputDisabled.current || event.button !== 0 || isPlacingCampfire) return;
+        isMouseDownRef.current = true;
+        attemptSwing(); // Attempt first swing immediately on click
+    };
+
+    const handleMouseUp = (event: MouseEvent) => {
+        if (event.button === 0) {
+           isMouseDownRef.current = false;
+        }
+    };
+
+    // Add listeners
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('wheel', handleWheel, { passive: true }); // Listen for wheel events on window
+    window.addEventListener('wheel', handleWheel, { passive: true });
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
     const canvas = canvasRef.current;
     if (canvas) {
         canvas.addEventListener('click', handleCanvasClick);
         canvas.addEventListener('contextmenu', handleContextMenu);
     }
 
-    // Cleanup function to handle edge case: window losing focus while shift is held
     const handleBlur = () => {
         if (isSprintingRef.current) {
             isSprintingRef.current = false;
@@ -545,17 +583,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     };
     window.addEventListener('blur', handleBlur);
 
+    // Remove listeners
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
        if (canvas) {
         canvas.removeEventListener('click', handleCanvasClick);
         canvas.removeEventListener('contextmenu', handleContextMenu);
       }
     };
-  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, inventoryItems, localPlayerId, connection, onSetInteractingWith]);
+  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, inventoryItems, localPlayerId, connection, onSetInteractingWith, attemptSwing]);
 
   const updatePlayerBasedOnInput = useCallback(() => {
     if (isInputDisabled.current) return; // Skip input processing if dead
@@ -875,6 +916,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     // --- End Finding Closest DroppedItem ---
 
+    // --- Calculate if placement preview is out of range --- 
+    let isPlacementTooFar = false;
+    if (isPlacingCampfire && localPlayerData && currentWorldMouseX !== null && currentWorldMouseY !== null) {
+         const placeDistSq = (currentWorldMouseX - localPlayerData.positionX)**2 + (currentWorldMouseY - localPlayerData.positionY)**2;
+         // Use a value slightly larger than the server constant to avoid flickering at the exact edge
+         const clientPlacementRangeSq = (96.0 * 96.0) * 1.05; // Match server logic (96px) + 5% buffer
+         if (placeDistSq > clientPlacementRangeSq) {
+             isPlacementTooFar = true;
+         }
+    }
+
     // Render Sorted World Entities (Including Dropped Items)
     worldEntitiesToRender.forEach(entity => {
        if (isPlayer(entity)) {
@@ -1033,18 +1085,36 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Render placement preview (in world space)
     if (isPlacingCampfire && currentWorldMouseX !== null && currentWorldMouseY !== null && campfireImageRef.current) {
-        ctx.globalAlpha = 0.6;
         const img = campfireImageRef.current;
         const drawWidth = CAMPFIRE_WIDTH_PREVIEW;
         const drawHeight = CAMPFIRE_HEIGHT_PREVIEW;
+        
+        ctx.save(); // Save context state before applying filters/alpha
+        
+        // Apply visual feedback if too far or collision error
+        let placementMessage = placementError; // Use existing collision error by default
+        if (isPlacementTooFar) {
+            ctx.filter = 'grayscale(80%) brightness(1.2) contrast(0.8) opacity(50%)'; // Greyed out, slightly faded
+            placementMessage = "Too far away"; // Override message
+        } else {
+            // Apply normal transparency if not too far and no collision error
+            ctx.globalAlpha = 0.6;
+        }
+
         ctx.drawImage(img, currentWorldMouseX - drawWidth / 2, currentWorldMouseY - drawHeight / 2, drawWidth, drawHeight);
-        ctx.globalAlpha = 1.0;
-        if (placementError) {
-            ctx.fillStyle = 'red';
+        
+        // Display placement message (either range error or collision error)
+        if (placementMessage) {
+            ctx.fillStyle = isPlacementTooFar ? 'orange' : 'red'; // Orange for range, Red for collision
             ctx.font = '12px "Press Start 2P", cursive';
             ctx.textAlign = 'center';
-            ctx.fillText(placementError, currentWorldMouseX, currentWorldMouseY - drawHeight / 2 - 5);
+            // Draw text without filter/alpha applied by the preview image draw
+            ctx.filter = 'none'; 
+            ctx.globalAlpha = 1.0;
+            ctx.fillText(placementMessage, currentWorldMouseX, currentWorldMouseY - drawHeight / 2 - 5);
         }
+        
+        ctx.restore(); // Restore context state (removes filter/alpha)
     }
     ctx.restore(); // Restore from world space rendering
 
@@ -1167,11 +1237,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Only update player input if not dead
     if (!isInputDisabled.current) {
         updatePlayerBasedOnInput();
+        // --- NEW: Check for continuous swing --- 
+        if (isMouseDownRef.current) {
+            attemptSwing();
+        }
+        // --- END Check ---
     }
     // Always render the game world (or background behind death screen)
     renderGame();
     requestIdRef.current = requestAnimationFrame(gameLoop);
-  }, [updatePlayerBasedOnInput, renderGame]);
+  }, [updatePlayerBasedOnInput, renderGame, attemptSwing]); // Added attemptSwing dependency
 
   useEffect(() => {
     requestIdRef.current = requestAnimationFrame(gameLoop);
@@ -1208,16 +1283,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     // Client state will update automatically via subscription when player.isDead changes
   }, [connection]);
-
-  // --- Calculate Respawn Time ---
-  const localPlayer = getLocalPlayer();
-  const respawnTimestampMs = useMemo(() => {
-    if (localPlayer?.isDead && localPlayer.respawnAt) {
-      // Use the correct method name and convert BigInt microseconds to number milliseconds
-      return Number(localPlayer.respawnAt.microsSinceUnixEpoch / 1000n);
-    }
-    return 0;
-  }, [localPlayer?.isDead, localPlayer?.respawnAt]);
 
   // Add console logs for debugging
   // console.log(`[DeathCheck] isPlayerDead: ${localPlayer?.isDead}, respawnTimestampMs: ${respawnTimestampMs}, connection exists: ${!!connection}`);

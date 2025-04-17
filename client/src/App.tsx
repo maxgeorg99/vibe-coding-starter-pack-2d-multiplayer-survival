@@ -737,25 +737,24 @@ function App() {
     if (!connection || !isPlacingCampfire) return;
 
     console.log(`Attempting to place campfire at (${worldX}, ${worldY})`);
+    setPlacementError(null); // Clear previous error before attempting
     try {
       // Call the SpacetimeDB reducer using camelCase
       connection.reducers.placeCampfire(worldX, worldY);
-      setIsPlacingCampfire(false); // Exit placement mode on successful call attempt
-      setPlacementError(null);
     } catch (err: any) {
-      console.error('Failed to place campfire:', err);
-      // Display the error message from the server if available
+      console.error('Failed to call place campfire reducer (client-side error):', err);
+      // Display the error message 
       const errorMessage = err?.message || "Failed to place campfire. Check logs.";
       setError(`Placement failed: ${errorMessage}`); // Show general error
       setPlacementError(errorMessage); // Keep specific error for potential placement UI
-      // Do NOT exit placement mode on error, allow retry or cancel
+      // Do NOT exit placement mode on error
     }
   };
 
   const cancelCampfirePlacement = () => {
     console.log("Cancelling campfire placement mode.");
     setIsPlacingCampfire(false);
-    setPlacementError(null);
+    setPlacementError(null); // Clear error on cancel
   };
   
   // --- LIFTED Drag/Drop Handlers --- 
