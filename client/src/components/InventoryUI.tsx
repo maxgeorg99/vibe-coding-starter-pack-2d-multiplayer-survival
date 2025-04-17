@@ -82,15 +82,15 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                 // Optionally show user message using error.message
             }
         }
-        // Otherwise (Tool, Material, Placeable, etc.) try equipping to hotbar 
+        // Otherwise (Tool, Material, Placeable, etc.) try equipping to hotbar
         else {
             // We removed the isEquippable check here, let the backend reducer handle it
-            console.log(`[InventoryUI] Item is not Armor. Calling equip_to_hotbar for item ${itemInstanceId}`);
+            console.log(`[InventoryUI] Item is not Armor. Calling move_to_first_available_hotbar_slot for item ${itemInstanceId}`);
             try {
-                // Call reducer, passing undefined for target slot to find first available
-                connection.reducers.equipToHotbar(itemInstanceId, undefined);
-            } catch (error: any) { 
-                console.error("[InventoryUI] Failed to call equipToHotbar reducer:", error);
+                // Call the correct reducer - it finds the first available slot itself
+                connection.reducers.moveToFirstAvailableHotbarSlot(itemInstanceId);
+            } catch (error: any) {
+                console.error("[InventoryUI] Failed to call moveToFirstAvailableHotbarSlot reducer:", error);
                 // Optionally show user message using error.message
             }
         }

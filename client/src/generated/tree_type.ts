@@ -39,6 +39,7 @@ export type Tree = {
   health: number,
   treeType: __TreeType,
   lastHitTime: Timestamp | undefined,
+  respawnAt: Timestamp | undefined,
 };
 
 /**
@@ -57,6 +58,7 @@ export namespace Tree {
       new ProductTypeElement("health", AlgebraicType.createU32Type()),
       new ProductTypeElement("treeType", __TreeType.getTypeScriptAlgebraicType()),
       new ProductTypeElement("lastHitTime", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
+      new ProductTypeElement("respawnAt", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
     ]);
   }
 

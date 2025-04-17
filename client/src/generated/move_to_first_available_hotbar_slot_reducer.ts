@@ -31,15 +31,14 @@ import {
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export type EquipToHotbar = {
+export type MoveToFirstAvailableHotbarSlot = {
   itemInstanceId: bigint,
-  targetHotbarSlot: number | undefined,
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace EquipToHotbar {
+export namespace MoveToFirstAvailableHotbarSlot {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
@@ -47,16 +46,15 @@ export namespace EquipToHotbar {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("itemInstanceId", AlgebraicType.createU64Type()),
-      new ProductTypeElement("targetHotbarSlot", AlgebraicType.createOptionType(AlgebraicType.createU8Type())),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: EquipToHotbar): void {
-    EquipToHotbar.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: MoveToFirstAvailableHotbarSlot): void {
+    MoveToFirstAvailableHotbarSlot.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): EquipToHotbar {
-    return EquipToHotbar.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): MoveToFirstAvailableHotbarSlot {
+    return MoveToFirstAvailableHotbarSlot.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }

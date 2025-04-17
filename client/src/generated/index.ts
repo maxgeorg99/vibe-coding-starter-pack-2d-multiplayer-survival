@@ -42,8 +42,6 @@ import { EquipArmorFromDrag } from "./equip_armor_from_drag_reducer.ts";
 export { EquipArmorFromDrag };
 import { EquipItem } from "./equip_item_reducer.ts";
 export { EquipItem };
-import { EquipToHotbar } from "./equip_to_hotbar_reducer.ts";
-export { EquipToHotbar };
 import { IdentityConnected } from "./identity_connected_reducer.ts";
 export { IdentityConnected };
 import { IdentityDisconnected } from "./identity_disconnected_reducer.ts";
@@ -56,6 +54,8 @@ import { MoveItemToHotbar } from "./move_item_to_hotbar_reducer.ts";
 export { MoveItemToHotbar };
 import { MoveItemToInventory } from "./move_item_to_inventory_reducer.ts";
 export { MoveItemToInventory };
+import { MoveToFirstAvailableHotbarSlot } from "./move_to_first_available_hotbar_slot_reducer.ts";
+export { MoveToFirstAvailableHotbarSlot };
 import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
 import { RegisterPlayer } from "./register_player_reducer.ts";
@@ -198,10 +198,6 @@ const REMOTE_MODULE = {
       reducerName: "equip_item",
       argsType: EquipItem.getTypeScriptAlgebraicType(),
     },
-    equip_to_hotbar: {
-      reducerName: "equip_to_hotbar",
-      argsType: EquipToHotbar.getTypeScriptAlgebraicType(),
-    },
     identity_connected: {
       reducerName: "identity_connected",
       argsType: IdentityConnected.getTypeScriptAlgebraicType(),
@@ -225,6 +221,10 @@ const REMOTE_MODULE = {
     move_item_to_inventory: {
       reducerName: "move_item_to_inventory",
       argsType: MoveItemToInventory.getTypeScriptAlgebraicType(),
+    },
+    move_to_first_available_hotbar_slot: {
+      reducerName: "move_to_first_available_hotbar_slot",
+      argsType: MoveToFirstAvailableHotbarSlot.getTypeScriptAlgebraicType(),
     },
     place_campfire: {
       reducerName: "place_campfire",
@@ -306,13 +306,13 @@ export type Reducer = never
 | { name: "EquipArmor", args: EquipArmor }
 | { name: "EquipArmorFromDrag", args: EquipArmorFromDrag }
 | { name: "EquipItem", args: EquipItem }
-| { name: "EquipToHotbar", args: EquipToHotbar }
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
 | { name: "InteractWithMushroom", args: InteractWithMushroom }
 | { name: "Jump", args: Jump }
 | { name: "MoveItemToHotbar", args: MoveItemToHotbar }
 | { name: "MoveItemToInventory", args: MoveItemToInventory }
+| { name: "MoveToFirstAvailableHotbarSlot", args: MoveToFirstAvailableHotbarSlot }
 | { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RequestRespawn", args: RequestRespawn }
@@ -406,22 +406,6 @@ export class RemoteReducers {
     this.connection.offReducer("equip_item", callback);
   }
 
-  equipToHotbar(itemInstanceId: bigint, targetHotbarSlot: number | undefined) {
-    const __args = { itemInstanceId, targetHotbarSlot };
-    let __writer = new BinaryWriter(1024);
-    EquipToHotbar.getTypeScriptAlgebraicType().serialize(__writer, __args);
-    let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("equip_to_hotbar", __argsBuffer, this.setCallReducerFlags.equipToHotbarFlags);
-  }
-
-  onEquipToHotbar(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetHotbarSlot: number | undefined) => void) {
-    this.connection.onReducer("equip_to_hotbar", callback);
-  }
-
-  removeOnEquipToHotbar(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetHotbarSlot: number | undefined) => void) {
-    this.connection.offReducer("equip_to_hotbar", callback);
-  }
-
   onIdentityConnected(callback: (ctx: ReducerEventContext) => void) {
     this.connection.onReducer("identity_connected", callback);
   }
@@ -496,6 +480,22 @@ export class RemoteReducers {
 
   removeOnMoveItemToInventory(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetInventorySlot: number) => void) {
     this.connection.offReducer("move_item_to_inventory", callback);
+  }
+
+  moveToFirstAvailableHotbarSlot(itemInstanceId: bigint) {
+    const __args = { itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    MoveToFirstAvailableHotbarSlot.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_to_first_available_hotbar_slot", __argsBuffer, this.setCallReducerFlags.moveToFirstAvailableHotbarSlotFlags);
+  }
+
+  onMoveToFirstAvailableHotbarSlot(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("move_to_first_available_hotbar_slot", callback);
+  }
+
+  removeOnMoveToFirstAvailableHotbarSlot(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("move_to_first_available_hotbar_slot", callback);
   }
 
   placeCampfire(targetX: number, targetY: number) {
@@ -694,11 +694,6 @@ export class SetReducerFlags {
     this.equipItemFlags = flags;
   }
 
-  equipToHotbarFlags: CallReducerFlags = 'FullUpdate';
-  equipToHotbar(flags: CallReducerFlags) {
-    this.equipToHotbarFlags = flags;
-  }
-
   interactWithMushroomFlags: CallReducerFlags = 'FullUpdate';
   interactWithMushroom(flags: CallReducerFlags) {
     this.interactWithMushroomFlags = flags;
@@ -717,6 +712,11 @@ export class SetReducerFlags {
   moveItemToInventoryFlags: CallReducerFlags = 'FullUpdate';
   moveItemToInventory(flags: CallReducerFlags) {
     this.moveItemToInventoryFlags = flags;
+  }
+
+  moveToFirstAvailableHotbarSlotFlags: CallReducerFlags = 'FullUpdate';
+  moveToFirstAvailableHotbarSlot(flags: CallReducerFlags) {
+    this.moveToFirstAvailableHotbarSlotFlags = flags;
   }
 
   placeCampfireFlags: CallReducerFlags = 'FullUpdate';

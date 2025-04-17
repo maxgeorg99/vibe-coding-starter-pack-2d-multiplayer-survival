@@ -706,9 +706,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Render world entities (EXCLUDING campfires)
     const worldEntitiesToRender: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBMushroom)[] = [
         ...Array.from(players.values()),
-        ...Array.from(trees.values()),
-        ...Array.from(stones.values()),
-        ...Array.from(mushrooms.values()), // Add mushrooms to the render list
+        // Filter out trees with 0 health (waiting to respawn)
+        ...Array.from(trees.values()).filter(tree => tree.health > 0),
+        // Filter out stones with 0 health (waiting to respawn - though already handled by check_resource_respawns, good practice)
+        ...Array.from(stones.values()).filter(stone => stone.health > 0),
+        // Filter out mushrooms with a respawn_at time set (waiting to respawn)
+        ...Array.from(mushrooms.values()).filter(mushroom => mushroom.respawnAt === null || mushroom.respawnAt === undefined),
         // Campfires removed from this loop
     ];
     worldEntitiesToRender.sort((a, b) => { // Simple posY sort
@@ -724,7 +727,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     let closestDistSq = PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED;
     closestInteractableMushroomIdRef.current = null; // Reset each frame
     if (localPlayerData) {
+      // Filter mushrooms before checking distance
       mushrooms.forEach((mushroom) => {
+        // Ignore mushrooms waiting to respawn
+        if (mushroom.respawnAt !== null && mushroom.respawnAt !== undefined) {
+             return; // Skip this mushroom
+        }
+
         const dx = localPlayerData.positionX - mushroom.posX;
         const dy = localPlayerData.positionY - mushroom.posY;
         const distSq = dx * dx + dy * dy;

@@ -400,29 +400,57 @@ pub(crate) fn add_item_to_player_inventory(ctx: &ReducerContext, player_id: Iden
     }
 }
 
-// Helper to clear an item from any equipment slot it might occupy
-fn clear_item_from_equipment_slots(ctx: &ReducerContext, player_id: spacetimedb::Identity, item_instance_id: u64) {
+// Helper to clear a specific item instance from any equipment slot it might occupy
+fn clear_specific_item_from_equipment_slots(ctx: &ReducerContext, player_id: spacetimedb::Identity, item_instance_id_to_clear: u64) {
     let active_equip_table = ctx.db.active_equipment();
     if let Some(mut equip) = active_equip_table.player_identity().find(player_id) {
         let mut updated = false;
-        if equip.head_item_instance_id == Some(item_instance_id) { equip.head_item_instance_id = None; updated = true; }
-        if equip.chest_item_instance_id == Some(item_instance_id) { equip.chest_item_instance_id = None; updated = true; }
-        if equip.legs_item_instance_id == Some(item_instance_id) { equip.legs_item_instance_id = None; updated = true; }
-        if equip.feet_item_instance_id == Some(item_instance_id) { equip.feet_item_instance_id = None; updated = true; }
-        if equip.hands_item_instance_id == Some(item_instance_id) { equip.hands_item_instance_id = None; updated = true; }
-        if equip.back_item_instance_id == Some(item_instance_id) { equip.back_item_instance_id = None; updated = true; }
-        // Also check the main hand slot
-        if equip.equipped_item_instance_id == Some(item_instance_id) { 
-             equip.equipped_item_instance_id = None; 
-             equip.equipped_item_def_id = None; // Clear def ID too
+
+        // Check main hand (less likely for armor, but good practice)
+        if equip.equipped_item_instance_id == Some(item_instance_id_to_clear) {
+             equip.equipped_item_instance_id = None;
+             equip.equipped_item_def_id = None;
              equip.swing_start_time_ms = 0;
-             updated = true; 
+             updated = true;
+             log::debug!("[ClearSpecificEquip] Removed item {} from main hand slot for player {:?}", item_instance_id_to_clear, player_id);
+        }
+        // Check armor slots
+        if equip.head_item_instance_id == Some(item_instance_id_to_clear) {
+            equip.head_item_instance_id = None;
+            updated = true;
+            log::debug!("[ClearSpecificEquip] Removed item {} from Head slot for player {:?}", item_instance_id_to_clear, player_id);
+        }
+        if equip.chest_item_instance_id == Some(item_instance_id_to_clear) {
+            equip.chest_item_instance_id = None;
+            updated = true;
+            log::debug!("[ClearSpecificEquip] Removed item {} from Chest slot for player {:?}", item_instance_id_to_clear, player_id);
+        }
+        if equip.legs_item_instance_id == Some(item_instance_id_to_clear) {
+            equip.legs_item_instance_id = None;
+            updated = true;
+            log::debug!("[ClearSpecificEquip] Removed item {} from Legs slot for player {:?}", item_instance_id_to_clear, player_id);
+        }
+        if equip.feet_item_instance_id == Some(item_instance_id_to_clear) {
+            equip.feet_item_instance_id = None;
+            updated = true;
+            log::debug!("[ClearSpecificEquip] Removed item {} from Feet slot for player {:?}", item_instance_id_to_clear, player_id);
+        }
+        if equip.hands_item_instance_id == Some(item_instance_id_to_clear) {
+            equip.hands_item_instance_id = None;
+            updated = true;
+            log::debug!("[ClearSpecificEquip] Removed item {} from Hands slot for player {:?}", item_instance_id_to_clear, player_id);
+        }
+        if equip.back_item_instance_id == Some(item_instance_id_to_clear) {
+            equip.back_item_instance_id = None;
+            updated = true;
+            log::debug!("[ClearSpecificEquip] Removed item {} from Back slot for player {:?}", item_instance_id_to_clear, player_id);
         }
 
         if updated {
-            log::info!("[ClearEquip] Removing item {} from equipment slots for player {:?}", item_instance_id, player_id);
             active_equip_table.player_identity().update(equip);
         }
+    } else {
+        log::warn!("[ClearSpecificEquip] Could not find ActiveEquipment for player {:?} when trying to clear item {}.", player_id, item_instance_id_to_clear);
     }
 }
 
@@ -436,17 +464,22 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
         .find(|def| def.id == item_to_move.item_def_id)
         .ok_or_else(|| format!("Definition missing for item {}", item_to_move.item_def_id))?;
 
+    // Store original location *before* modification
     let source_hotbar_slot = item_to_move.hotbar_slot;
     let source_inventory_slot = item_to_move.inventory_slot;
-    let from_equipment = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
+    let was_originally_equipped = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
 
     // Prevent dropping onto the exact same slot
-    if source_inventory_slot == Some(target_inventory_slot) { 
+    if source_inventory_slot == Some(target_inventory_slot) {
         log::info!("Item {} already in target slot {}. No action.", item_instance_id, target_inventory_slot);
-        return Ok(()); 
+        return Ok(());
     }
 
-    clear_item_from_equipment_slots(ctx, ctx.sender, item_instance_id);
+    // --- Clear from Equipment IF it was originally equipped ---
+    if was_originally_equipped {
+        log::debug!("Item {} was originally equipped. Clearing its equipment slot.", item_instance_id);
+        clear_specific_item_from_equipment_slots(ctx, ctx.sender, item_instance_id);
+    }
 
     let mut operation_complete = false; // Flag to track if merge/swap handled everything
 
@@ -494,7 +527,7 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
         // --- Fallback to Swap Logic (only if merge didn't happen) ---
         if !operation_complete {
             log::info!("Performing swap: Target slot {} occupied by item {}. Moving occupant.", target_inventory_slot, occupant.instance_id);
-            if from_equipment {
+            if source_inventory_slot.is_none() && source_hotbar_slot.is_none() {
                 // Move occupant to first available inventory slot
                 if let Some(empty_slot) = find_first_empty_inventory_slot(ctx) {
                     log::info!("Moving occupant {} to first empty inventory slot: {}", occupant.instance_id, empty_slot);
@@ -564,17 +597,22 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
         .find(|def| def.id == item_to_move.item_def_id)
         .ok_or_else(|| format!("Definition missing for item {}", item_to_move.item_def_id))?;
 
+    // Store original location *before* modification
     let source_hotbar_slot = item_to_move.hotbar_slot;
     let source_inventory_slot = item_to_move.inventory_slot;
-    let from_equipment = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
+    let was_originally_equipped = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
 
     // Prevent dropping onto the exact same slot
-     if source_hotbar_slot == Some(target_hotbar_slot) { 
+     if source_hotbar_slot == Some(target_hotbar_slot) {
         log::info!("Item {} already in target hotbar slot {}. No action.", item_instance_id, target_hotbar_slot);
-        return Ok(()); 
+        return Ok(());
      }
 
-    clear_item_from_equipment_slots(ctx, ctx.sender, item_instance_id);
+    // --- Clear from Equipment IF it was originally equipped ---
+    if was_originally_equipped {
+        log::debug!("Item {} was originally equipped. Clearing its equipment slot.", item_instance_id);
+        clear_specific_item_from_equipment_slots(ctx, ctx.sender, item_instance_id);
+    }
 
     let mut operation_complete = false; // Flag to track if merge/swap handled everything
 
@@ -622,7 +660,7 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
         // --- Fallback to Swap Logic (only if merge didn't happen) ---
         if !operation_complete {
             log::info!("Performing swap: Target hotbar slot {} occupied by item {}. Moving occupant.", target_hotbar_slot, occupant.instance_id);
-            if from_equipment {
+            if source_inventory_slot.is_none() && source_hotbar_slot.is_none() {
                 // Move occupant to first available inventory slot
                 if let Some(empty_slot) = find_first_empty_inventory_slot(ctx) {
                     log::info!("Moving occupant {} to first empty inventory slot: {}", occupant.instance_id, empty_slot);
@@ -680,41 +718,6 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
     }
 
     Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn equip_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_hotbar_slot: Option<u8>) -> Result<(), String> {
-    let item_to_equip = get_player_item(ctx, item_instance_id)?;
-
-    // Get item definition
-    let item_def = ctx.db.item_definition().iter()
-        .filter(|def| def.id == item_to_equip.item_def_id)
-        .next()
-        .ok_or_else(|| format!("Definition not found for item ID {}", item_to_equip.item_def_id))?;
-
-    // Validation: Removed is_equippable check. Still check for Armor.
-    if item_def.category == ItemCategory::Armor {
-         return Err(format!("Cannot equip armor '{}' to hotbar. Use equipment slots.", item_def.name));
-    }
-
-    let final_target_slot = match target_hotbar_slot {
-        Some(slot) => {
-            if slot >= 6 { return Err("Invalid hotbar slot index.".to_string()); }
-            slot
-        }
-        None => { // Find first empty slot
-            let occupied_slots: std::collections::HashSet<u8> = ctx.db.inventory_item().iter()
-                .filter(|i| i.player_identity == ctx.sender && i.hotbar_slot.is_some())
-                .map(|i| i.hotbar_slot.unwrap())
-                .collect();
-
-            (0..6).find(|slot| !occupied_slots.contains(slot))
-                  .ok_or_else(|| "No empty hotbar slots available.".to_string())?
-        }
-    };
-
-    // Call the move reducer
-    move_item_to_hotbar(ctx, item_instance_id, final_target_slot)
 }
 
 // Reducer to equip armor from a drag-and-drop operation
@@ -899,4 +902,32 @@ pub fn split_stack(
     );
 
     Ok(())
+}
+
+// NEW Reducer: Moves an item to the first available hotbar slot
+#[spacetimedb::reducer]
+pub fn move_to_first_available_hotbar_slot(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    log::info!("[MoveToHotbar] Player {:?} trying to move item {} to first available hotbar slot.", sender_id, item_instance_id);
+
+    // 1. Validate item exists and belongs to player (get_player_item does this)
+    let _item_to_move = get_player_item(ctx, item_instance_id)?;
+
+    // 2. Find the first empty hotbar slot (0-5)
+    let occupied_slots: std::collections::HashSet<u8> = ctx.db.inventory_item().iter()
+        .filter(|i| i.player_identity == sender_id && i.hotbar_slot.is_some())
+        .map(|i| i.hotbar_slot.unwrap())
+        .collect();
+
+    match (0..6).find(|slot| !occupied_slots.contains(slot)) {
+        Some(empty_slot) => {
+            log::info!("[MoveToHotbar] Found empty slot: {}. Calling move_item_to_hotbar.", empty_slot);
+            // 3. Call the existing move_item_to_hotbar reducer
+            move_item_to_hotbar(ctx, item_instance_id, empty_slot)
+        }
+        None => {
+            log::warn!("[MoveToHotbar] No empty hotbar slots available for player {:?}.", sender_id);
+            Err("No empty hotbar slots available.".to_string())
+        }
+    }
 } 

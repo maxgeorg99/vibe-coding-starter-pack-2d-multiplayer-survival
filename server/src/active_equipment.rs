@@ -20,7 +20,7 @@ use crate::items::{InventoryItem, ItemDefinition, ItemCategory, EquipmentSlot};
 // --- Constants ---
 pub(crate) const RESPAWN_TIME_MS: u64 = 5000; // 5 seconds respawn time
 const PVP_DAMAGE_MULTIPLIER: f32 = 6.0;
-const RESOURCE_RESPAWN_DURATION_SECS: u64 = 300; // 5 minutes respawn time for trees/stones
+pub(crate) const RESOURCE_RESPAWN_DURATION_SECS: u64 = 300; // 5 minutes respawn time for trees/stones
 
 #[spacetimedb::table(name = active_equipment, public)]
 #[derive(Clone, Default, Debug)]
@@ -60,64 +60,54 @@ pub fn equip_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), Str
     let item_def = item_defs.id().find(item_to_equip.item_def_id)
         .ok_or_else(|| format!("Item definition {} not found.", item_to_equip.item_def_id))?;
 
-    // --- Explicitly delete existing equipment first ---
-    // Regardless of whether the new item is equippable or not, if we are changing
-    // equipment selection, the old one should be removed.
-    if active_equipments.player_identity().find(sender_id).is_some() {
-        log::debug!("Player {:?} - Removing existing equipment before equipping new item (or unequipping).", sender_id);
-        active_equipments.player_identity().delete(sender_id);
-    }
+    // --- Get existing equipment or create default ---
+    let mut equipment = get_or_create_active_equipment(ctx, sender_id)?;
 
     // Check if item is actually equippable using the field from ItemDefinition
-    if !item_def.is_equippable {
-         // If not equippable, we already deleted the old entry above.
-         // Just log and return Ok.
-        log::info!("Player {:?} selected non-equippable item {}. Nothing equipped.", sender_id, item_def.name);
+    if !item_def.is_equippable || item_def.category == ItemCategory::Armor {
+        // If not equippable OR if it's armor (handled by equip_armor), clear the main hand slot.
+        log::info!("Player {:?} selected non-tool/weapon item {} or armor {}. Clearing main hand.", sender_id, item_def.name, item_instance_id);
+        equipment.equipped_item_def_id = None;
+        equipment.equipped_item_instance_id = None;
+        equipment.swing_start_time_ms = 0;
+        active_equipments.player_identity().update(equipment);
         return Ok(());
     }
 
-    // Update or insert the active equipment entry
-    let new_equipment = ActiveEquipment {
-        player_identity: sender_id,
-        equipped_item_def_id: Some(item_def.id), // Store the u64 ID directly
-        equipped_item_instance_id: Some(item_instance_id),
-        swing_start_time_ms: 0, // Reset swing state when equipping
-        head_item_instance_id: None,
-        chest_item_instance_id: None,
-        legs_item_instance_id: None,
-        feet_item_instance_id: None,
-        hands_item_instance_id: None,
-        back_item_instance_id: None,
-    };
+    // --- Update the main hand equipment entry ---
+    // Only update the fields related to the main hand item. Armor slots remain untouched.
+    equipment.equipped_item_def_id = Some(item_def.id);
+    equipment.equipped_item_instance_id = Some(item_instance_id);
+    equipment.swing_start_time_ms = 0; // Reset swing state when equipping
 
-    // Now insert the new equipment, knowing any old entry is gone.
-    active_equipments.insert(new_equipment);
-    log::info!("Player {:?} equipped item: {} (Instance ID: {})", sender_id, item_def.name, item_instance_id);
+    active_equipments.player_identity().update(equipment); // Update the existing row
+    log::info!("Player {:?} equipped item: {} (Instance ID: {}) to main hand.", sender_id, item_def.name, item_instance_id);
 
-    // Insert the new inventory item
-    ctx.db.inventory_item().insert(crate::items::InventoryItem {
-        instance_id: 0, // Auto-incremented
-        player_identity: ctx.sender,
-        item_def_id: item_to_equip.item_def_id,
-        quantity: 1,
-        hotbar_slot: None,
-        inventory_slot: None,
-    });
+    // --- REMOVED: Logic to insert inventory item, as equipping shouldn't create duplicates ---
+    // ctx.db.inventory_item().insert(crate::items::InventoryItem { ... });
 
     Ok(())
 }
 
-// Reducer to explicitly unequip whatever item is active
+// Reducer to explicitly unequip whatever item is active in the main hand
 #[spacetimedb::reducer]
 pub fn unequip_item(ctx: &ReducerContext) -> Result<(), String> {
     let sender_id = ctx.sender;
     let active_equipments = ctx.db.active_equipment();
 
-    if active_equipments.player_identity().find(sender_id).is_some() {
-        active_equipments.player_identity().delete(sender_id);
-        log::info!("Player {:?} explicitly unequipped item.", sender_id);
+    if let Some(mut equipment) = active_equipments.player_identity().find(sender_id) {
+        // Only clear the main hand fields. Leave armor slots untouched.
+        if equipment.equipped_item_instance_id.is_some() {
+             log::info!("Player {:?} explicitly unequipped main hand item.", sender_id);
+             equipment.equipped_item_def_id = None;
+             equipment.equipped_item_instance_id = None;
+             equipment.swing_start_time_ms = 0;
+             active_equipments.player_identity().update(equipment);
+        }
+    } else {
+        log::info!("Player {:?} tried to unequip, but no ActiveEquipment row found.", sender_id);
+        // No row exists, so nothing to unequip. Not an error.
     }
-    // Not an error if nothing was equipped
     Ok(())
 }
 
@@ -341,14 +331,11 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             // --- End Grant Wood Item ---
             
             if tree.health == 0 {
-                log::info!("Tree {} destroyed by Player {:?}.
-", tree_id, sender_id);
-                trees.id().delete(tree_id); // Delete the tree
-                // --- Removed Respawn Logic ---
-                // let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
-                // tree.state = crate::environment::TreeState::Stump;
-                // tree.respawn_at = Some(respawn_time);
-                // trees.id().update(tree);
+                log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
+                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                tree.respawn_at = Some(respawn_time);
+                trees.id().update(tree); // Update with health 0 and respawn time
+                // trees.id().delete(tree_id); // REMOVED delete
             } else {
                 trees.id().update(tree);
             }
@@ -425,14 +412,11 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     }
 
                     if tree.health == 0 {
-                        log::info!("Tree {} destroyed by Player {:?}.
-", tree_id, sender_id);
-                        trees.id().delete(tree_id); // Delete the tree
-                        // --- Removed Respawn Logic ---
-                        // let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
-                        // tree.state = crate::environment::TreeState::Stump;
-                        // tree.respawn_at = Some(respawn_time);
-                        // trees.id().update(tree);
+                        log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        tree.respawn_at = Some(respawn_time);
+                        trees.id().update(tree); // Update with health 0 and respawn time
+                        // trees.id().delete(tree_id); // REMOVED delete
                     } else {
                         trees.id().update(tree);
                     }
@@ -534,14 +518,11 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     log::info!("Player {:?} hit Tree {} with {} for {} damage. Health: {} -> {}",
                             sender_id, tree_id, item_def.name, item_damage, old_health, tree.health);
                     if tree.health == 0 {
-                        log::info!("Tree {} destroyed by Player {:?}.
-", tree_id, sender_id);
-                        trees.id().delete(tree_id); // Delete the tree
-                        // --- Removed Respawn Logic ---
-                        // let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
-                        // tree.state = crate::environment::TreeState::Stump;
-                        // tree.respawn_at = Some(respawn_time);
-                        // trees.id().update(tree);
+                        log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        tree.respawn_at = Some(respawn_time);
+                        trees.id().update(tree); // Update with health 0 and respawn time
+                        // trees.id().delete(tree_id); // REMOVED delete
                     } else {
                         trees.id().update(tree);
                     }

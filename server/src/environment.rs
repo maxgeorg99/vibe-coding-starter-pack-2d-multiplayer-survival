@@ -58,6 +58,7 @@ pub struct Tree {
     pub health: u32,
     pub tree_type: TreeType,
     pub last_hit_time: Option<Timestamp>,
+    pub respawn_at: Option<Timestamp>, // Added for respawn timer
 }
 
 // --- Stone Struct and Table ---
@@ -146,40 +147,48 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Seeding Trees...");
     while spawned_tree_count < target_tree_count && tree_attempts < max_tree_attempts {
         tree_attempts += 1;
+
+        // Generate random tile coordinates within the allowed margin
         let tile_x = rng.gen_range(min_tile_x..max_tile_x);
         let tile_y = rng.gen_range(min_tile_y..max_tile_y);
+
         if occupied_tiles.contains(&(tile_x, tile_y)) {
-            continue;
+            continue; // Skip if tile already occupied
         }
 
+        // Calculate world position (center of tile)
         let pos_x = (tile_x as f32 + 0.5) * TILE_SIZE_PX as f32;
         let pos_y = (tile_y as f32 + 0.5) * TILE_SIZE_PX as f32;
 
-        // Noise check
+        // Noise check for density filtering
         let noise_val = fbm.get([
             (pos_x as f64 / WORLD_WIDTH_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
             (pos_y as f64 / WORLD_HEIGHT_PX as f64) * TREE_SPAWN_NOISE_FREQUENCY,
         ]);
         let normalized_noise = (noise_val + 1.0) / 2.0;
 
-        if normalized_noise > TREE_SPAWN_NOISE_THRESHOLD { // Use tree threshold for trees
+        if normalized_noise > TREE_SPAWN_NOISE_THRESHOLD {
             // Distance check against other trees
-            let mut too_close_tree = false;
+            let mut too_close = false;
             for (existing_x, existing_y) in &spawned_tree_positions {
                 let dx = pos_x - existing_x;
                 let dy = pos_y - existing_y;
                 if (dx * dx + dy * dy) < MIN_TREE_DISTANCE_SQ {
-                    too_close_tree = true;
+                    too_close = true;
                     break;
                 }
             }
-            if too_close_tree { continue; }
+            if too_close { continue; }
 
             // Spawn the tree
-            let tree_type = TreeType::Oak;
             match trees.try_insert(Tree {
-                id: 0, pos_x, pos_y, health: 100, tree_type,
+                id: 0, // Auto-incremented by SpacetimeDB
+                pos_x,
+                pos_y,
+                health: TREE_INITIAL_HEALTH, // Use constant
+                tree_type: TreeType::Oak, // Only Oak for now
                 last_hit_time: None,
+                respawn_at: None, // Initialize respawn_at
             }) {
                 Ok(_) => {
                     spawned_tree_count += 1;
@@ -326,6 +335,7 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
                 id: 0, // Auto-inc
                 pos_x,
                 pos_y,
+                respawn_at: None, // Initialize respawn_at
             }) {
                 Ok(_) => {
                     spawned_mushroom_count += 1;
@@ -353,12 +363,32 @@ const STONE_INITIAL_HEALTH: u32 = 100;
 pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
     let now_ts = ctx.timestamp;
     let mut stones_to_respawn = Vec::new();
+    let mut trees_to_respawn = Vec::new();
+    let mut mushrooms_to_respawn = Vec::new();
 
     // Identify respawnable stones
     for stone in ctx.db.stone().iter().filter(|s| s.health == 0 && s.respawn_at.is_some()) {
         if let Some(respawn_time) = stone.respawn_at {
             if now_ts >= respawn_time {
                 stones_to_respawn.push(stone.id);
+            }
+        }
+    }
+
+    // Identify respawnable trees
+    for tree in ctx.db.tree().iter().filter(|t| t.health == 0 && t.respawn_at.is_some()) {
+        if let Some(respawn_time) = tree.respawn_at {
+            if now_ts >= respawn_time {
+                trees_to_respawn.push(tree.id);
+            }
+        }
+    }
+
+    // Identify respawnable mushrooms
+    for mushroom in ctx.db.mushroom().iter().filter(|m| m.respawn_at.is_some()) {
+        if let Some(respawn_time) = mushroom.respawn_at {
+            if now_ts >= respawn_time {
+                mushrooms_to_respawn.push(mushroom.id);
             }
         }
     }
@@ -373,6 +403,30 @@ pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
             ctx.db.stone().id().update(stone);
         } else {
             log::warn!("Could not find Stone {} to respawn.", stone_id);
+        }
+    }
+
+    // Respawn trees
+    for tree_id in trees_to_respawn {
+        if let Some(mut tree) = ctx.db.tree().id().find(tree_id) {
+            log::info!("Respawning Tree {}", tree_id);
+            tree.health = TREE_INITIAL_HEALTH;
+            tree.respawn_at = None; // Clear respawn timer
+            tree.last_hit_time = None; // Clear last hit time
+            ctx.db.tree().id().update(tree);
+        } else {
+            log::warn!("Could not find Tree {} to respawn.", tree_id);
+        }
+    }
+
+    // Respawn mushrooms
+    for mushroom_id in mushrooms_to_respawn {
+        if let Some(mut mushroom) = ctx.db.mushroom().id().find(mushroom_id) {
+            log::info!("Respawning Mushroom {}", mushroom_id);
+            mushroom.respawn_at = None; // Clear respawn timer
+            ctx.db.mushroom().id().update(mushroom);
+        } else {
+            log::warn!("Could not find Mushroom {} to respawn.", mushroom_id);
         }
     }
 

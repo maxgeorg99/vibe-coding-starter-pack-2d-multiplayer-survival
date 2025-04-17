@@ -1,8 +1,12 @@
-use spacetimedb::{Table, ReducerContext, Identity};
+use spacetimedb::{Table, ReducerContext, Identity, Timestamp};
 // Add imports for required table traits
 use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait};
 use crate::player as PlayerTableTrait; // Assuming player table is defined in lib.rs
 use log;
+
+// Import the respawn duration constant
+use crate::active_equipment::RESOURCE_RESPAWN_DURATION_SECS;
+use std::time::Duration;
 
 // --- Mushroom Constants ---
 const MUSHROOM_RADIUS: f32 = 16.0; // Visual/interaction radius
@@ -27,6 +31,7 @@ pub struct Mushroom {
     pub id: u64,
     pub pos_x: f32,
     pub pos_y: f32,
+    pub respawn_at: Option<Timestamp>,
 }
 
 // --- Interaction Reducer ---
@@ -65,9 +70,12 @@ pub fn interact_with_mushroom(ctx: &ReducerContext, mushroom_id: u64) -> Result<
     // 5. Add Mushroom to Inventory (using helper from items module)
     crate::items::add_item_to_player_inventory(ctx, sender_id, mushroom_def.id, 1)?;
 
-    // 6. Delete the Mushroom Entity
-    mushrooms.id().delete(mushroom_id);
-    log::info!("Player {:?} picked up mushroom {}", sender_id, mushroom_id);
+    // 6. Schedule Respawn instead of Deleting
+    let respawn_time = ctx.timestamp + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+    let mut mushroom_to_update = mushroom; // Clone the found mushroom to modify
+    mushroom_to_update.respawn_at = Some(respawn_time);
+    mushrooms.id().update(mushroom_to_update); // Update with respawn time
+    log::info!("Player {:?} picked up mushroom {}. Scheduling respawn.", sender_id, mushroom_id);
 
     Ok(())
 } 
