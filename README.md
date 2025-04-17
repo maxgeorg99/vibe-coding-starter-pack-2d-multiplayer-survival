@@ -17,15 +17,13 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 *   Real-time Multiplayer: Basic player movement synchronization
 *   Environment Systems: Day/night cycle, Full moon nights
 *   Survival Mechanics: Basic resource harvesting (wood/stone/mushrooms)
-*   Survival Systems: Health, Hunger, Thirst, Warmth, Death/Respawn
 *   Resource Respawning: Trees, Stones, Mushrooms
+*   Survival Systems: Health, Hunger, Thirst, Warmth, Death/Respawn
 *   World Discovery: Minimap
 *   Hotbar/Basic UI: Item selection, basic layout
 *   Inventory Management: Moving, swapping, stacking, stack splitting
 *   Item Equipping: Tools/Weapons (Hotbar), Armor (Slots)
 *   Placeables: Campfire (Multi-slot placement & interaction)
-*   Consumables: Eating (Mushrooms)
-*   Campfire Mechanics: Fueling with wood (5 slots), automatic fuel consumption, toggle on/off, inventory access (tap/hold E)
 
 **In Progress (🚧):**
 *   Crafting System: Item recipes, crafting stations (initial setup)
