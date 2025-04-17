@@ -1,0 +1,150 @@
+---
+description: Guide outlining the steps to add new consumable resources or gatherable nodes.
+globs: 
+alwaysApply: false
+---
+# Guide: Adding New Resources and Nodes
+
+This guide outlines the steps required to add new consumable resources (like Corn) or gatherable nodes (like Metal Ore) to the 2D Survival Multiplayer game. Follow these steps to ensure consistency with the existing architecture.
+
+## General Workflow
+
+1.  **Define Data:** Add necessary item definitions and entity table structures on the server.
+2.  **Implement Logic:** Create server-side reducers for interaction, harvesting, spawning, and respawning.
+3.  **Integrate:** Update server logic (seeding, respawning, collision, harvesting) to include the new resource/node.
+4.  **Client Rendering:** Add assets and update client code to display the new resource/node.
+5.  **Client Interaction:** Update client code to call the appropriate server reducers on interaction/use.
+6.  **Bindings:** Regenerate TypeScript bindings after server schema changes (`spacetime generate ...`).
+7.  **Testing:** Test spawning, interaction/harvesting, respawning, and collision thoroughly.
+
+---
+
+## Adding a Consumable Resource (e.g., Corn)
+
+This resource type is picked up directly by the player, disappears, and respawns after a timer (similar to Mushrooms).
+
+### Server (`server/`)
+
+1.  **Define Item:**
+    *   In `src/items.rs`, add the "Corn" item definition within the `seed_items` reducer's `item_definitions` array. Ensure it has appropriate properties (`name`, `iconAssetName`, `is_stackable`, etc.).
+2.  **Create Module:**
+    *   Create a new file: `src/corn.rs`.
+3.  **Define Entity Struct (`src/corn.rs`):**
+    *   Define the `Corn` struct with `#[spacetimedb::table(name = corn, public)]`.
+    *   Include fields: `#[primary_key] #[auto_inc] id: u64`, `pos_x: f32`, `pos_y: f32`, `respawn_at: Option<Timestamp>`.
+4.  **Add Constants (`src/corn.rs`):**
+    *   Define constants like `CORN_DENSITY_PERCENT`, `MIN_CORN_DISTANCE_SQ`, `MIN_CORN_TREE_DISTANCE_SQ`, `MIN_CORN_STONE_DISTANCE_SQ`, etc. Adjust values based on desired rarity and placement relative to other objects.
+    *   Define interaction constants like `PLAYER_CORN_INTERACTION_DISTANCE_SQUARED`.
+5.  **Implement Interaction Reducer (`src/corn.rs`):**
+    *   Create a reducer `interact_with_corn(ctx: &ReducerContext, corn_id: u64)`.
+    *   Mirror the logic in `mushroom.rs::interact_with_mushroom`:
+        *   Find the player and the specific corn instance.
+        *   Check distance using `PLAYER_CORN_INTERACTION_DISTANCE_SQUARED`.
+        *   Find the "Corn" `ItemDefinition` ID.
+        *   Call `crate::items::add_item_to_player_inventory` to give the item.
+        *   Calculate the `respawn_time` using `RESOURCE_RESPAWN_DURATION_SECS` (or a corn-specific one if needed).
+        *   Update the corn instance, setting its `respawn_at` field. Log the pickup.
+6.  **Register Module (`src/lib.rs`):**
+    *   Add `mod corn;` to the module declarations.
+    *   Add `use crate::corn::corn as CornTableTrait;` to the table trait imports if needed elsewhere, although direct access might be limited to environment/utils.
+7.  **Update Seeding (`src/environment.rs`):**
+    *   In `seed_environment`, add a new loop similar to the mushroom loop:
+        *   Calculate `target_corn_count` and `max_corn_attempts`.
+        *   Call `attempt_single_spawn`, passing:
+            *   `corn` table accessor (`ctx.db.corn()`).
+            *   `spawned_corn_positions` vector (create this).
+            *   Corn-specific constants (`MIN_CORN_DISTANCE_SQ`, `MIN_CORN_TREE_DISTANCE_SQ`, etc.).
+            *   A closure to create a `crate::corn::Corn` instance.
+8.  **Update Respawning (`src/environment.rs`):**
+    *   In `check_resource_respawns`, add a call to the `check_and_respawn_resource!` macro:
+        ```rust
+        check_and_respawn_resource!(
+            ctx,
+            corn,
+            crate::corn::Corn,
+            "Corn",
+            |_c: &crate::corn::Corn| true, // Always check if respawn_at is set
+            |c: &mut crate::corn::Corn| {
+                c.respawn_at = None;
+            }
+        );
+        ```
+
+### Client (`client/`)
+
+1.  **Add Asset:** Place the `corn.png` (or similar) image in `public/assets/`.
+2.  **Update Icons (`src/utils/itemIconUtils.ts`):** Add an entry for `"corn"` in the `itemIcons` mapping.
+3.  **Update Rendering (`src/components/GameScene.tsx`):**
+    *   Add `corn: Corn[]` to the `useSpacetimeDb` state.
+    *   Include `"corn"` in the `TABLE_NAMES` array for the subscription.
+    *   In the rendering loop (`entities.map(...)`), add a case to render `Corn` entities similar to how Mushrooms are rendered, filtering out those with `respawn_at` set.
+4.  **Update Interaction (`src/components/GameScene.tsx`):**
+    *   In the `handleCanvasClick` function (or similar interaction logic), modify the check to find the closest *visible* corn instance.
+    *   If a corn is clicked within range, call the `interactWithCorn` reducer.
+
+---
+
+## Adding a Gatherable Node (e.g., Metal Ore)
+
+This resource type has health, is harvested with tools, yields resources over time, disappears when depleted, and respawns (similar to Trees and Stones).
+
+### Server (`server/`)
+
+1.  **Define Item(s):**
+    *   In `src/items.rs::seed_items`, add the "Metal Ore" item definition.
+    *   If specific tools are required (e.g., "Iron Pickaxe"), ensure they are also defined.
+2.  **Create Module:**
+    *   Create a new file: `src/metal_node.rs`.
+3.  **Define Entity Struct (`src/metal_node.rs`):**
+    *   Define the `MetalNode` struct with `#[spacetimedb::table(name = metal_node, public)]`.
+    *   Include fields: `#[primary_key] #[auto_inc] id: u64`, `pos_x: f32`, `pos_y: f32`, `health: u32`, `last_hit_time: Option<Timestamp>`, `respawn_at: Option<Timestamp>`.
+4.  **Add Constants (`src/metal_node.rs`):**
+    *   Define constants for spawning: `METAL_NODE_DENSITY_PERCENT`, `MIN_METAL_NODE_DISTANCE_SQ`, `MIN_METAL_NODE_TREE_DISTANCE_SQ`, `MIN_METAL_NODE_STONE_DISTANCE_SQ`, etc.
+    *   Define interaction constants: `METAL_NODE_INITIAL_HEALTH`, `METAL_NODE_RADIUS` (for collision), `METAL_NODE_COLLISION_Y_OFFSET`, `PLAYER_METAL_NODE_COLLISION_DISTANCE_SQUARED`.
+5.  **Register Module (`src/lib.rs`):**
+    *   Add `mod metal_node;` to the module declarations.
+    *   Add `use crate::metal_node::metal_node as MetalNodeTableTrait;` to table trait imports.
+6.  **Update Seeding (`src/environment.rs`):**
+    *   In `seed_environment`, add a new loop similar to the stone loop:
+        *   Calculate `target_metal_node_count` and `max_metal_node_attempts`.
+        *   Call `attempt_single_spawn`, passing:
+            *   `metal_node` table accessor.
+            *   `spawned_metal_node_positions` vector.
+            *   Metal Node-specific constants for distances.
+            *   A closure to create a `crate::metal_node::MetalNode` instance with `METAL_NODE_INITIAL_HEALTH`.
+7.  **Update Respawning (`src/environment.rs`):**
+    *   In `check_resource_respawns`, add a call to `check_and_respawn_resource!` for `metal_node`, mirroring the logic for `stone` and `tree` (checking `health == 0` and resetting health, `respawn_at`, `last_hit_time`).
+8.  **Update Harvesting (`src/active_equipment.rs`):**
+    *   In `use_equipped_item`:
+        *   Add `let metal_nodes = ctx.db.metal_node();`
+        *   Add logic to find the closest `MetalNode` target within the attack cone, similar to trees and stones. Store in `closest_metal_node_target`.
+        *   Update the damage application logic:
+            *   Check the equipped item (`item_def.name`). If it's the correct tool (e.g., "Stone Pickaxe", "Iron Pickaxe"), proceed.
+            *   Prioritize hitting the Metal Node based on tool type (e.g., Pickaxe hits Stone > Metal Node > Player).
+            *   If a Metal Node is the target:
+                *   Find the `MetalNode` instance.
+                *   Decrease its `health` based on tool damage.
+                *   Set its `last_hit_time` to `Some(now_ts)`.
+                *   Find the "Metal Ore" `ItemDefinition`.
+                *   Call `crate::items::add_item_to_player_inventory` to grant the ore (amount based on damage or fixed).
+                *   If `health` reaches 0, calculate `respawn_time` and set `respawn_at`. Log depletion.
+                *   Update the `metal_node` table.
+9.  **Update Collision (`src/lib.rs`):**
+    *   In `register_player`'s spawn point finding loop, add a check for collision against `metal_nodes` using `METAL_NODE_COLLISION_Y_OFFSET` and `PLAYER_METAL_NODE_COLLISION_DISTANCE_SQUARED`.
+    *   In `place_campfire`'s validation logic, add a check against `metal_nodes` using a combined radius check (`METAL_NODE_RADIUS + CAMPFIRE_COLLISION_RADIUS`).
+    *   In `update_player_position`'s sliding collision checks and iterative resolution loops, add checks for `metal_nodes`, using `METAL_NODE_COLLISION_Y_OFFSET` and `PLAYER_METAL_NODE_COLLISION_DISTANCE_SQUARED` for sliding, and `METAL_NODE_RADIUS` for push-out resolution.
+
+### Client (`client/`)
+
+1.  **Add Asset:** Place the `metal_node.png` (or similar) in `public/assets/`.
+2.  **Update Icons (`src/utils/itemIconUtils.ts`):** Add an entry for `"metal_ore"` if needed (and any new tools).
+3.  **Update Rendering (`src/components/GameScene.tsx`):**
+    *   Add `metal_node: MetalNode[]` to the `useSpacetimeDb` state.
+    *   Include `"metal_node"` in the `TABLE_NAMES` array.
+    *   In the rendering loop, add a case to render `MetalNode` entities, filtering out those with `respawn_at` set. Consider adding visual feedback (shake?) based on `last_hit_time`.
+4.  **Interaction:** No specific client interaction change is needed for harvesting, as it's handled by the server's `use_equipped_item` reducer when the player clicks/uses their tool.
+
+---
+
+Remember to run `spacetime publish ...` and `spacetime generate --lang typescript ...` after making server-side schema or reducer changes.
+

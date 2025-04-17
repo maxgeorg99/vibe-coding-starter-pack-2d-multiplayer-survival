@@ -148,3 +148,4 @@ AI should be aware of these technical constraints:
    - Identity handling is required for player authentication
 
 This documentation should be consulted when analyzing code structure, suggesting improvements, or implementing new features in the 2D Survival Multiplayer project.
+
