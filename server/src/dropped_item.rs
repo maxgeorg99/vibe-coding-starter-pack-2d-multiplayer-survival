@@ -29,7 +29,7 @@ pub struct DroppedItem {
     pub created_at: Timestamp, // When the item was dropped (for potential cleanup)
 }
 
-// --- NEW: Schedule Table --- 
+// --- Schedule Table --- 
 // Link reducer via scheduled(), remove public for now, ensure field is scheduled_at
 #[spacetimedb::table(name = dropped_item_despawn_schedule, scheduled(despawn_expired_items))]
 #[derive(Clone)]
