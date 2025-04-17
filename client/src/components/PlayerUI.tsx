@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment } from '../generated';
+import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment, Campfire as SpacetimeDBCampfire } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import InventoryUI, { PopulatedItem } from './InventoryUI';
 import Hotbar from './Hotbar';
 import { itemIcons } from '../utils/itemIconUtils';
+// Import drag/drop types from shared file
+import { DragSourceSlotInfo, DraggedItemInfo } from '../types/dragDropTypes';
 
 // Define the StatusBar component inline for simplicity
 interface StatusBarProps {
@@ -54,20 +56,9 @@ interface PlayerUIProps {
   onItemDrop: (targetSlotInfo: DragSourceSlotInfo | null) => void;
   draggedItemInfo: DraggedItemInfo | null;
   activeEquipments: Map<string, ActiveEquipment>;
-}
-
-// --- Define Types for Custom Drag State ---
-// (These might move to a shared types file later)
-export interface DragSourceSlotInfo {
-    type: 'inventory' | 'hotbar' | 'equipment';
-    index: number | string; // number for inv/hotbar, string for equip name
-}
-
-export interface DraggedItemInfo {
-    item: PopulatedItem;
-    sourceSlot: DragSourceSlotInfo;
-    splitQuantity?: number;
-    // Add split info later if needed
+  campfires: Map<string, SpacetimeDBCampfire>;
+  onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
+  interactingWith: { type: string; id: number | bigint } | null;
 }
 
 const PlayerUI: React.FC<PlayerUIProps> = ({
@@ -82,6 +73,9 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
     onItemDrop,
     draggedItemInfo,
     activeEquipments,
+    campfires,
+    onSetInteractingWith,
+    interactingWith,
  }) => {
     const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
@@ -100,14 +94,20 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Tab') {
                 event.preventDefault();
+                // Toggle the inventory state
+                const closingInventory = isInventoryOpen; // Check state BEFORE toggling
                 setIsInventoryOpen(prev => !prev);
+                // If closing, also clear the interaction target
+                if (closingInventory) {
+                     onSetInteractingWith(null);
+                }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, []);
+    }, [isInventoryOpen, onSetInteractingWith]);
 
     // Effect to disable background scrolling when inventory is open
     useEffect(() => {
@@ -160,6 +160,19 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
         };
     }, [isInventoryOpen]);
 
+    // --- Open Inventory when Interaction Starts --- 
+    useEffect(() => {
+        if (interactingWith) {
+            setIsInventoryOpen(true);
+        }
+    }, [interactingWith]);
+
+    // --- Handle Closing Inventory & Interaction --- 
+    const handleClose = () => {
+        setIsInventoryOpen(false);
+        onSetInteractingWith(null); // Clear interaction state when closing
+    };
+
     if (!localPlayer) {
         return null;
     }
@@ -195,7 +208,7 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
             {isInventoryOpen && (
                 <InventoryUI
                     playerIdentity={identity}
-                    onClose={() => setIsInventoryOpen(false)}
+                    onClose={handleClose}
                     inventoryItems={inventoryItems}
                     itemDefinitions={itemDefinitions}
                     connection={connection}
@@ -203,6 +216,8 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
                     onItemDragStart={onItemDragStart}
                     onItemDrop={onItemDrop}
                     draggedItemInfo={draggedItemInfo}
+                    interactionTarget={interactingWith}
+                    campfires={campfires}
                  />
              )}
 

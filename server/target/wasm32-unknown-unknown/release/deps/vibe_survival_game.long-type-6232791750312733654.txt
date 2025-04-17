@@ -1,0 +1,1 @@
+UniqueColumn<campfire::campfire__TableHandle, u32, campfire::_::__indices::id>

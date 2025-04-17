@@ -1,0 +1,4 @@
+Result<(), string::String>
+option::Option<Infallible>
+Result<(), std::string::String>
+std::option::Option<Infallible>

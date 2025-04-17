@@ -25,7 +25,7 @@ import { renderTree, preloadTreeImages } from '../utils/treeRenderingUtils';
 // Import Stone rendering utils
 import { renderStone, preloadStoneImage } from '../utils/stoneRenderingUtils';
 // Import Campfire rendering utils
-import { renderCampfire, preloadCampfireImage } from '../utils/campfireRenderingUtils';
+import { renderCampfire, preloadCampfireImage, CAMPFIRE_HEIGHT } from '../utils/campfireRenderingUtils';
 // Import Mushroom rendering utils
 import { renderMushroom, preloadMushroomImages } from '../utils/mushroomRenderingUtils';
 // Import DeathScreen component with extension
@@ -60,6 +60,7 @@ const SWING_ANGLE_MAX_RAD = Math.PI / 2.5; // Maximum angle during swing (approx
 
 // --- Interaction Constants ---
 const PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
+const PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
 
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
@@ -80,6 +81,7 @@ interface GameCanvasProps {
   handlePlaceCampfire: (worldX: number, worldY: number) => void;
   cancelCampfirePlacement: () => void;
   placementError: string | null;
+  onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
 }
 
 // Type guard for Player
@@ -207,6 +209,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   handlePlaceCampfire,
   cancelCampfirePlacement,
   placementError,
+  onSetInteractingWith,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -225,6 +228,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const lastPositionsRef = useRef<Map<string, {x: number, y: number}>>(new Map()); // Store last known positions
   const isInputDisabled = useRef<boolean>(false); // Ref to track input disable state
   const closestInteractableMushroomIdRef = useRef<bigint | null>(null); // Ref for nearby mushroom ID
+  const closestInteractableCampfireIdRef = useRef<number | null>(null); // Ref for nearby campfire ID (u32 maps to number)
 
   const animationFrame = useAnimationCycle(ANIMATION_INTERVAL_MS, 4);
 
@@ -339,18 +343,33 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
       // Handle interaction key ('e')
       if (key === 'e' && !e.repeat) {
-        if (closestInteractableMushroomIdRef.current !== null && connection?.reducers) {
-          console.log(`Attempting to interact with mushroom: ${closestInteractableMushroomIdRef.current}`);
+        // Prioritize campfire interaction if available
+        const closestCampfireId = closestInteractableCampfireIdRef.current; // Read ref value
+        if (closestCampfireId !== null && connection?.reducers) {
+          console.log(`Attempting to interact with campfire: ${closestCampfireId}`);
           try {
-            // Use the BigInt ID directly
-            connection.reducers.interactWithMushroom(closestInteractableMushroomIdRef.current);
+            // Call the campfire interaction reducer (currently just proximity check)
+            connection.reducers.interactWithCampfire(closestCampfireId);
+            // Set the interaction state in App.tsx to open the inventory
+            onSetInteractingWith({ type: 'campfire', id: closestCampfireId }); 
           } catch (err) {
-            console.error("Error calling interactWithMushroom reducer:", err);
-            // Optionally show error to user
+            console.error("Error calling interactWithCampfire reducer:", err);
           }
-        } else {
-          // Optional: Log if E is pressed but nothing is nearby
-          // console.log("Pressed E but no interactable mushroom nearby.");
+        }
+        // Else, check for mushroom interaction
+        else {
+            const closestMushroomId = closestInteractableMushroomIdRef.current;
+            if (closestMushroomId !== null && connection?.reducers) {
+                console.log(`Attempting to interact with mushroom: ${closestMushroomId}`);
+                try {
+                    // Use the BigInt ID directly
+                    connection.reducers.interactWithMushroom(closestMushroomId);
+                    // Note: No inventory opening for mushrooms currently
+                    // onSetInteractingWith({ type: 'mushroom', id: closestMushroomId }); 
+                } catch (err) {
+                    console.error("Error calling interactWithMushroom reducer:", err);
+                }
+            }
         }
       }
     };
@@ -460,7 +479,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         canvas.removeEventListener('contextmenu', handleContextMenu);
       }
     };
-  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, inventoryItems, localPlayerId, connection]);
+  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, inventoryItems, localPlayerId, connection, onSetInteractingWith]);
 
   const updatePlayerBasedOnInput = useCallback(() => {
     if (isInputDisabled.current) return; // Skip input processing if dead
@@ -746,6 +765,26 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     // --- End Finding Closest Mushroom ---
 
+    // --- Find Closest Interactable Campfire --- (Before rendering loop)
+    let closestCampfireDistSq = PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED;
+    closestInteractableCampfireIdRef.current = null; // Reset each frame
+    if (localPlayerData) {
+      campfires.forEach((campfire) => {
+        // Potential future check: Ignore if campfire is extinguished and has no fuel?
+        // For now, allow interaction even if off.
+
+        const dx = localPlayerData.positionX - campfire.posX;
+        const dy = localPlayerData.positionY - campfire.posY;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < closestCampfireDistSq) {
+          closestCampfireDistSq = distSq;
+          closestInteractableCampfireIdRef.current = campfire.id; // Store the number ID
+        }
+      });
+    }
+    // --- End Finding Closest Campfire ---
+
     // Render Sorted World Entities (No Campfires)
     worldEntitiesToRender.forEach(entity => {
        if (isPlayer(entity)) {
@@ -834,6 +873,30 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
        }
     });
 
+    // --- NEW: Render Campfire Prompt in World Space ---
+    const closestId = closestInteractableCampfireIdRef.current;
+    if (closestId !== null) { 
+        // Iterate campfires again here to find the one matching the ID
+        campfires.forEach((fire) => {
+            if (fire.id === closestId) { // Direct comparison
+                // Draw prompt text using world coordinates
+                const text = "Press E to Use";
+                const textX = fire.posX; 
+                const textY = fire.posY - (CAMPFIRE_HEIGHT / 2) - 10; // 10px above the sprite top
+                ctx.fillStyle = "white";
+                ctx.strokeStyle = "black";
+                ctx.lineWidth = 2;
+                ctx.font = '14px "Press Start 2P", cursive';
+                ctx.textAlign = "center";
+                ctx.strokeText(text, textX, textY);
+                ctx.fillText(text, textX, textY);
+                // Assuming only one closest, we could potentially break here
+                // but iterating all is harmless
+            }
+        });
+    }
+    // --- End NEW Prompt Rendering ---
+
     // Render placement preview (in world space)
     if (isPlacingCampfire && currentWorldMouseX !== null && currentWorldMouseY !== null && campfireImageRef.current) {
         ctx.globalAlpha = 0.6;
@@ -867,19 +930,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         // Cut holes using destination-out with a radial gradient for soft edges
         maskCtx.globalCompositeOperation = 'destination-out';
         campfires.forEach(fire => {
-            const screenX = fire.posX + cameraOffsetX;
-            const screenY = fire.posY + cameraOffsetY;
-            const radius = CAMPFIRE_LIGHT_RADIUS_BASE; // Use base radius for mask shape
+            // --- Only cut hole if burning ---
+            if (fire.isBurning) {
+                const screenX = fire.posX + cameraOffsetX;
+                const screenY = fire.posY + cameraOffsetY;
+                const radius = CAMPFIRE_LIGHT_RADIUS_BASE; // Use base radius for mask shape
 
-            // Create gradient: Opaque white in inner half -> Transparent white at edge
-            const maskGradient = maskCtx.createRadialGradient(screenX, screenY, radius * 0.5, screenX, screenY, radius);
-            maskGradient.addColorStop(0, 'rgba(255, 255, 255, 1)'); // Opaque white starts at 50% radius
-            maskGradient.addColorStop(1, 'rgba(255, 255, 255, 0)'); // Transparent white at the edge
+                // Create gradient: Opaque white in inner half -> Transparent white at edge
+                const maskGradient = maskCtx.createRadialGradient(screenX, screenY, radius * 0.5, screenX, screenY, radius);
+                maskGradient.addColorStop(0, 'rgba(255, 255, 255, 1)'); // Opaque white starts at 50% radius
+                maskGradient.addColorStop(1, 'rgba(255, 255, 255, 0)'); // Transparent white at the edge
 
-            maskCtx.fillStyle = maskGradient; // Use the gradient to fill
-            maskCtx.beginPath();
-            maskCtx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-            maskCtx.fill();
+                maskCtx.fillStyle = maskGradient; // Use the gradient to fill
+                maskCtx.beginPath();
+                maskCtx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                maskCtx.fill();
+            }
+            // --- End burning check ---
         });
         maskCtx.globalCompositeOperation = 'source-over'; // Reset
     }
@@ -893,26 +960,31 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     campfires.forEach(fire => {
         const screenX = fire.posX + cameraOffsetX;
         const screenY = fire.posY + cameraOffsetY;
-        renderCampfire(ctx, screenX, screenY);
+        // Pass the isBurning state from the campfire data
+        renderCampfire(ctx, screenX, screenY, fire.isBurning);
     });
 
     // 4. Draw Campfire Light Glow (Additively)
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     campfires.forEach(fire => {
-        const lightScreenX = fire.posX + cameraOffsetX;
-        const lightScreenY = fire.posY + cameraOffsetY;
-        const flicker = (Math.random() - 0.5) * 2 * CAMPFIRE_FLICKER_AMOUNT;
-        const currentLightRadius = Math.max(0, CAMPFIRE_LIGHT_RADIUS_BASE + flicker);
+        // --- Only draw glow if burning ---
+        if (fire.isBurning) {
+            const lightScreenX = fire.posX + cameraOffsetX;
+            const lightScreenY = fire.posY + cameraOffsetY;
+            const flicker = (Math.random() - 0.5) * 2 * CAMPFIRE_FLICKER_AMOUNT;
+            const currentLightRadius = Math.max(0, CAMPFIRE_LIGHT_RADIUS_BASE + flicker);
 
-        // Use the WARNER gradient colors defined earlier
-        const lightGradient = ctx.createRadialGradient(lightScreenX, lightScreenY, 0, lightScreenX, lightScreenY, currentLightRadius);
-        lightGradient.addColorStop(0, CAMPFIRE_LIGHT_INNER_COLOR);
-        lightGradient.addColorStop(1, CAMPFIRE_LIGHT_OUTER_COLOR);
-        ctx.fillStyle = lightGradient;
-        ctx.beginPath();
-        ctx.arc(lightScreenX, lightScreenY, currentLightRadius, 0, Math.PI * 2);
-        ctx.fill();
+            // Use the WARNER gradient colors defined earlier
+            const lightGradient = ctx.createRadialGradient(lightScreenX, lightScreenY, 0, lightScreenX, lightScreenY, currentLightRadius);
+            lightGradient.addColorStop(0, CAMPFIRE_LIGHT_INNER_COLOR);
+            lightGradient.addColorStop(1, CAMPFIRE_LIGHT_OUTER_COLOR);
+            ctx.fillStyle = lightGradient;
+            ctx.beginPath();
+            ctx.arc(lightScreenX, lightScreenY, currentLightRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // --- End burning check ---
     });
     ctx.restore();
 
@@ -942,7 +1014,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       isPlacingCampfire,
       placementError,
       activeEquipments,
-      itemDefinitions
+      itemDefinitions,
+      onSetInteractingWith
     ]);
 
   const gameLoop = useCallback(() => {

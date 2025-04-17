@@ -34,7 +34,12 @@ use crate::player as PlayerTableTrait; // Needed for ctx.db.player()
 use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
 use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED };
 
+// Remove commented-out schedule imports
+// use crate::campfire::{CampfireUpdateSchedule, CAMPFIRE_UPDATE_INTERVAL_SECS}; // Temporarily disabled
+// use spacetimedb::ScheduleAt; // Temporarily disabled
+
 // Import generated table traits with aliases to avoid name conflicts
+// use crate::campfire::campfire_update_schedule as CampfireUpdateScheduleTableTrait; // Temporarily disabled
 
 // --- World/Player Constants --- 
 pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
@@ -51,6 +56,7 @@ const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0);
 const STAMINA_DRAIN_PER_SECOND: f32 = 20.0; 
 const STAMINA_RECOVERY_PER_SECOND: f32 = 5.0;  
 const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;     
+const JUMP_COOLDOWN_MS: u64 = 500; // Prevent jumping again for 500ms
 
 // Status Effect Constants
 const LOW_NEED_THRESHOLD: f32 = 20.0;         
@@ -87,6 +93,32 @@ pub struct Player {
     pub is_dead: bool,
     pub respawn_at: Timestamp,
     pub last_hit_time: Option<Timestamp>,
+}
+
+// --- Lifecycle Reducers ---
+
+// Called once when the module is published or updated
+#[spacetimedb::reducer(init)]
+pub fn init_module(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Initializing module...");
+
+    // Remove commented-out schedule init logic
+    /*
+    let schedule_table = ctx.db.campfire_update_schedule();
+    if schedule_table.iter().count() == 0 {
+        log::info!("Starting campfire update schedule (every {}s).", CAMPFIRE_UPDATE_INTERVAL_SECS);
+        let interval = Duration::from_secs(CAMPFIRE_UPDATE_INTERVAL_SECS);
+        schedule_table.insert(CampfireUpdateSchedule {
+            id: 0, // Auto-incremented
+            schedule_info: ScheduleAt::Interval(interval.into()),
+        })?;
+    } else {
+        log::debug!("Campfire update schedule already exists.");
+    }
+    */
+
+    log::info!("Module initialization complete.");
+    Ok(())
 }
 
 // When a client connects, we need to create a player for them
@@ -268,7 +300,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
                 // ("Wood", 500, Some(2u8), None), // REMOVED
                 // ("Stone", 500, Some(3u8), None), // REMOVED
                 ("Camp Fire", 1, Some(4u8), None),
-                ("Rock", 1, Some(5u8), None), 
+                ("Camp Fire", 1, Some(5u8), None),
+                ("Rock", 1, Some(6u8), None), 
                 
                 // Armor in Inventory 
                 ("Cloth Shirt", 1, None, Some(0u16)), 
@@ -329,9 +362,9 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
 pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
-    let inventory_items = ctx.db.inventory_item();
+    let mut inventory_items = ctx.db.inventory_item(); // Mutable for insert/update
     let item_defs = ctx.db.item_definition();
-    let campfires = ctx.db.campfire();
+    let mut campfires = ctx.db.campfire(); // Mutable for insert
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
 
@@ -340,13 +373,13 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
         .ok_or_else(|| "Player not found".to_string())?;
 
     // --- 2. Find the "Camp Fire" item definition ---
-    let campfire_def = item_defs.iter()
+    let campfire_placeable_def = item_defs.iter()
         .find(|def| def.name == "Camp Fire")
         .ok_or_else(|| "Camp Fire item definition not found".to_string())?;
 
-    // --- 3. Check if player has a Camp Fire item ---
+    // --- 3. Check if player has a Camp Fire item --- 
     let campfire_item_stack = inventory_items.iter()
-        .find(|item| item.player_identity == sender_id && item.item_def_id == campfire_def.id && item.quantity > 0);
+        .find(|item| item.player_identity == sender_id && item.item_def_id == campfire_placeable_def.id && item.quantity > 0);
 
     if campfire_item_stack.is_none() {
         return Err("You do not have a Camp Fire item".to_string());
@@ -401,37 +434,43 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
         }
     }
 
-    // --- 5. Consume Item ---
+    // --- 5. Consume Placable Item --- 
     campfire_item.quantity -= 1;
-    let remaining_quantity = campfire_item.quantity; // Read quantity BEFORE the potential move
-
+    let remaining_quantity = campfire_item.quantity; 
     if remaining_quantity == 0 {
-        // If stack is empty, remove the item
         inventory_items.instance_id().delete(campfire_item.instance_id);
         log::info!("Player {} consumed last Camp Fire item (instance {}).", player.username, campfire_item.instance_id);
     } else {
-        // Otherwise, update the quantity
         inventory_items.instance_id().update(campfire_item);
         log::info!("Player {} consumed one Camp Fire item. {} remaining.", player.username, remaining_quantity);
     }
 
-    // --- 6. Create Campfire Entity ---
+    // --- 7. Create Campfire Entity --- 
     let current_time = ctx.timestamp;
-    let burn_duration = Duration::from_secs(60);
-    let burn_out_time = current_time + burn_duration.into();
-
     let new_campfire = Campfire {
         id: 0, // Auto-incremented
         pos_x: target_x,
         pos_y: target_y,
         placed_by: sender_id,
         placed_at: current_time,
-        burn_out_at: burn_out_time, // Set the burn out time
-        fuel: 60.0, // Initial fuel for 60 seconds
+        is_burning: false, // Start extinguished
+        // Initialize individual fuel slots to None
+        fuel_instance_id_0: None,
+        fuel_def_id_0: None,
+        fuel_instance_id_1: None,
+        fuel_def_id_1: None,
+        fuel_instance_id_2: None,
+        fuel_def_id_2: None,
+        fuel_instance_id_3: None,
+        fuel_def_id_3: None,
+        fuel_instance_id_4: None,
+        fuel_def_id_4: None,
+        next_fuel_consume_at: None,
     };
 
     campfires.try_insert(new_campfire)?;
-    log::info!("Player {} placed a campfire at ({:.1}, {:.1}).", player.username, target_x, target_y);
+    log::info!("Player {} placed a campfire at ({:.1}, {:.1}).", 
+             player.username, target_x, target_y);
 
     Ok(())
 }
@@ -971,6 +1010,12 @@ pub fn update_player_position(
         Ok(_) => { /* Resources checked successfully */ }
         Err(e) => log::error!("Error checking resource respawns: {}", e),
     }
+    
+    // --- Check Campfire Fuel Consumption --- 
+    match crate::campfire::check_campfire_fuel_consumption(ctx) {
+        Ok(_) => { /* Campfire fuel checked successfully */ }
+        Err(e) => log::error!("Error checking campfire fuel: {}", e),
+    }
 
     Ok(())
 }
@@ -1001,6 +1046,13 @@ pub fn jump(ctx: &ReducerContext) -> Result<(), String> {
    if let Some(mut player) = players.identity().find(&identity) {
        let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
        let now_ms = (now_micros / 1000) as u64;
+
+       // Check if the player is already jumping (within cooldown)
+       if player.jump_start_time_ms > 0 && now_ms < player.jump_start_time_ms + JUMP_COOLDOWN_MS {
+           return Err("Cannot jump again so soon.".to_string());
+       }
+
+       // Proceed with the jump
        player.jump_start_time_ms = now_ms;
        player.last_update = ctx.timestamp;
        players.identity().update(player);

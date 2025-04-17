@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css'; // Removed potentially missing import
 import GameCanvas from './components/GameCanvas';
 import PlayerUI from './components/PlayerUI';
-import { DraggedItemInfo, DragSourceSlotInfo } from './components/PlayerUI';
+import { DraggedItemInfo, DragSourceSlotInfo } from './types/dragDropTypes';
 import Hotbar from './components/Hotbar'; // Import the new Hotbar component
 import githubLogo from '../public/github.png'; // Import the logo
 import * as SpacetimeDB from './generated';
@@ -48,6 +48,8 @@ function App() {
   // --- Campfire Placement State ---
   const [isPlacingCampfire, setIsPlacingCampfire] = useState<boolean>(false);
   const [placementError, setPlacementError] = useState<string | null>(null); // Error message for placement
+  // Re-add state for tracking current interaction target
+  const [interactingWith, setInteractingWith] = useState<{ type: string; id: number | bigint } | null>(null);
   
   // LIFTED STATE: Custom Drag/Drop State
   const [draggedItemInfo, setDraggedItemInfo] = useState<DraggedItemInfo | null>(null);
@@ -290,33 +292,61 @@ function App() {
 
     // --- InventoryItem Callbacks ---
     const handleInventoryInsert = (ctx: any, invItem: SpacetimeDB.InventoryItem) => {
-      // We only care about the local player's inventory for the UI update trigger
-      if (connection?.identity && invItem.playerIdentity.isEqual(connection.identity)) {
-          console.log(`Inventory Item Inserted for local player: DefID ${invItem.itemDefId}, Qty ${invItem.quantity}, Slot ${invItem.hotbarSlot}`);
-          setInventoryItems(prev => new Map(prev).set(invItem.instanceId.toString(), invItem));
-      } else {
-          console.log(`Inventory Item Inserted for other player: DefID ${invItem.itemDefId}`);
-      }
+      const instanceIdStr = invItem.instanceId.toString();
+      console.log(`[handleInventoryInsert] Received insert for item instance: ${instanceIdStr}, Player: ${invItem.playerIdentity.toHexString()}, InvSlot: ${invItem.inventorySlot}, HotbarSlot: ${invItem.hotbarSlot}`); 
+
+      // Always update the state map, regardless of owner
+      setInventoryItems(prev => {
+          const newMap = new Map(prev);
+          newMap.set(instanceIdStr, invItem);
+          // Log map update - check if it belongs to local player for info
+          const isLocalPlayerItem = connection?.identity && invItem.playerIdentity.isEqual(connection.identity);
+          console.log(`[handleInventoryInsert] Updated inventoryItems map. Item belongs to local player? ${isLocalPlayerItem}. New size: ${newMap.size}. Contains key ${instanceIdStr}? ${newMap.has(instanceIdStr)}`); 
+          return newMap;
+      });
     };
     const handleInventoryUpdate = (ctx: any, oldItem: SpacetimeDB.InventoryItem, newItem: SpacetimeDB.InventoryItem) => {
-      if (connection?.identity && newItem.playerIdentity.isEqual(connection.identity)) {
-          console.log(`Inventory Item Updated for local player: DefID ${newItem.itemDefId}, Qty ${newItem.quantity}, Slot ${newItem.hotbarSlot}`);
-          setInventoryItems(prev => new Map(prev).set(newItem.instanceId.toString(), newItem));
-      } else {
-          console.log(`Inventory Item Updated for other player: DefID ${newItem.itemDefId}`);
+      const instanceIdStr = newItem.instanceId.toString(); 
+      
+      // *** SPECIFIC LOGGING FOR CAMPFIRE DEBUG ***
+      const oldInvSlot = oldItem.inventorySlot;
+      const oldHotbarSlot = oldItem.hotbarSlot;
+      const newInvSlot = newItem.inventorySlot;
+      const newHotbarSlot = newItem.hotbarSlot;
+
+      // Check if the item was moved *out* of a regular slot (potentially into a campfire)
+      if ((oldInvSlot !== null || oldHotbarSlot !== null) && (newInvSlot === null && newHotbarSlot === null)) {
+          console.log(`[DEBUG_CAMPFIRE] Item ${instanceIdStr} slots changed FROM (Inv: ${oldInvSlot}, Hotbar: ${oldHotbarSlot}) TO (Inv: ${newInvSlot}, Hotbar: ${newHotbarSlot}). This item might be going into a campfire.`);
       }
+      // *** END SPECIFIC LOGGING ***
+
+      // Original verbose log (can be removed later)
+      console.log(`[handleInventoryUpdate] Received update for item instance: ${instanceIdStr}, Player: ${newItem.playerIdentity.toHexString()}, InvSlot: ${newItem.inventorySlot}, HotbarSlot: ${newItem.hotbarSlot}`);
+
+      // Always update the state map, regardless of owner
+      setInventoryItems(prev => {
+          const newMap = new Map(prev);
+          newMap.set(instanceIdStr, newItem);
+          // Log map update - check if it belongs to local player for info
+          const isLocalPlayerItem = connection?.identity && newItem.playerIdentity.isEqual(connection.identity);
+          console.log(`[handleInventoryUpdate] Updated inventoryItems map. Item belongs to local player? ${isLocalPlayerItem}. New size: ${newMap.size}. Contains key ${instanceIdStr}? ${newMap.has(instanceIdStr)}`); 
+          return newMap;
+      });
     };
     const handleInventoryDelete = (ctx: any, invItem: SpacetimeDB.InventoryItem) => {
+      const instanceIdStr = invItem.instanceId.toString(); 
+       // Log ALL deletes
+      console.log(`[handleInventoryDelete] Received delete for item instance: ${instanceIdStr}, Player: ${invItem.playerIdentity.toHexString()}`);
+
       if (connection?.identity && invItem.playerIdentity.isEqual(connection.identity)) {
-          console.log(`Inventory Item Deleted for local player: DefID ${invItem.itemDefId}`);
           setInventoryItems(prev => {
               const newMap = new Map(prev);
-              newMap.delete(invItem.instanceId.toString());
+              const deleted = newMap.delete(instanceIdStr);
+               // Log map update
+              console.log(`[handleInventoryDelete] Updated inventoryItems map for local player. Deleted key ${instanceIdStr}? ${deleted}. New size: ${newMap.size}.`);
               return newMap;
           });
-       } else {
-          console.log(`Inventory Item Deleted for other player: DefID ${invItem.itemDefId}`);
-       }
+       } 
     };
 
     // --- WorldState Callbacks --- 
@@ -691,78 +721,106 @@ function App() {
     document.body.classList.add('item-dragging');
   }, []); // No dependencies needed here
 
-  const handleItemDrop = useCallback((targetSlot: DragSourceSlotInfo | null) => { // Allow null target
+  const handleItemDrop = useCallback((targetSlot: DragSourceSlotInfo | null) => { 
     console.log("[App] Drop Target:", targetSlot);
     document.body.classList.remove('item-dragging');
-    const sourceInfo = draggedItemRef.current; // <<< Read from the ref
-
-    // Reset the ref immediately after reading, alongside state
+    const sourceInfo = draggedItemRef.current; 
     draggedItemRef.current = null;
     setDraggedItemInfo(null);
 
-    // 1. Check if drag was actually started (ref had value)
-    if (!sourceInfo) {
-        console.warn("[App] Drop occurred but no source item info found in ref. Clearing state.");
-        return; // Already cleared state above
+    if (!sourceInfo || !targetSlot || (sourceInfo.sourceSlot.type === targetSlot.type && sourceInfo.sourceSlot.index === targetSlot.index)) {
+        console.log("[App] Drop cancelled: No source, no target, or dropped on self.");
+        return; 
     }
-
-    // 2. Check if target is valid (could be null if dropped outside)
-    if (!targetSlot) {
-        console.log("[App] Dropped outside a valid slot.");
-        return; // State already cleared
-    }
-
-    // 3. Check if dropping on self
-    if (sourceInfo.sourceSlot.type === targetSlot.type && sourceInfo.sourceSlot.index === targetSlot.index) {
-        console.log("[App] Drop cancelled: Dropped on self.");
-        return; // State already cleared
-    }
-
-    // 4. Check connection
-    if (!connection?.reducers) { // Check connection availability
+    if (!connection?.reducers) {
         console.error("[App] Drop failed: Connection unavailable.");
-        return; // State already cleared
+        return; 
     }
 
-    // --- All checks passed, proceed with reducer ---
     const itemInstanceId = BigInt(sourceInfo.item.instance.instanceId);
     console.log(`[App] Processing drop: Item ${itemInstanceId} from ${sourceInfo.sourceSlot.type}:${sourceInfo.sourceSlot.index} to ${targetSlot.type}:${targetSlot.index}`);
 
     try {
-        // *** NEW: Check for split quantity ***
+        // --- Handle Stack Splitting First (Highest Priority) ---
         if (sourceInfo.splitQuantity && sourceInfo.splitQuantity > 0) {
             console.log(`[App] Calling splitStack: Item ${itemInstanceId}, Qty ${sourceInfo.splitQuantity} to ${targetSlot.type}:${targetSlot.index}`);
-            // Convert target index to number for the reducer (which expects u32)
             const targetIndexNum = typeof targetSlot.index === 'string' ? parseInt(targetSlot.index, 10) : targetSlot.index;
             if (isNaN(targetIndexNum)) { // Basic check if string index wasn't a number (e.g., equipment slot)
                  console.error("[App] Split failed: Target index is not a valid number for splitting.");
-                 // Potentially show user error message
-            } else {
-                connection.reducers.splitStack(
-                    itemInstanceId,
-                    sourceInfo.splitQuantity,
-                    targetSlot.type, // "inventory" or "hotbar"
-                    targetIndexNum   // number
-                );
+                 return; // Stop processing if target isn't numeric for split
             }
-        } 
-        // *** Original move/equip logic if not splitting ***
-        else if (targetSlot.type === 'inventory' && typeof targetSlot.index === 'number') {
-            connection.reducers.moveItemToInventory(itemInstanceId, targetSlot.index);
-        } else if (targetSlot.type === 'hotbar' && typeof targetSlot.index === 'number') {
-            connection.reducers.moveItemToHotbar(itemInstanceId, targetSlot.index);
-        } else if (targetSlot.type === 'equipment' && typeof targetSlot.index === 'string') { 
-             console.log(`[App] Calling equipArmorFromDrag: Item ${itemInstanceId} to ${targetSlot.index}`);
-             connection.reducers.equipArmorFromDrag(itemInstanceId, targetSlot.index);
-        } else {
-            console.warn("[App] Unhandled drop target type or index:", targetSlot);
+            connection.reducers.splitStack(itemInstanceId, sourceInfo.splitQuantity, targetSlot.type, targetIndexNum);
         }
-    } catch (error) {
-        console.error("[App] Reducer call failed:", error);
-    }
-    // State was cleared at the beginning of the handler after reading the ref
+        // --- Handle Normal Moves/Equips ---
+        else {
+            if (targetSlot.type === 'inventory') {
+                // Target index is guaranteed to be number (u16) for inventory
+                console.log(`[App] Calling moveItemToInventory: Item ${itemInstanceId} to slot ${targetSlot.index}`);
+                connection.reducers.moveItemToInventory(itemInstanceId, targetSlot.index as number);
+            } else if (targetSlot.type === 'hotbar') {
+                // Target index is guaranteed to be number (u8) for hotbar
+                 console.log(`[App] Calling moveItemToHotbar: Item ${itemInstanceId} to slot ${targetSlot.index}`);
+                connection.reducers.moveItemToHotbar(itemInstanceId, targetSlot.index as number);
+            } else if (targetSlot.type === 'equipment') {
+                // Target index is string (slot name like 'Head')
+                console.log(`[App] Calling equipArmorFromDrag: Item ${itemInstanceId} to slot ${targetSlot.index}`);
+                connection.reducers.equipArmorFromDrag(itemInstanceId, targetSlot.index as string);
+            }
+            // --- NEW: Handle Campfire Fuel Target ---
+            else if (targetSlot.type === 'campfire_fuel') {
+                const targetSlotIndex = targetSlot.index as number; // Slot index (0-4)
 
-  }, [connection]); // REMOVED draggedItemInfo from dependencies, only need connection
+                if (!interactingWith || interactingWith.type !== 'campfire') {
+                    console.error("[App Drop] Cannot drop onto campfire slot without interaction context.");
+                    return;
+                }
+                const campfireId = interactingWith.id as number;
+                const targetCampfire = campfires.get(campfireId.toString());
+
+                // --- Logging for debug ---
+                console.log(`[App Drop Check] Campfire ${campfireId}, Target Slot ${targetSlotIndex}, State:`, targetCampfire);
+                // Access specific field based on index for logging
+                let currentFuelId: bigint | null | undefined = undefined;
+                // Define NUM_FUEL_SLOTS_CONSTANT (replace with actual value if needed)
+                const NUM_FUEL_SLOTS_CONSTANT = 5; 
+                if (targetCampfire) {
+                    switch(targetSlotIndex) {
+                        case 0: currentFuelId = targetCampfire.fuelInstanceId0; break;
+                        case 1: currentFuelId = targetCampfire.fuelInstanceId1; break;
+                        case 2: currentFuelId = targetCampfire.fuelInstanceId2; break;
+                        case 3: currentFuelId = targetCampfire.fuelInstanceId3; break;
+                        case 4: currentFuelId = targetCampfire.fuelInstanceId4; break;
+                    }
+                }
+                console.log(`[App Drop Check] currentFuelId in slot ${targetSlotIndex}:`, currentFuelId);
+                // --- End Logging ---
+
+                // Check if target slot index is valid and slot is empty
+                if (targetCampfire && targetSlotIndex >= 0 && targetSlotIndex < NUM_FUEL_SLOTS_CONSTANT && currentFuelId == null) {
+                    console.log(`[App] Calling addFuelToCampfire: Item ${itemInstanceId} (${sourceInfo.item.definition.name}) to campfire ${campfireId} slot ${targetSlotIndex}`);
+                    // Pass campfireId, targetSlotIndex, and itemInstanceId
+                    connection.reducers.addFuelToCampfire(campfireId, targetSlotIndex, itemInstanceId);
+                } else {
+                    // Rejection logic
+                    if (!targetCampfire) {
+                         console.warn(`[App] Drop rejected: Campfire ${campfireId} not found in state.`);
+                    } else if (!(targetSlotIndex >= 0 && targetSlotIndex < NUM_FUEL_SLOTS_CONSTANT)) {
+                         console.warn(`[App] Drop rejected: Invalid target slot index ${targetSlotIndex} for campfire ${campfireId}.`);
+                    } else if (currentFuelId != null) { // Check the specific slot's state
+                        console.warn(`[App] Drop rejected: Campfire ${campfireId} fuel slot ${targetSlotIndex} is already occupied.`);
+                    }
+                }
+            }
+            // --- END Campfire Logic ---
+             else {
+                console.warn(`[App] Unhandled drop target type: ${targetSlot.type}`);
+            }
+        }
+    } catch (err: any) {
+        console.error(`[App] Error processing drop (Item ${itemInstanceId} to ${targetSlot.type}:${targetSlot.index}):`, err);
+        // TODO: Provide user feedback based on error?
+    }
+}, [connection, campfires, interactingWith]); // Ensure interactingWith is in dependencies
   
   return (
     <div className="App" style={{ backgroundColor: '#111' }}>
@@ -837,39 +895,42 @@ function App() {
         </div>
       ) : (
         <div className="game-container">
+          <GameCanvas 
+            players={players}
+            trees={trees}
+            stones={stones}
+            campfires={campfires}
+            mushrooms={mushrooms}
+            inventoryItems={inventoryItems}
+            itemDefinitions={itemDefinitions}
+            worldState={worldState}
+            localPlayerId={connection?.identity?.toHexString() ?? undefined}
+            connection={connection}
+            activeEquipments={activeEquipments}
+            updatePlayerPosition={updatePlayerPosition}
+            callJumpReducer={callJumpReducer}
+            callSetSprintingReducer={callSetSprintingReducer}
+            isPlacingCampfire={isPlacingCampfire}
+            handlePlaceCampfire={handlePlaceCampfire}
+            cancelCampfirePlacement={cancelCampfirePlacement}
+            placementError={placementError}
+            onSetInteractingWith={setInteractingWith}
+          />
           <PlayerUI 
-            identity={connection?.identity || null} 
+            identity={connection?.identity || null}
             players={players}
             inventoryItems={inventoryItems}
             itemDefinitions={itemDefinitions}
             connection={connection}
             startCampfirePlacement={startCampfirePlacement}
             cancelCampfirePlacement={cancelCampfirePlacement}
-            activeEquipments={activeEquipments}
             onItemDragStart={handleItemDragStart}
             onItemDrop={handleItemDrop}
             draggedItemInfo={draggedItemInfo}
-          />
-          <GameCanvas
-            players={players}
-            trees={trees}
-            stones={stones}
-            campfires={campfires}
-            mushrooms={mushrooms}
             activeEquipments={activeEquipments}
-            inventoryItems={inventoryItems}
-            itemDefinitions={itemDefinitions}
-            worldState={worldState}
-            localPlayerId={connection?.identity?.toHexString()}
-            connection={connection}
-            updatePlayerPosition={updatePlayerPosition}
-            callJumpReducer={callJumpReducer}
-            callSetSprintingReducer={callSetSprintingReducer}
-            // Campfire Placement Props
-            isPlacingCampfire={isPlacingCampfire}
-            handlePlaceCampfire={handlePlaceCampfire}
-            cancelCampfirePlacement={cancelCampfirePlacement}
-            placementError={placementError}
+            campfires={campfires}
+            interactingWith={interactingWith}
+            onSetInteractingWith={setInteractingWith}
           />
           <Hotbar 
             playerIdentity={connection?.identity || null}

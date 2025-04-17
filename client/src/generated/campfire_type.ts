@@ -36,8 +36,18 @@ export type Campfire = {
   posY: number,
   placedBy: Identity,
   placedAt: Timestamp,
-  burnOutAt: Timestamp,
-  fuel: number,
+  isBurning: boolean,
+  fuelInstanceId0: bigint | undefined,
+  fuelDefId0: bigint | undefined,
+  fuelInstanceId1: bigint | undefined,
+  fuelDefId1: bigint | undefined,
+  fuelInstanceId2: bigint | undefined,
+  fuelDefId2: bigint | undefined,
+  fuelInstanceId3: bigint | undefined,
+  fuelDefId3: bigint | undefined,
+  fuelInstanceId4: bigint | undefined,
+  fuelDefId4: bigint | undefined,
+  nextFuelConsumeAt: Timestamp | undefined,
 };
 
 /**
@@ -55,8 +65,18 @@ export namespace Campfire {
       new ProductTypeElement("posY", AlgebraicType.createF32Type()),
       new ProductTypeElement("placedBy", AlgebraicType.createIdentityType()),
       new ProductTypeElement("placedAt", AlgebraicType.createTimestampType()),
-      new ProductTypeElement("burnOutAt", AlgebraicType.createTimestampType()),
-      new ProductTypeElement("fuel", AlgebraicType.createF32Type()),
+      new ProductTypeElement("isBurning", AlgebraicType.createBoolType()),
+      new ProductTypeElement("fuelInstanceId0", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelDefId0", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelInstanceId1", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelDefId1", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelInstanceId2", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelDefId2", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelInstanceId3", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelDefId3", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelInstanceId4", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("fuelDefId4", AlgebraicType.createOptionType(AlgebraicType.createU64Type())),
+      new ProductTypeElement("nextFuelConsumeAt", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
     ]);
   }
 

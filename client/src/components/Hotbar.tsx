@@ -8,7 +8,7 @@ import DroppableSlot from './DroppableSlot';
 
 // Import shared types
 import { PopulatedItem } from './InventoryUI'; // Assuming PopulatedItem is exported from InventoryUI
-import { DragSourceSlotInfo, DraggedItemInfo } from './PlayerUI'; // Assuming types are exported from PlayerUI
+import { DragSourceSlotInfo, DraggedItemInfo } from '../types/dragDropTypes'; // Updated import location
 
 // Style constants similar to PlayerUI
 const UI_BG_COLOR = 'rgba(40, 40, 60, 0.85)';
@@ -208,7 +208,7 @@ const Hotbar: React.FC<HotbarProps> = ({
       }
   };
 
-  console.log(`[Hotbar Render] selectedSlot is: ${selectedSlot}`);
+  // console.log(`[Hotbar Render] selectedSlot is: ${selectedSlot}`);
 
   return (
     <div style={{
