@@ -692,6 +692,8 @@ pub fn update_player_position(
     // Only check trees if no player collision was handled
     if !collision_handled {
         for tree in trees.iter() {
+            if tree.health == 0 { continue; }
+
             let tree_collision_y = tree.pos_y - environment::TREE_COLLISION_Y_OFFSET;
             let dx = clamped_x - tree.pos_x;
             let dy = clamped_y - tree_collision_y;
@@ -732,6 +734,8 @@ pub fn update_player_position(
     // Only check stones if no player or tree collision was handled
     if !collision_handled {
         for stone in stones.iter() {
+            if stone.health == 0 { continue; }
+
             let stone_collision_y = stone.pos_y - environment::STONE_COLLISION_Y_OFFSET;
             let dx = clamped_x - stone.pos_x;
             let dy = clamped_y - stone_collision_y;
@@ -846,6 +850,8 @@ pub fn update_player_position(
 
         // Check Player-Tree Overlap
         for tree in trees.iter() {
+            if tree.health == 0 { continue; }
+
             let tree_collision_y = tree.pos_y - environment::TREE_COLLISION_Y_OFFSET;
             let dx = resolved_x - tree.pos_x;
             let dy = resolved_y - tree_collision_y;
@@ -867,6 +873,8 @@ pub fn update_player_position(
 
         // Check Player-Stone Overlap
         for stone in stones.iter() {
+            if stone.health == 0 { continue; }
+
             let stone_collision_y = stone.pos_y - environment::STONE_COLLISION_Y_OFFSET;
             let dx = resolved_x - stone.pos_x;
             let dy = resolved_y - stone_collision_y;
