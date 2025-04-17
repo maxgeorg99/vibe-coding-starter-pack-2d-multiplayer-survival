@@ -15,20 +15,20 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 
 **Completed (✅):**
 *   Real-time Multiplayer: Basic player movement synchronization
-*   Environment Systems: Day/night cycle
+*   Environment Systems: Day/night cycle, Full moon nights
 *   Survival Mechanics: Basic resource harvesting (wood/stone/mushrooms)
 *   Survival Systems: Health, Hunger, Thirst, Warmth, Death/Respawn
-*   Resource Respawning: Trees, Stones
+*   Resource Respawning: Trees, Stones, Mushrooms
 *   World Discovery: Minimap
 *   Hotbar/Basic UI: Item selection, basic layout
 *   Inventory Management: Moving, swapping, stacking, stack splitting
 *   Item Equipping: Tools/Weapons (Hotbar), Armor (Slots)
-*   Placeables: Campfire (Basic placement)
+*   Placeables: Campfire (Multi-slot placement & interaction)
 *   Consumables: Eating (Mushrooms)
+*   Campfire Mechanics: Fueling with wood (5 slots), automatic fuel consumption, toggle on/off, inventory access (tap/hold E)
 
 **In Progress (🚧):**
-*   Crafting System: Item recipes, crafting stations
-*   Campfire Mechanics: Fueling with wood, indefinite burn (while fueled)
+*   Crafting System: Item recipes, crafting stations (initial setup)
 
 **Planned (📓):** 
 *   **Core Systems & World:**
@@ -37,6 +37,8 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
     *   Terrain Autotiling: Edge detection, Wang tiles, seamless transitions between biomes
     *   Advanced AI: Enemy behaviors, pathfinding
     *   Team/Social Features
+    *   Storage Containers (Chests)
+    *   Looting Mechanics (Player/Container)
 *   **Gameplay Loops & Interaction:**
     *   Construction System: Base building (walls, floors, etc.)
     *   Farming System: Planting, growing, harvesting crops
@@ -54,6 +56,23 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 | Multiplayer | SpacetimeDB                |
 | Backend     | Rust (WebAssembly)         |
 | Development | Node.js 22+                |
+
+## 📜 Cursor Rules & Code Maintainability
+
+### Cursor Rules (`.cursor/rules/`)
+
+This project utilizes [Cursor](https://cursor.sh/)'s AI features, including **Rules**, to aid development. Rules are markdown files (`.mdc`) that provide context and guidelines to the AI assistant.
+*   `guide.mdc`: Contains general architectural guidelines, technology choices, and development workflow information.
+*   `resources.mdc`: Outlines the specific steps for adding new resources or gatherable nodes consistently.
+
+As the project grows, more specific rules will be added for core features (e.g., crafting, building, combat) to ensure the AI can provide consistent and relevant assistance.
+
+### Code Maintainability
+
+While the project is still evolving, a key goal is maintainability. As features are added, we aim to:
+*   Keep individual file sizes manageable (ideally under ~600 lines where practical).
+*   Refactor logic into reusable helper functions and potentially dedicated modules (like the planned `inventory_logic.rs`).
+*   Utilize abstraction to avoid code duplication, especially for common interactions like container management.
 
 ## ⚙️ Client Configuration
 
@@ -82,18 +101,24 @@ const SPACETIME_DB_NAME = 'vibe-survival-game';
 
 ```
 vibe-coding-starter-pack-2d-survival/
+├── .cursor/        # Cursor AI configuration
+│   └── rules/      # *.mdc rule files for AI context
 ├── client/         # React frontend (UI, rendering, input)
 │   ├── public/     # Static files (index.html, favicons)
 │   ├── src/
 │   │   ├── assets/ # Sprites, textures, sounds
 │   │   ├── components/ # React components (UI, Canvas)
+│   │   ├── config/     # Client-side game configuration
 │   │   ├── generated/  # Auto-generated SpacetimeDB bindings
 │   │   ├── hooks/      # Custom React hooks
+│   │   ├── types/      # Shared TypeScript types (e.g., drag/drop)
 │   │   └── utils/      # Helper functions (rendering, logic)
 │   └── package.json
 ├── server/         # SpacetimeDB server logic (Rust)
 │   ├── src/        # Server code (lib.rs, modules)
 │   └── Cargo.toml
+├── github.png      # Banner image
+├── preview.png     # Gameplay preview image
 ├── README.md
 └── LICENSE
 ```
@@ -128,7 +153,7 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
     spacetime publish vibe-survival-game
     spacetime generate --lang typescript --out-dir ../client/src/generated
     ```
-    *   **Note:** You need to re-run these two commands *every time* you change the server schema (e.g., modify tables or reducers in `server/src/lib.rs`).
+    *   **Note:** You need to re-run these two commands *every time* you change the server schema (e.g., modify tables or reducers in `server/src/lib.rs` or other `.rs` files).
 
 5.  **Run the Client:**
     In the **same terminal** as step 4 (or a new one, just make sure you are in the project root directory `vibe-coding-starter-pack-2d-survival`), run:
@@ -142,16 +167,17 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 ## 🔧 Troubleshooting Local Setup
 
 *   **`Cannot find module './generated'` error in client:**
-    *   Ensure you ran `spacetime generate --lang typescript --out-dir ../client/src/generated` from the `server` directory *after* the last `spacetime publish`.
-    *   Make sure the `client/src/generated` folder was actually created and contains `.ts` files.
-    *   Restart the Vite dev server (`npm run dev`).
+    *   Ensure you ran `spacetime generate --lang typescript --out-dir ../client/src/generated` from the `server` directory *after* the last `spacetime publish` was **successful**. Check the publish output for errors.
+    *   Make sure the `client/src/generated` folder was actually created and contains `.ts` files, including `index.ts`.
+    *   Restart the Vite dev server (`npm run dev`). Sometimes Vite needs a restart after significant file changes.
 *   **Client connects but game doesn't load / players don't appear:**
-    *   Check the browser console for errors (e.g., subscription failures).
-    *   Check the terminal running `spacetime start` for server-side errors (e.g., reducer panics).
-*   **Old players still appearing after disconnect/refresh:**
-    *   The disconnect logic might not be removing them correctly. The most reliable way to ensure a clean state is to delete and recreate the local database:
+    *   Check the browser console (F12) for JavaScript errors (e.g., subscription failures, rendering issues).
+    *   Check the terminal running `spacetime start` for server-side Rust errors (e.g., reducer panics, assertion failures).
+*   **Old players/data still appearing after disconnect/refresh:**
+    *   Verify the `identity_disconnected` logic in `server/src/lib.rs` is correctly deleting the player, inventory, and equipment.
+    *   For a guaranteed clean slate during development, delete and recreate the local database:
         ```bash
-        # Stop spacetime start (Ctrl+C)
+        # Stop spacetime start (Ctrl+C in its terminal)
         spacetime delete vibe-survival-game # Run from any directory
         spacetime start # Restart the server
         # Then re-publish and re-generate (Step 4 above)
@@ -159,18 +185,20 @@ This guide assumes you have installed the prerequisites: Node.js v22+, Rust, and
 *   **`spacetime publish` tries to publish to Maincloud instead of local:**
     *   Ensure you are logged out: `spacetime logout`.
     *   Ensure the `spacetime start` server is running *before* you publish.
-    *   Check your SpacetimeDB config file (`%LOCALAPPDATA%/SpacetimeDB/config/cli.toml` on Windows, `~/.local/share/spacetime/config/cli.toml` on Linux/macOS) and make sure `default_server` is set to `local` (or comment it out).
+    *   Check your SpacetimeDB config file (`%LOCALAPPDATA%/SpacetimeDB/config/cli.toml` on Windows, `~/.local/share/spacetime/config/cli.toml` on Linux/macOS) and make sure `default_server` is set to `local` or commented out.
 
 ## 🔄 Development Workflow
 
-1. **Server Development**:
-   - Modify Rust code in the `server/src` directory
-   - Run `spacetime build` to compile changes
-   - Generate updated TypeScript bindings: `spacetime generate --lang typescript --out-dir ../client/src/generated`
-
-2. **Client Development**:
-   - Edit React components in `client/src`
-   - The dev server supports hot module replacement
+1.  **Server Development (`server/src`)**:
+    *   Modify Rust code (add features, fix bugs).
+    *   **If schema changes (tables, reducer signatures):**
+        1.  Run `spacetime publish vibe-survival-game` (from `server/`).
+        2.  Run `spacetime generate --lang typescript --out-dir ../client/src/generated` (from `server/`).
+    *   **If only logic changes (no schema impact):**
+        1.  Run `spacetime publish vibe-survival-game` (from `server/`). (Generate is not strictly needed but doesn't hurt).
+2.  **Client Development (`client/src`)**:
+    *   Modify React/TypeScript code.
+    *   The Vite dev server (`npm run dev`) usually provides Hot Module Replacement (HMR) for fast updates. If things seem broken after large changes, try restarting the dev server.
 
 ## 🤝 Contributing
 
