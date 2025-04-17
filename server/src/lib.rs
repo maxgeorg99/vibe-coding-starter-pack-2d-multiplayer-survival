@@ -146,11 +146,14 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
         players.identity().delete(sender_id);
         log::info!("Deleted Player entity for disconnected player: {} ({:?})", username, sender_id);
 
-        // 2. Delete player's inventory items
+        // 2. Delete player's inventory items (ONLY those in main inventory or hotbar)
         let inventory = ctx.db.inventory_item();
         let mut items_to_delete = Vec::new();
         for item in inventory.iter().filter(|i| i.player_identity == sender_id) {
-            items_to_delete.push(item.instance_id);
+            // Only delete if actually in inventory/hotbar
+            if item.inventory_slot.is_some() || item.hotbar_slot.is_some() {
+                items_to_delete.push(item.instance_id);
+            }
         }
         let delete_count = items_to_delete.len();
         for item_instance_id in items_to_delete {

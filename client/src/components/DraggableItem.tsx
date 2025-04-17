@@ -105,20 +105,30 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
           if (droppableSlot) {
               const targetType = droppableSlot.getAttribute('data-slot-type') as DragSourceSlotInfo['type'];
               const targetIndexAttr = droppableSlot.getAttribute('data-slot-index');
+              // Log the found attributes
+              console.log(`[DraggableItem Drop Check] Found slot element. Type: ${targetType}, Index Attr: ${targetIndexAttr}`);
               
               if (targetType && targetIndexAttr !== null) {
-                  const targetIndex: number | string = (targetType === 'inventory' || targetType === 'hotbar') ? parseInt(targetIndexAttr, 10) : targetIndexAttr;
-                  const targetSlotInfo: DragSourceSlotInfo = { type: targetType, index: targetIndex };
-                  
-                  // Check if drop is not on the source slot itself
-                  if (!(sourceSlot.type === targetSlotInfo.type && sourceSlot.index === targetSlotInfo.index)) { 
-                        console.log(`[DraggableItem] Found drop target:`, targetSlotInfo);
-                        // Call the MAIN drop handler passed from App
-                        onItemDrop(targetSlotInfo); 
-                        dropOccurred = true;
-                   } else {
-                       console.log("[DraggableItem] Drop on source slot ignored.");
-                   }
+                  const targetIndex: number | string = (targetType === 'inventory' || targetType === 'hotbar' || targetType === 'campfire_fuel') 
+                                                      ? parseInt(targetIndexAttr, 10) 
+                                                      : targetIndexAttr; // Equipment uses string index
+
+                  // Added campfire_fuel here to ensure index is parsed as number
+                  if (!isNaN(targetIndex as number) || typeof targetIndex === 'string') { 
+                      const targetSlotInfo: DragSourceSlotInfo = { type: targetType, index: targetIndex };
+                      
+                      // Check if drop is not on the source slot itself
+                      if (!(sourceSlot.type === targetSlotInfo.type && sourceSlot.index === targetSlotInfo.index)) { 
+                            console.log(`[DraggableItem] Found drop target:`, targetSlotInfo);
+                            // Call the MAIN drop handler passed from App
+                            onItemDrop(targetSlotInfo); 
+                            dropOccurred = true;
+                       } else {
+                           console.log("[DraggableItem] Drop on source slot ignored.");
+                       }
+                  } else {
+                       console.log("[DraggableItem] Drop target missing necessary data attributes.");
+                  }
               } else {
                    console.log("[DraggableItem] Drop target missing necessary data attributes.");
               }

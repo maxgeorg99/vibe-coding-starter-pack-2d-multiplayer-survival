@@ -68,8 +68,6 @@ import { MoveToFirstAvailableHotbarSlot } from "./move_to_first_available_hotbar
 export { MoveToFirstAvailableHotbarSlot };
 import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
-import { ReconnectPlayer } from "./reconnect_player_reducer.ts";
-export { ReconnectPlayer };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
 import { RemoveFuelFromCampfire } from "./remove_fuel_from_campfire_reducer.ts";
@@ -272,10 +270,6 @@ const REMOTE_MODULE = {
       reducerName: "place_campfire",
       argsType: PlaceCampfire.getTypeScriptAlgebraicType(),
     },
-    reconnect_player: {
-      reducerName: "reconnect_player",
-      argsType: ReconnectPlayer.getTypeScriptAlgebraicType(),
-    },
     register_player: {
       reducerName: "register_player",
       argsType: RegisterPlayer.getTypeScriptAlgebraicType(),
@@ -385,7 +379,6 @@ export type Reducer = never
 | { name: "MoveItemToInventory", args: MoveItemToInventory }
 | { name: "MoveToFirstAvailableHotbarSlot", args: MoveToFirstAvailableHotbarSlot }
 | { name: "PlaceCampfire", args: PlaceCampfire }
-| { name: "ReconnectPlayer", args: ReconnectPlayer }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RemoveFuelFromCampfire", args: RemoveFuelFromCampfire }
 | { name: "RequestRespawn", args: RequestRespawn }
@@ -665,22 +658,6 @@ export class RemoteReducers {
 
   removeOnPlaceCampfire(callback: (ctx: ReducerEventContext, targetX: number, targetY: number) => void) {
     this.connection.offReducer("place_campfire", callback);
-  }
-
-  reconnectPlayer(username: string) {
-    const __args = { username };
-    let __writer = new BinaryWriter(1024);
-    ReconnectPlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
-    let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("reconnect_player", __argsBuffer, this.setCallReducerFlags.reconnectPlayerFlags);
-  }
-
-  onReconnectPlayer(callback: (ctx: ReducerEventContext, username: string) => void) {
-    this.connection.onReducer("reconnect_player", callback);
-  }
-
-  removeOnReconnectPlayer(callback: (ctx: ReducerEventContext, username: string) => void) {
-    this.connection.offReducer("reconnect_player", callback);
   }
 
   registerPlayer(username: string) {
@@ -996,11 +973,6 @@ export class SetReducerFlags {
   placeCampfireFlags: CallReducerFlags = 'FullUpdate';
   placeCampfire(flags: CallReducerFlags) {
     this.placeCampfireFlags = flags;
-  }
-
-  reconnectPlayerFlags: CallReducerFlags = 'FullUpdate';
-  reconnectPlayer(flags: CallReducerFlags) {
-    this.reconnectPlayerFlags = flags;
   }
 
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
