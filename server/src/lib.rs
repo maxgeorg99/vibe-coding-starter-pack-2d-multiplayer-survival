@@ -19,6 +19,7 @@ mod mushroom;
 // Declare the consumables module
 mod consumables;
 mod utils; // Declare utils module
+mod dropped_item; // Declare dropped_item module
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait; 

@@ -1,0 +1,143 @@
+use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp};
+use log;
+
+// Import necessary items from other modules
+// Need to use the generated table trait alias for InventoryItemTable operations
+use crate::items::inventory_item as InventoryItemTableTrait;
+use crate::items::item_definition as ItemDefinitionTableTrait; // Import ItemDefinition trait
+use crate::player as PlayerTableTrait; // Import Player trait
+use crate::items::{add_item_to_player_inventory, InventoryItem, ItemDefinition};
+// Corrected imports for Player and PLAYER_RADIUS from crate root
+use crate::{Player, PLAYER_RADIUS}; 
+use crate::utils::get_distance_squared; // Assuming a utility function for distance
+
+// Define the table for items dropped in the world
+#[spacetimedb::table(name = dropped_item, public)]
+#[derive(Clone, Debug)]
+pub struct DroppedItem {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,               // Unique ID for this dropped item instance
+    pub item_def_id: u64,      // Links to ItemDefinition table
+    pub quantity: u32,         // How many of this item are in the sack
+    pub pos_x: f32,            // World X position
+    pub pos_y: f32,            // World Y position
+    pub created_at: Timestamp, // When the item was dropped (for potential cleanup)
+}
+
+// Constants
+const PICKUP_RADIUS: f32 = 64.0; // How close the player needs to be to pick up (adjust as needed)
+const PICKUP_RADIUS_SQUARED: f32 = PICKUP_RADIUS * PICKUP_RADIUS;
+pub(crate) const DROP_OFFSET: f32 = 40.0; // How far in front of the player to drop the item
+
+// --- Reducers ---
+
+/// Called by the client when they attempt to pick up a dropped item.
+#[spacetimedb::reducer]
+pub fn pickup_dropped_item(ctx: &ReducerContext, dropped_item_id: u64) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let dropped_items_table = ctx.db.dropped_item();
+    let players_table = ctx.db.player();
+    let item_defs_table = ctx.db.item_definition(); // Needed for logging
+
+    log::info!("[PickupDropped] Player {:?} attempting to pick up dropped item ID {}", sender_id, dropped_item_id);
+
+    // 1. Find the Player
+    let player = players_table.identity().find(sender_id)
+        .ok_or_else(|| "Player not found.".to_string())?;
+
+    // 2. Find the DroppedItem
+    let dropped_item = dropped_items_table.id().find(dropped_item_id)
+        .ok_or_else(|| format!("Dropped item with ID {} not found.", dropped_item_id))?;
+
+    // 3. Check Proximity
+    let distance_sq = get_distance_squared(player.position_x, player.position_y, dropped_item.pos_x, dropped_item.pos_y);
+
+    if distance_sq > PICKUP_RADIUS_SQUARED {
+         log::warn!("[PickupDropped] Player {:?} too far from item {} (DistSq: {:.1} > {:.1})",
+                   sender_id, dropped_item_id, distance_sq, PICKUP_RADIUS_SQUARED);
+        return Err("Too far away to pick up the item.".to_string());
+    }
+
+    // 4. Attempt to add item to player inventory (using existing helper from items.rs)
+    log::info!("[PickupDropped] Player {:?} is close enough. Attempting to add item def {} (qty {}) to inventory.",
+             sender_id, dropped_item.item_def_id, dropped_item.quantity);
+
+    // Call the helper function from the items module
+    match crate::items::add_item_to_player_inventory(ctx, sender_id, dropped_item.item_def_id, dropped_item.quantity) {
+        Ok(_) => {
+            // 5. If successful, delete the dropped item entity
+            dropped_items_table.id().delete(dropped_item_id);
+            let item_name = item_defs_table.id().find(dropped_item.item_def_id)
+                               .map(|def| def.name.clone())
+                               .unwrap_or_else(|| format!("[Def ID {}]", dropped_item.item_def_id));
+            log::info!("[PickupDropped] Successfully picked up item '{}' (ID {}) and added to inventory for player {:?}",
+                     item_name, dropped_item_id, sender_id);
+            Ok(())
+        }
+        Err(e) => {
+            // If adding failed (e.g., inventory full), leave the dropped item in the world
+            log::error!("[PickupDropped] Failed to add item {} to inventory for player {:?}: {}",
+                      dropped_item_id, sender_id, e);
+            Err(format!("Could not pick up item: {}", e)) // Propagate the error (e.g., "Inventory is full")
+        }
+    }
+}
+
+// --- Helper Functions (Internal to this module) ---
+
+/// Creates a DroppedItem entity in the world.
+/// Assumes validation (like position checks) might happen before calling this.
+pub(crate) fn create_dropped_item_entity(
+    ctx: &ReducerContext,
+    item_def_id: u64,
+    quantity: u32,
+    pos_x: f32,
+    pos_y: f32,
+) -> Result<(), String> { // Changed return type to Result<(), String> as we don't need the entity back
+     let new_dropped_item = DroppedItem {
+        id: 0, // Auto-incremented
+        item_def_id,
+        quantity,
+        pos_x,
+        pos_y,
+        created_at: ctx.timestamp,
+    };
+
+    match ctx.db.dropped_item().try_insert(new_dropped_item) {
+        Ok(_) => {
+            log::info!("[CreateDroppedItem] Created dropped item entity (DefID: {}, Qty: {}) at ({:.1}, {:.1})",
+                     item_def_id, quantity, pos_x, pos_y);
+            Ok(())
+        },
+        Err(e) => {
+            log::error!("[CreateDroppedItem] Failed to insert dropped item: {}", e);
+            Err(format!("Failed to create dropped item entity: {}", e))
+        }
+    }
+}
+
+/// Calculates a position slightly in front of the player based on their direction.
+pub(crate) fn calculate_drop_position(player: &Player) -> (f32, f32) {
+    let mut drop_x = player.position_x;
+    let mut drop_y = player.position_y;
+
+    match player.direction.as_str() {
+        "up" => drop_y -= DROP_OFFSET,
+        "down" => drop_y += DROP_OFFSET,
+        "left" => drop_x -= DROP_OFFSET,
+        "right" => drop_x += DROP_OFFSET,
+        _ => drop_y += DROP_OFFSET, // Default to dropping below if direction is weird
+    }
+
+    // Basic boundary clamping (could add collision checks later if needed)
+    // Using player radius as a buffer from the edge
+    drop_x = drop_x.max(PLAYER_RADIUS).min(crate::WORLD_WIDTH_PX - PLAYER_RADIUS);
+    drop_y = drop_y.max(PLAYER_RADIUS).min(crate::WORLD_HEIGHT_PX - PLAYER_RADIUS);
+
+    (drop_x, drop_y)
+}
+
+// TODO: Implement despawn logic for items left on the ground too long.
+// This could be a scheduled reducer checking `created_at` or integrated into a general world update tick.
+// For now, items persist indefinitely. 

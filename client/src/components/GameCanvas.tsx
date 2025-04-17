@@ -10,7 +10,8 @@ import {
   WorldState as SpacetimeDBWorldState,
   ActiveEquipment as SpacetimeDBActiveEquipment,
   InventoryItem as SpacetimeDBInventoryItem,
-  ItemDefinition as SpacetimeDBItemDefinition
+  ItemDefinition as SpacetimeDBItemDefinition,
+  DroppedItem as SpacetimeDBDroppedItem
 } from '../generated';
 import heroSpriteSheet from '../assets/hero.png';
 import grassTexture from '../assets/tiles/grass.png';
@@ -68,6 +69,7 @@ interface GameCanvasProps {
   stones: Map<string, SpacetimeDBStone>;
   campfires: Map<string, SpacetimeDBCampfire>;
   mushrooms: Map<string, SpacetimeDBMushroom>; // Use imported type alias
+  droppedItems: Map<string, SpacetimeDBDroppedItem>;
   inventoryItems: Map<string, SpacetimeDBInventoryItem>;
   itemDefinitions: Map<string, SpacetimeDBItemDefinition>;
   worldState: SpacetimeDBWorldState | null;
@@ -190,12 +192,24 @@ function interpolateRgba(progress: number, currentKeyframes: Record<number, Colo
 }
 // --- End Interpolation Data ---
 
+// --- NEW: Type guard for DroppedItem ---
+function isDroppedItem(entity: any): entity is SpacetimeDBDroppedItem {
+    // Check for properties specific to DroppedItem and not others
+    return entity && typeof entity.posX === 'number' && typeof entity.posY === 'number' &&
+           typeof entity.itemDefId !== 'undefined' && // Check for itemDefId
+           typeof entity.identity === 'undefined' && 
+           typeof entity.treeType === 'undefined' &&
+           typeof entity.health === 'undefined' && 
+           typeof entity.placedBy === 'undefined';
+}
+
 const GameCanvas: React.FC<GameCanvasProps> = ({
   players,
   trees,
   stones,
   campfires,
   mushrooms,
+  droppedItems,
   inventoryItems,
   itemDefinitions,
   worldState,
@@ -229,6 +243,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const isInputDisabled = useRef<boolean>(false); // Ref to track input disable state
   const closestInteractableMushroomIdRef = useRef<bigint | null>(null); // Ref for nearby mushroom ID
   const closestInteractableCampfireIdRef = useRef<number | null>(null); // Ref for nearby campfire ID (u32 maps to number)
+  const closestInteractableDroppedItemIdRef = useRef<bigint | null>(null); // Ref for closest interactable dropped item ID
   const isEHeldDownRef = useRef<boolean>(false);
   const eKeyDownTimestampRef = useRef<number>(0);
   const eKeyHoldTimerRef = useRef<number | null>(null);
@@ -348,7 +363,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       // Handle interaction key ('e')
       if (key === 'e' && !e.repeat && !isEHeldDownRef.current) {
         const closestCampfireId = closestInteractableCampfireIdRef.current;
-        if (closestCampfireId !== null) {
+        const closestMushroomId = closestInteractableMushroomIdRef.current;
+        const closestDroppedItemId = closestInteractableDroppedItemIdRef.current;
+        
+        // Prioritize interaction: DroppedItem > Campfire > Mushroom
+        if (closestDroppedItemId !== null && connection?.reducers) {
+             console.log(`E key down near dropped item ${closestDroppedItemId}`);
+             try {
+                 connection.reducers.pickupDroppedItem(closestDroppedItemId);
+             } catch (err) {
+                 console.error("Error calling pickupDroppedItem reducer:", err);
+                 // TODO: Display error feedback to the user?
+             }
+             return; // Handled dropped item, prevent other interactions
+        } else if (closestCampfireId !== null) {
           console.log(`E key down near campfire ${closestCampfireId}`);
           isEHeldDownRef.current = true;
           eKeyDownTimestampRef.current = Date.now();
@@ -372,19 +400,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           }, HOLD_INTERACTION_DURATION_MS);
           // Do NOT call other reducers here anymore
           return; // Prevent adding 'e' to keysPressed for movement
-        }
-         // --- Handle Mushroom Interaction (Immediate) ---
-        else {
-            const closestMushroomId = closestInteractableMushroomIdRef.current;
-            if (closestMushroomId !== null && connection?.reducers) {
-                console.log(`E key down near mushroom ${closestMushroomId}`);
-                try {
-                    connection.reducers.interactWithMushroom(closestMushroomId);
-                } catch (err) {
-                    console.error("Error calling interactWithMushroom reducer:", err);
-                }
-                 return; // Prevent adding 'e' to keysPressed
+        } else if (closestMushroomId !== null && connection?.reducers) {
+            console.log(`E key down near mushroom ${closestMushroomId}`);
+            try {
+                connection.reducers.interactWithMushroom(closestMushroomId);
+            } catch (err) {
+                console.error("Error calling interactWithMushroom reducer:", err);
             }
+             return; // Prevent adding 'e' to keysPressed
         }
       }
     };
@@ -775,27 +798,24 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.translate(cameraOffsetX, cameraOffsetY);
     drawWorldBackground(ctx);
 
-    // Render world entities (EXCLUDING campfires)
-    const worldEntitiesToRender: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBMushroom)[] = [
+    // Gather ALL renderable world entities
+    const worldEntitiesToRender: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBMushroom | SpacetimeDBDroppedItem)[] = [
         ...Array.from(players.values()),
-        // Filter out trees with 0 health (waiting to respawn)
         ...Array.from(trees.values()).filter(tree => tree.health > 0),
-        // Filter out stones with 0 health (waiting to respawn - though already handled by check_resource_respawns, good practice)
         ...Array.from(stones.values()).filter(stone => stone.health > 0),
-        // Filter out mushrooms with a respawn_at time set (waiting to respawn)
         ...Array.from(mushrooms.values()).filter(mushroom => mushroom.respawnAt === null || mushroom.respawnAt === undefined),
-        // Campfires removed from this loop
+        ...Array.from(droppedItems.values()),
     ];
     worldEntitiesToRender.sort((a, b) => { // Simple posY sort
-        const yA = isPlayer(a) ? a.positionY : a.posY;
-        const yB = isPlayer(b) ? b.positionY : b.posY;
+        const yA = isPlayer(a) ? a.positionY : (isDroppedItem(a) ? a.posY : a.posY);
+        const yB = isPlayer(b) ? b.positionY : (isDroppedItem(b) ? b.posY : b.posY);
         return yA - yB;
     });
     const now_ms = Date.now();
     const currentWorldMouseX = worldMousePosRef.current.x;
     const currentWorldMouseY = worldMousePosRef.current.y;
 
-    // --- Find Closest Interactable Mushroom --- (Before rendering loop)
+    // --- Find Closest Interactable Mushroom ---
     let closestDistSq = PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED;
     closestInteractableMushroomIdRef.current = null; // Reset each frame
     if (localPlayerData) {
@@ -818,7 +838,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     // --- End Finding Closest Mushroom ---
 
-    // --- Find Closest Interactable Campfire --- (Before rendering loop)
+    // --- Find Closest Interactable Campfire ---
     let closestCampfireDistSq = PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED;
     closestInteractableCampfireIdRef.current = null; // Reset each frame
     if (localPlayerData) {
@@ -838,7 +858,24 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     // --- End Finding Closest Campfire ---
 
-    // Render Sorted World Entities (No Campfires)
+    // --- NEW: Find Closest Interactable DroppedItem ---
+    let closestDroppedItemDistSq = PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED; // Reuse distance for now
+    closestInteractableDroppedItemIdRef.current = null; // Reset each frame
+    if (localPlayerData) {
+      droppedItems.forEach((item) => {
+        const dx = localPlayerData.positionX - item.posX;
+        const dy = localPlayerData.positionY - item.posY;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < closestDroppedItemDistSq) {
+          closestDroppedItemDistSq = distSq;
+          closestInteractableDroppedItemIdRef.current = item.id; // Store the BigInt ID
+        }
+      });
+    }
+    // --- End Finding Closest DroppedItem ---
+
+    // Render Sorted World Entities (Including Dropped Items)
     worldEntitiesToRender.forEach(entity => {
        if (isPlayer(entity)) {
            // --- Player Rendering Logic ---
@@ -906,14 +943,59 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
            renderTree(ctx, entity, now_ms);
        } else if (isStone(entity)) {
            renderStone(ctx, entity, now_ms);
-       } else if (isMushroom(entity)) {
-           renderMushroom(ctx, entity, now_ms);
+       } else if (isDroppedItem(entity)) {
+           // --- Get Item Definition and Image --- 
+           const itemDef = itemDefinitions.get(entity.itemDefId.toString());
+           let itemImg: HTMLImageElement | null = null;
+           let iconAssetName: string | null = null;
+           if (itemDef) {
+               iconAssetName = itemDef.iconAssetName;
+               itemImg = itemImagesRef.current.get(iconAssetName) ?? null;
+           } else {
+                console.warn(`[Render DroppedItem] Definition not found for ID: ${entity.itemDefId}`);
+           }
+           const canRenderIcon = itemDef && iconAssetName && itemImg && itemImg.complete && itemImg.naturalHeight !== 0;
+
+           // --- Draw Item Icon or Fallback --- 
+           const drawWidth = 48; // Reverted size to match inventory
+           const drawHeight = 48; // Reverted size to match inventory
+           if (canRenderIcon && iconAssetName) {
+              ctx.drawImage(itemImg!, entity.posX - drawWidth / 2, entity.posY - drawHeight / 2, drawWidth, drawHeight);
+              if (!itemImagesRef.current.has(iconAssetName)) {
+                   const iconSrc = itemIcons[iconAssetName] || ''; 
+                   if (iconSrc) {
+                       const img = new Image();
+                       img.src = iconSrc;
+                       img.onload = () => itemImagesRef.current.set(iconAssetName!, img);
+                       itemImagesRef.current.set(iconAssetName, img);
+                   }
+              }
+           } else {
+               ctx.fillStyle = '#CCCCCC';
+               ctx.fillRect(entity.posX - drawWidth / 2, entity.posY - drawHeight / 2, drawWidth, drawHeight);
+           }
 
            // --- Render Interaction Prompt --- 
+           if (closestInteractableDroppedItemIdRef.current === entity.id) {
+               const itemName = itemDef ? itemDef.name : 'Item';
+               const text = `Press E to pick up ${itemName} (x${entity.quantity})`;
+               const textX = entity.posX;
+               const textY = entity.posY - 25;
+               ctx.fillStyle = "white";
+               ctx.strokeStyle = "black";
+               ctx.lineWidth = 2;
+               ctx.font = '14px "Press Start 2P", cursive';
+               ctx.textAlign = "center";
+               ctx.strokeText(text, textX, textY);
+               ctx.fillText(text, textX, textY);
+           }
+       } else if (isMushroom(entity)) {
+           renderMushroom(ctx, entity, now_ms);
+           // --- Render Mushroom Interaction Prompt --- 
            if (closestInteractableMushroomIdRef.current === entity.id) {
               const text = "Press E to Collect";
               const textX = entity.posX;
-              const textY = entity.posY - 60; // Position above the mushroom (adjust as needed)
+              const textY = entity.posY - 60;
               ctx.fillStyle = "white";
               ctx.strokeStyle = "black";
               ctx.lineWidth = 2;
@@ -922,7 +1004,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               ctx.strokeText(text, textX, textY);
               ctx.fillText(text, textX, textY);
            }
-           // --- End Interaction Prompt --- 
        }
     });
 
@@ -1078,7 +1159,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       activeEquipments,
       itemDefinitions,
       onSetInteractingWith,
-      interactionProgress
+      interactionProgress,
+      droppedItems
     ]);
 
   const gameLoop = useCallback(() => {

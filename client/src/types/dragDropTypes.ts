@@ -4,6 +4,7 @@ import { PopulatedItem } from '../components/InventoryUI'; // Assuming Populated
 export interface DragSourceSlotInfo {
     type: 'inventory' | 'hotbar' | 'equipment' | 'campfire_fuel'; // Added campfire_fuel
     index: number | string; // number for inv/hotbar/campfire_id, string for equip name
+    parentId?: number | bigint | string; // Optional ID of the parent container (e.g., campfire ID)
 }
 
 // Type definition for the item being dragged

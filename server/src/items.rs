@@ -6,6 +6,10 @@ use log;
 use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 // Import Campfire table trait
 use crate::campfire::campfire as CampfireTableTrait;
+// Import Player table trait
+use crate::player as PlayerTableTrait;
+// Import DroppedItem helpers
+use crate::dropped_item::{calculate_drop_position, create_dropped_item_entity};
 // REMOVE unused concrete table type imports
 // use crate::items::{InventoryItemTable, ItemDefinitionTable};
 use std::cmp::min;
@@ -408,63 +412,65 @@ pub(crate) fn add_item_to_player_inventory(ctx: &ReducerContext, player_id: Iden
 // Helper to clear a specific item instance from any equipment slot it might occupy
 fn clear_specific_item_from_equipment_slots(ctx: &ReducerContext, player_id: spacetimedb::Identity, item_instance_id_to_clear: u64) {
     let active_equip_table = ctx.db.active_equipment();
+    // Use try_find to avoid panic if player has no equipment entry yet
     if let Some(mut equip) = active_equip_table.player_identity().find(player_id) {
         let mut updated = false;
 
-        // Check main hand (less likely for armor, but good practice)
+        // Check main hand
         if equip.equipped_item_instance_id == Some(item_instance_id_to_clear) {
              equip.equipped_item_instance_id = None;
              equip.equipped_item_def_id = None;
              equip.swing_start_time_ms = 0;
              updated = true;
-             log::debug!("[ClearSpecificEquip] Removed item {} from main hand slot for player {:?}", item_instance_id_to_clear, player_id);
+             log::debug!("[ClearEquip] Removed item {} from main hand slot for player {:?}", item_instance_id_to_clear, player_id);
         }
         // Check armor slots
         if equip.head_item_instance_id == Some(item_instance_id_to_clear) {
             equip.head_item_instance_id = None;
             updated = true;
-            log::debug!("[ClearSpecificEquip] Removed item {} from Head slot for player {:?}", item_instance_id_to_clear, player_id);
+            log::debug!("[ClearEquip] Removed item {} from Head slot for player {:?}", item_instance_id_to_clear, player_id);
         }
         if equip.chest_item_instance_id == Some(item_instance_id_to_clear) {
             equip.chest_item_instance_id = None;
             updated = true;
-            log::debug!("[ClearSpecificEquip] Removed item {} from Chest slot for player {:?}", item_instance_id_to_clear, player_id);
+            log::debug!("[ClearEquip] Removed item {} from Chest slot for player {:?}", item_instance_id_to_clear, player_id);
         }
         if equip.legs_item_instance_id == Some(item_instance_id_to_clear) {
             equip.legs_item_instance_id = None;
             updated = true;
-            log::debug!("[ClearSpecificEquip] Removed item {} from Legs slot for player {:?}", item_instance_id_to_clear, player_id);
+            log::debug!("[ClearEquip] Removed item {} from Legs slot for player {:?}", item_instance_id_to_clear, player_id);
         }
         if equip.feet_item_instance_id == Some(item_instance_id_to_clear) {
             equip.feet_item_instance_id = None;
             updated = true;
-            log::debug!("[ClearSpecificEquip] Removed item {} from Feet slot for player {:?}", item_instance_id_to_clear, player_id);
+            log::debug!("[ClearEquip] Removed item {} from Feet slot for player {:?}", item_instance_id_to_clear, player_id);
         }
         if equip.hands_item_instance_id == Some(item_instance_id_to_clear) {
             equip.hands_item_instance_id = None;
             updated = true;
-            log::debug!("[ClearSpecificEquip] Removed item {} from Hands slot for player {:?}", item_instance_id_to_clear, player_id);
+            log::debug!("[ClearEquip] Removed item {} from Hands slot for player {:?}", item_instance_id_to_clear, player_id);
         }
         if equip.back_item_instance_id == Some(item_instance_id_to_clear) {
             equip.back_item_instance_id = None;
             updated = true;
-            log::debug!("[ClearSpecificEquip] Removed item {} from Back slot for player {:?}", item_instance_id_to_clear, player_id);
+            log::debug!("[ClearEquip] Removed item {} from Back slot for player {:?}", item_instance_id_to_clear, player_id);
         }
 
         if updated {
             active_equip_table.player_identity().update(equip);
         }
     } else {
-        log::warn!("[ClearSpecificEquip] Could not find ActiveEquipment for player {:?} when trying to clear item {}.", player_id, item_instance_id_to_clear);
+        // This is not necessarily an error, player might not have equipment entry yet
+        log::debug!("[ClearEquip] No ActiveEquipment found for player {:?} when trying to clear item {}.", player_id, item_instance_id_to_clear);
     }
 }
 
-// NEW Helper: Clear a specific item instance from any campfire fuel slot
+// Helper: Clear a specific item instance from any campfire fuel slot
 fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to_clear: u64) {
     let mut campfires = ctx.db.campfire();
     // Iterate through campfires that *might* contain the item
     let potential_campfire_ids: Vec<u32> = campfires.iter()
-                                            .filter(|c| 
+                                            .filter(|c|
                                                 // Check all individual slots
                                                 c.fuel_instance_id_0 == Some(item_instance_id_to_clear) ||
                                                 c.fuel_instance_id_1 == Some(item_instance_id_to_clear) ||
@@ -475,21 +481,22 @@ fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to
                                             .map(|c| c.id).collect();
 
     for campfire_id in potential_campfire_ids {
+        // Use try_find to avoid panic if campfire disappears mid-iteration (less likely but safer)
         if let Some(mut campfire) = campfires.id().find(campfire_id) {
             let mut updated = false;
             // Check and clear each slot individually using NEW field names
             if campfire.fuel_instance_id_0 == Some(item_instance_id_to_clear) {
                 campfire.fuel_instance_id_0 = None; campfire.fuel_def_id_0 = None; updated = true;
-            } 
+            }
             if campfire.fuel_instance_id_1 == Some(item_instance_id_to_clear) {
                 campfire.fuel_instance_id_1 = None; campfire.fuel_def_id_1 = None; updated = true;
-            } 
+            }
             if campfire.fuel_instance_id_2 == Some(item_instance_id_to_clear) {
                 campfire.fuel_instance_id_2 = None; campfire.fuel_def_id_2 = None; updated = true;
-            } 
+            }
             if campfire.fuel_instance_id_3 == Some(item_instance_id_to_clear) {
                 campfire.fuel_instance_id_3 = None; campfire.fuel_def_id_3 = None; updated = true;
-            } 
+            }
             if campfire.fuel_instance_id_4 == Some(item_instance_id_to_clear) {
                 campfire.fuel_instance_id_4 = None; campfire.fuel_def_id_4 = None; updated = true;
             }
@@ -502,7 +509,7 @@ fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to
                  if !still_has_fuel && campfire.is_burning {
                     campfire.is_burning = false;
                     campfire.next_fuel_consume_at = None;
-                    log::info!("Campfire {} extinguished as last valid fuel was removed during item move.", campfire_id);
+                    log::info!("Campfire {} extinguished as last valid fuel was removed.", campfire_id);
                 }
                 campfires.id().update(campfire);
             }
@@ -510,65 +517,71 @@ fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to
     }
 }
 
+// NEW Refactored Helper: Clears an item from equipment OR campfire slots based on its state
+// This should be called *before* modifying or deleting the InventoryItem itself.
+fn clear_item_from_source_location(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), String> {
+    let sender_id = ctx.sender; // Assume the operation is initiated by the sender
+
+    // Check if item exists (implicitly checks ownership if called after get_player_item)
+    // Or, if the item is potentially unowned (e.g., in a campfire), we need to find it first.
+    let item_opt = ctx.db.inventory_item().instance_id().find(item_instance_id);
+
+    if item_opt.is_none() {
+        // Item might have already been deleted (e.g., during a merge). This is ok.
+        log::debug!("[ClearSource] Item {} already gone. No clearing needed.", item_instance_id);
+        return Ok(());
+    }
+    let item = item_opt.unwrap(); // Safe to unwrap now
+
+    // Determine if it was equipped or in a campfire
+    // Note: An item can't be *both* equipped and fuel.
+    // It also can't be equipped/fuel AND in inventory/hotbar.
+    let was_equipped_or_fuel = item.inventory_slot.is_none() && item.hotbar_slot.is_none();
+
+    if was_equipped_or_fuel {
+        // Try clearing from equipment first (most common case for non-inv/hotbar)
+        clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
+
+        // Then clear from campfires (in case it was fuel)
+        // This is safe even if it wasn't fuel, the inner function handles lookup.
+        clear_item_from_campfire_fuel_slots(ctx, item_instance_id);
+
+        log::debug!("[ClearSource] Attempted clearing item {} from equipment/campfire slots for player {:?}", item_instance_id, sender_id);
+    } else {
+        log::debug!("[ClearSource] Item {} was in inventory/hotbar. No equipment/campfire clearing needed.", item_instance_id);
+    }
+
+    Ok(())
+}
+
 #[spacetimedb::reducer]
 pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, target_inventory_slot: u16) -> Result<(), String> {
     let sender_id = ctx.sender;
     log::info!("[MoveToInv] Player {:?} attempting move item {} to inv slot {}", sender_id, item_instance_id, target_inventory_slot);
-    
+
+    // --- Find Item First ---
+    // Use try_find to handle cases where the item might not exist (e.g., race condition)
     let mut item_to_move = ctx.db.inventory_item().instance_id().find(item_instance_id)
         .ok_or_else(|| format!("Item instance {} not found.", item_instance_id))?;
 
-    let came_from_equip_or_fuel = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
-    if item_to_move.player_identity != sender_id && !came_from_equip_or_fuel {
-        return Err(format!("Item instance {} not owned by caller or not movable.", item_instance_id));
+    let was_originally_equipped_or_fuel = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
+
+    // --- Validate Ownership (only if NOT coming from equip/fuel) ---
+    // If it *was* equipped/fuel, we assume the player interacting (sender_id) implicitly gains ownership.
+    if !was_originally_equipped_or_fuel && item_to_move.player_identity != sender_id {
+        return Err(format!("Item instance {} not owned by caller.", item_instance_id));
     }
 
-    // --- NEW: Check if item is currently fuel in a campfire --- 
-    let mut maybe_campfire_to_update: Option<crate::campfire::Campfire> = None;
-    if came_from_equip_or_fuel { // Only check campfires if item was in inv/hotbar
-        let campfires = ctx.db.campfire(); // Get immutable borrow first
-        for campfire in campfires.iter() {
-            // Check ALL slots
-            if campfire.fuel_instance_id_0 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_1 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_2 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_3 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_4 == Some(item_instance_id) 
-            {
-                log::debug!("[MoveToInv] Item {} is currently fuel for campfire {}. Will clear campfire state.", item_instance_id, campfire.id);
-                maybe_campfire_to_update = Some(campfire); // Clone the campfire data
-                break; // Assume item can only be fuel for one fire
-            }
-        }
-    }
-
-    // --- Clear the associated campfire state IF found --- 
-    if let Some(mut campfire_to_update) = maybe_campfire_to_update {
-        // Clear the specific slot where the item was found
-        if campfire_to_update.fuel_instance_id_0 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_0 = None; campfire_to_update.fuel_def_id_0 = None; }
-        else if campfire_to_update.fuel_instance_id_1 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_1 = None; campfire_to_update.fuel_def_id_1 = None; }
-        else if campfire_to_update.fuel_instance_id_2 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_2 = None; campfire_to_update.fuel_def_id_2 = None; }
-        else if campfire_to_update.fuel_instance_id_3 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_3 = None; campfire_to_update.fuel_def_id_3 = None; }
-        else if campfire_to_update.fuel_instance_id_4 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_4 = None; campfire_to_update.fuel_def_id_4 = None; }
-        
-        // Extinguish check
-        let still_has_fuel = crate::campfire::check_if_campfire_has_fuel(ctx, &campfire_to_update);
-        if !still_has_fuel && campfire_to_update.is_burning {
-             campfire_to_update.is_burning = false;
-             campfire_to_update.next_fuel_consume_at = None;
-        }
-        ctx.db.campfire().id().update(campfire_to_update); // Update the campfire table
-    }
+    // --- Clear From Original Location (Equip/Campfire) *BEFORE* modifying item ---
+    clear_item_from_source_location(ctx, item_instance_id)?;
 
     // --- Pre-fetch definition for potential merge ---
-    let item_def_to_move = ctx.db.item_definition().iter()
-        .find(|def| def.id == item_to_move.item_def_id)
+    let item_def_to_move = ctx.db.item_definition().id().find(item_to_move.item_def_id)
         .ok_or_else(|| format!("Definition missing for item {}", item_to_move.item_def_id))?;
 
-    // Store original location *before* modification
+    // Store original inventory/hotbar location *before* modification
     let source_hotbar_slot = item_to_move.hotbar_slot;
     let source_inventory_slot = item_to_move.inventory_slot;
-    let was_originally_equipped = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
 
     // Prevent dropping onto the exact same slot
     if source_inventory_slot == Some(target_inventory_slot) {
@@ -581,7 +594,7 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
     if let Some(mut occupant) = find_item_in_inventory_slot(ctx, target_inventory_slot) {
         // Target slot is occupied
 
-        // Prevent merging/swapping with self (shouldn't happen with UI, but good check)
+        // Prevent merging/swapping with self
         if occupant.instance_id == item_to_move.instance_id {
              log::warn!("Attempted to merge/swap item {} with itself in slot {}. No action.", item_instance_id, target_inventory_slot);
             return Ok(());
@@ -592,22 +605,27 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
             let space_available = item_def_to_move.stack_size.saturating_sub(occupant.quantity);
             if space_available > 0 {
                 let transfer_qty = min(item_to_move.quantity, space_available);
-                log::info!("[StackCombine Inv] Merging {} item(s) (ID {}) onto stack {} (ID {}).", 
+                log::info!("[StackCombine Inv] Merging {} item(s) (ID {}) onto stack {} (ID {}).",
                          transfer_qty, item_to_move.instance_id, occupant.quantity, occupant.instance_id);
-                         
+
                 occupant.quantity += transfer_qty;
                 item_to_move.quantity -= transfer_qty;
 
-                // Update target stack, pass clone
-                ctx.db.inventory_item().instance_id().update(occupant.clone()); 
+                // Update target stack
+                ctx.db.inventory_item().instance_id().update(occupant.clone());
 
                 if item_to_move.quantity == 0 {
                     log::info!("[StackCombine Inv] Source stack (ID {}) depleted, deleting.", item_to_move.instance_id);
                     ctx.db.inventory_item().instance_id().delete(item_to_move.instance_id);
                 } else {
                      log::info!("[StackCombine Inv] Source stack (ID {}) has {} remaining, updating.", item_to_move.instance_id, item_to_move.quantity);
-                    // Update source stack, pass clone
-                    ctx.db.inventory_item().instance_id().update(item_to_move.clone()); 
+                    // Explicitly set ownership if needed *before* updating source
+                     if was_originally_equipped_or_fuel {
+                        item_to_move.player_identity = sender_id;
+                        log::debug!("[StackCombine Inv] Setting ownership of remaining source item {} to player {:?}", item_instance_id, sender_id);
+                     }
+                    // Update source stack
+                    ctx.db.inventory_item().instance_id().update(item_to_move.clone());
                 }
                 operation_complete = true; // Merge handled everything
             } else {
@@ -622,9 +640,10 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
         // --- Fallback to Swap Logic (only if merge didn't happen) ---
         if !operation_complete {
             log::info!("Performing swap: Target slot {} occupied by item {}. Moving occupant.", target_inventory_slot, occupant.instance_id);
-            if source_inventory_slot.is_none() && source_hotbar_slot.is_none() {
-                // Move occupant to first available inventory slot
-                if let Some(empty_slot) = find_first_empty_inventory_slot(ctx, ctx.sender) {
+            // Determine where the occupant should go
+            if was_originally_equipped_or_fuel {
+                 // Move occupant to first available inventory slot if the source was equip/fuel
+                if let Some(empty_slot) = find_first_empty_inventory_slot(ctx, sender_id) {
                     log::info!("Moving occupant {} to first empty inventory slot: {}", occupant.instance_id, empty_slot);
                     occupant.inventory_slot = Some(empty_slot);
                     occupant.hotbar_slot = None;
@@ -632,8 +651,8 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
                     return Err("Inventory full, cannot swap item.".to_string());
                 }
             } else {
-                // Move occupant to where item_to_move came from
-                log::info!("Moving occupant {} to source slot (Inv: {:?}, Hotbar: {:?}).", 
+                 // Move occupant to where item_to_move came from (inv/hotbar)
+                log::info!("Moving occupant {} to source slot (Inv: {:?}, Hotbar: {:?}).",
                          occupant.instance_id, source_inventory_slot, source_hotbar_slot);
                 occupant.inventory_slot = source_inventory_slot;
                 occupant.hotbar_slot = source_hotbar_slot;
@@ -641,51 +660,35 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
             ctx.db.inventory_item().instance_id().update(occupant); // Update the occupant first
 
             // Now, explicitly move item_to_move to the target slot
-            let mut final_item_state = item_to_move; // Clone before potentially changing identity
-            if came_from_equip_or_fuel {
-                final_item_state.player_identity = sender_id;
-                log::info!("[MoveToInv] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
+             // Ensure ownership is set if coming from equip/fuel
+            if was_originally_equipped_or_fuel {
+                item_to_move.player_identity = sender_id;
+                 log::info!("[MoveToInv Swap] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
             }
-            final_item_state.inventory_slot = Some(target_inventory_slot);
-            final_item_state.hotbar_slot = None;
-            log::info!("[MoveToInv] Moving dragged item {} to target inv slot {}", final_item_state.instance_id, target_inventory_slot);
-            ctx.db.inventory_item().instance_id().update(final_item_state);
+            item_to_move.inventory_slot = Some(target_inventory_slot);
+            item_to_move.hotbar_slot = None;
+            log::info!("[MoveToInv Swap] Moving dragged item {} to target inv slot {}", item_to_move.instance_id, target_inventory_slot);
+            ctx.db.inventory_item().instance_id().update(item_to_move);
             operation_complete = true; // Swap handled everything
         }
 
-    } else { 
-        // Target slot is empty - handle edge case where original slot gets filled
-        if let Some(hotbar_slot) = source_hotbar_slot {
-            if let Some(mut new_hotbar_occupant) = find_item_in_hotbar_slot(ctx, hotbar_slot) {
-                 if new_hotbar_occupant.instance_id != item_instance_id {
-                     log::warn!("Item {} moved from hotbar slot {} but another item {} now occupies it. Moving {} to first available slot.", item_instance_id, hotbar_slot, new_hotbar_occupant.instance_id, new_hotbar_occupant.instance_id);
-                     if let Some(empty_slot) = find_first_empty_inventory_slot(ctx, ctx.sender) {
-                          new_hotbar_occupant.inventory_slot = Some(empty_slot);
-                          new_hotbar_occupant.hotbar_slot = None;
-                     } else {
-                          new_hotbar_occupant.hotbar_slot = None;
-                          log::error!("Inventory full, cannot find slot for displaced hotbar item {}. Clearing its slot.", new_hotbar_occupant.instance_id);
-                     }
-                     ctx.db.inventory_item().instance_id().update(new_hotbar_occupant);
-                 }
-            }
-        }
-         // No merge or swap needed, just move the item to the empty target slot
-         let mut final_item_state = item_to_move; // Clone before potentially changing identity
-         if came_from_equip_or_fuel {
-            final_item_state.player_identity = sender_id;
-            log::info!("[MoveToInv] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
+    } else {
+        // Target slot is empty
+        // Ensure ownership is set if coming from equip/fuel
+         if was_originally_equipped_or_fuel {
+            item_to_move.player_identity = sender_id;
+            log::info!("[MoveToInv Empty] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
          }
-        final_item_state.inventory_slot = Some(target_inventory_slot);
-        final_item_state.hotbar_slot = None;
-        log::info!("[MoveToInv] Moving item {} to empty inv slot {}", final_item_state.instance_id, target_inventory_slot);
-        ctx.db.inventory_item().instance_id().update(final_item_state);
+        item_to_move.inventory_slot = Some(target_inventory_slot);
+        item_to_move.hotbar_slot = None;
+        log::info!("[MoveToInv Empty] Moving item {} to empty inv slot {}", item_to_move.instance_id, target_inventory_slot);
+        ctx.db.inventory_item().instance_id().update(item_to_move);
         operation_complete = true;
     }
 
     if !operation_complete {
-        // This should ideally not be reached if logic is correct, but as a fallback
-        log::error!("Item move to inventory slot {} failed to complete via merge, swap, or direct move.", target_inventory_slot);
+        // Fallback error
+        log::error!("Item move to inventory slot {} failed to complete. State might be inconsistent.", target_inventory_slot);
         return Err("Failed to move item: Unknown state.".to_string());
     }
 
@@ -696,61 +699,28 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
 pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_hotbar_slot: u8) -> Result<(), String> {
      let sender_id = ctx.sender;
      log::info!("[MoveToHotbar] Player {:?} attempting move item {} to hotbar slot {}", sender_id, item_instance_id, target_hotbar_slot);
-    
+
+    // --- Find Item First ---
     let mut item_to_move = ctx.db.inventory_item().instance_id().find(item_instance_id)
         .ok_or_else(|| format!("Item instance {} not found.", item_instance_id))?;
 
-    let came_from_equip_or_fuel = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
-    if item_to_move.player_identity != sender_id && !came_from_equip_or_fuel {
-        return Err(format!("Item instance {} not owned by caller or not movable.", item_instance_id));
+    let was_originally_equipped_or_fuel = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
+
+    // --- Validate Ownership (only if NOT coming from equip/fuel) ---
+    if !was_originally_equipped_or_fuel && item_to_move.player_identity != sender_id {
+        return Err(format!("Item instance {} not owned by caller.", item_instance_id));
     }
 
-    // --- NEW: Check if item is currently fuel in a campfire --- 
-    let mut maybe_campfire_to_update: Option<crate::campfire::Campfire> = None;
-    if came_from_equip_or_fuel { 
-        let campfires = ctx.db.campfire(); 
-        for campfire in campfires.iter() {
-             // Check ALL slots
-            if campfire.fuel_instance_id_0 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_1 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_2 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_3 == Some(item_instance_id) ||
-               campfire.fuel_instance_id_4 == Some(item_instance_id) 
-            {
-                log::debug!("[MoveToHotbar] Item {} is currently fuel for campfire {}. Will clear campfire state.", item_instance_id, campfire.id);
-                maybe_campfire_to_update = Some(campfire); 
-                break; 
-            }
-        }
-    }
-
-    // --- Clear the associated campfire state IF found --- 
-    if let Some(mut campfire_to_update) = maybe_campfire_to_update {
-        // Clear the specific slot where the item was found
-        if campfire_to_update.fuel_instance_id_0 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_0 = None; campfire_to_update.fuel_def_id_0 = None; }
-        else if campfire_to_update.fuel_instance_id_1 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_1 = None; campfire_to_update.fuel_def_id_1 = None; }
-        else if campfire_to_update.fuel_instance_id_2 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_2 = None; campfire_to_update.fuel_def_id_2 = None; }
-        else if campfire_to_update.fuel_instance_id_3 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_3 = None; campfire_to_update.fuel_def_id_3 = None; }
-        else if campfire_to_update.fuel_instance_id_4 == Some(item_instance_id) { campfire_to_update.fuel_instance_id_4 = None; campfire_to_update.fuel_def_id_4 = None; }
-        
-        // Extinguish check
-        let still_has_fuel = crate::campfire::check_if_campfire_has_fuel(ctx, &campfire_to_update);
-        if !still_has_fuel && campfire_to_update.is_burning {
-             campfire_to_update.is_burning = false;
-             campfire_to_update.next_fuel_consume_at = None;
-        }
-        ctx.db.campfire().id().update(campfire_to_update); 
-    }
+    // --- Clear From Original Location (Equip/Campfire) *BEFORE* modifying item ---
+    clear_item_from_source_location(ctx, item_instance_id)?;
 
     // --- Pre-fetch definition for potential merge ---
-    let item_def_to_move = ctx.db.item_definition().iter()
-        .find(|def| def.id == item_to_move.item_def_id)
+    let item_def_to_move = ctx.db.item_definition().id().find(item_to_move.item_def_id)
         .ok_or_else(|| format!("Definition missing for item {}", item_to_move.item_def_id))?;
 
-    // Store original location *before* modification
+    // Store original inventory/hotbar location *before* modification
     let source_hotbar_slot = item_to_move.hotbar_slot;
     let source_inventory_slot = item_to_move.inventory_slot;
-    let was_originally_equipped = source_inventory_slot.is_none() && source_hotbar_slot.is_none();
 
     // Prevent dropping onto the exact same slot
      if source_hotbar_slot == Some(target_hotbar_slot) {
@@ -758,7 +728,7 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
         return Ok(());
      }
 
-    let mut operation_complete = false; 
+    let mut operation_complete = false;
     if let Some(mut occupant) = find_item_in_hotbar_slot(ctx, target_hotbar_slot) {
         // Target slot is occupied
 
@@ -773,22 +743,27 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
              let space_available = item_def_to_move.stack_size.saturating_sub(occupant.quantity);
              if space_available > 0 {
                 let transfer_qty = min(item_to_move.quantity, space_available);
-                log::info!("[StackCombine Hotbar] Merging {} item(s) (ID {}) onto stack {} (ID {}).", 
+                log::info!("[StackCombine Hotbar] Merging {} item(s) (ID {}) onto stack {} (ID {}).",
                          transfer_qty, item_to_move.instance_id, occupant.quantity, occupant.instance_id);
-                
+
                 occupant.quantity += transfer_qty;
                 item_to_move.quantity -= transfer_qty;
 
-                // Update target stack, pass clone
-                ctx.db.inventory_item().instance_id().update(occupant.clone()); 
+                // Update target stack
+                ctx.db.inventory_item().instance_id().update(occupant.clone());
 
                 if item_to_move.quantity == 0 {
                     log::info!("[StackCombine Hotbar] Source stack (ID {}) depleted, deleting.", item_to_move.instance_id);
                     ctx.db.inventory_item().instance_id().delete(item_to_move.instance_id);
                 } else {
                     log::info!("[StackCombine Hotbar] Source stack (ID {}) has {} remaining, updating.", item_to_move.instance_id, item_to_move.quantity);
-                    // Update source stack, pass clone
-                    ctx.db.inventory_item().instance_id().update(item_to_move.clone()); 
+                    // Explicitly set ownership if needed *before* updating source
+                     if was_originally_equipped_or_fuel {
+                        item_to_move.player_identity = sender_id;
+                        log::debug!("[StackCombine Hotbar] Setting ownership of remaining source item {} to player {:?}", item_instance_id, sender_id);
+                     }
+                    // Update source stack
+                    ctx.db.inventory_item().instance_id().update(item_to_move.clone());
                 }
                 operation_complete = true; // Merge handled everything
             } else {
@@ -799,13 +774,14 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
              log::info!("[StackCombine Hotbar] Items cannot be combined (Diff type/Not stackable). Falling back to swap.");
              // Fall through to swap logic
         }
-        
+
         // --- Fallback to Swap Logic (only if merge didn't happen) ---
         if !operation_complete {
             log::info!("Performing swap: Target hotbar slot {} occupied by item {}. Moving occupant.", target_hotbar_slot, occupant.instance_id);
-            if source_inventory_slot.is_none() && source_hotbar_slot.is_none() {
-                // Move occupant to first available inventory slot
-                if let Some(empty_slot) = find_first_empty_inventory_slot(ctx, ctx.sender) {
+            // Determine where the occupant should go
+            if was_originally_equipped_or_fuel {
+                 // Move occupant to first available inventory slot if the source was equip/fuel
+                if let Some(empty_slot) = find_first_empty_inventory_slot(ctx, sender_id) {
                     log::info!("Moving occupant {} to first empty inventory slot: {}", occupant.instance_id, empty_slot);
                     occupant.inventory_slot = Some(empty_slot);
                     occupant.hotbar_slot = None;
@@ -813,8 +789,8 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
                     return Err("Inventory full, cannot swap item.".to_string());
                 }
             } else {
-                // Move occupant to where item_to_move came from
-                log::info!("Moving occupant {} to source slot (Inv: {:?}, Hotbar: {:?}).", 
+                 // Move occupant to where item_to_move came from (inv/hotbar)
+                log::info!("Moving occupant {} to source slot (Inv: {:?}, Hotbar: {:?}).",
                          occupant.instance_id, source_inventory_slot, source_hotbar_slot);
                 occupant.inventory_slot = source_inventory_slot;
                 occupant.hotbar_slot = source_hotbar_slot;
@@ -822,51 +798,34 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
             ctx.db.inventory_item().instance_id().update(occupant); // Update the occupant first
 
             // Now, explicitly move item_to_move to the target slot
-            let mut final_item_state = item_to_move; // Clone before potentially changing identity
-            if came_from_equip_or_fuel {
-                final_item_state.player_identity = sender_id;
-                 log::info!("[MoveToHotbar] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
+             // Ensure ownership is set if coming from equip/fuel
+            if was_originally_equipped_or_fuel {
+                item_to_move.player_identity = sender_id;
+                 log::info!("[MoveToHotbar Swap] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
             }
-            final_item_state.inventory_slot = None;
-            final_item_state.hotbar_slot = Some(target_hotbar_slot);
-            log::info!("[MoveToHotbar] Moving dragged item {} to target hotbar slot {}", final_item_state.instance_id, target_hotbar_slot);
-            ctx.db.inventory_item().instance_id().update(final_item_state);
+            item_to_move.inventory_slot = None;
+            item_to_move.hotbar_slot = Some(target_hotbar_slot);
+            log::info!("[MoveToHotbar Swap] Moving dragged item {} to target hotbar slot {}", item_to_move.instance_id, target_hotbar_slot);
+            ctx.db.inventory_item().instance_id().update(item_to_move);
             operation_complete = true; // Swap handled everything
         }
 
     } else { // Target slot is empty
-        // (Existing logic for handling edge case where original slot gets filled)
-        if let Some(inv_slot) = source_inventory_slot {
-            if let Some(mut new_inv_occupant) = find_item_in_inventory_slot(ctx, inv_slot) {
-                 if new_inv_occupant.instance_id != item_instance_id {
-                    log::warn!("Item {} moved from inventory slot {} but another item {} now occupies it. Moving {} to first available slot.", item_instance_id, inv_slot, new_inv_occupant.instance_id, new_inv_occupant.instance_id);
-                     if let Some(empty_slot) = find_first_empty_inventory_slot(ctx, ctx.sender) {
-                          new_inv_occupant.inventory_slot = Some(empty_slot);
-                          new_inv_occupant.hotbar_slot = None;
-                     } else {
-                          new_inv_occupant.inventory_slot = None;
-                          log::error!("Inventory full, cannot find slot for displaced inventory item {}. Clearing its slot.", new_inv_occupant.instance_id);
-                     }
-                    ctx.db.inventory_item().instance_id().update(new_inv_occupant);
-                 }
-            }
+         // Ensure ownership is set if coming from equip/fuel
+        if was_originally_equipped_or_fuel {
+            item_to_move.player_identity = sender_id;
+            log::info!("[MoveToHotbar Empty] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
         }
-        // No merge or swap needed, just move the item to the empty target slot
-        let mut final_item_state = item_to_move; // Clone before potentially changing identity
-        if came_from_equip_or_fuel {
-            final_item_state.player_identity = sender_id;
-            log::info!("[MoveToHotbar] Setting ownership of item {} to player {:?}", item_instance_id, sender_id);
-        }
-        final_item_state.hotbar_slot = Some(target_hotbar_slot);
-        final_item_state.inventory_slot = None;
-        log::info!("[MoveToHotbar] Moving item {} to empty hotbar slot {}", final_item_state.instance_id, target_hotbar_slot);
-        ctx.db.inventory_item().instance_id().update(final_item_state);
+        item_to_move.hotbar_slot = Some(target_hotbar_slot);
+        item_to_move.inventory_slot = None;
+        log::info!("[MoveToHotbar Empty] Moving item {} to empty hotbar slot {}", item_to_move.instance_id, target_hotbar_slot);
+        ctx.db.inventory_item().instance_id().update(item_to_move);
         operation_complete = true;
     }
 
     if !operation_complete {
         // Fallback error
-        log::error!("Item move to hotbar slot {} failed to complete via merge, swap, or direct move.", target_hotbar_slot);
+        log::error!("Item move to hotbar slot {} failed to complete. State might be inconsistent.", target_hotbar_slot);
         return Err("Failed to move item: Unknown state.".to_string());
     }
 
@@ -1249,4 +1208,93 @@ pub fn move_to_first_available_hotbar_slot(ctx: &ReducerContext, item_instance_i
             Err("No empty hotbar slots available.".to_string())
         }
     }
+}
+
+// --- NEW Reducer: Drop Item into the World ---
+#[spacetimedb::reducer]
+pub fn drop_item(
+    ctx: &ReducerContext,
+    item_instance_id: u64,
+    quantity_to_drop: u32, // How many to drop (can be less than total stack)
+) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    log::info!("[DropItem] Player {:?} attempting to drop {} of item instance {}", sender_id, quantity_to_drop, item_instance_id);
+
+    // --- 1. Find Player ---
+    let player = ctx.db.player().identity().find(sender_id)
+        .ok_or_else(|| "Player not found.".to_string())?;
+
+    // --- 2. Find Item & Validate ---
+    let mut item_to_drop = ctx.db.inventory_item().instance_id().find(item_instance_id)
+        .ok_or_else(|| format!("Item instance {} not found.", item_instance_id))?;
+
+    let was_originally_equipped_or_fuel = item_to_drop.inventory_slot.is_none() && item_to_drop.hotbar_slot.is_none();
+
+    // Validate ownership if it wasn't equipped/fuel
+    if !was_originally_equipped_or_fuel && item_to_drop.player_identity != sender_id {
+        return Err(format!("Item instance {} not owned by caller.", item_instance_id));
+    }
+    // Validate quantity
+    if quantity_to_drop == 0 {
+        return Err("Cannot drop a quantity of 0.".to_string());
+    }
+    if quantity_to_drop > item_to_drop.quantity {
+        return Err(format!("Cannot drop {} items, only {} available in stack.", quantity_to_drop, item_to_drop.quantity));
+    }
+
+    // --- 3. Get Item Definition ---
+    let item_def = ctx.db.item_definition().id().find(item_to_drop.item_def_id)
+        .ok_or_else(|| format!("Definition missing for item {}", item_to_drop.item_def_id))?;
+
+    // --- 4. Clear Item from Equip/Campfire Source (Important: Do this BEFORE modifying/deleting InventoryItem) ---
+    clear_item_from_source_location(ctx, item_instance_id)?;
+
+    // --- 4.5 NEW: Check if dropped item was the EQUIPPED item and unequip --- 
+    let active_equip_table = ctx.db.active_equipment();
+    if let Some(mut equip) = active_equip_table.player_identity().find(sender_id) {
+         // Check only the main hand slot (equipped_item_instance_id)
+         if equip.equipped_item_instance_id == Some(item_instance_id) {
+            log::info!("[DropItem] Dropped item {} was equipped. Unequipping.", item_instance_id);
+            equip.equipped_item_instance_id = None;
+            equip.equipped_item_def_id = None;
+            equip.swing_start_time_ms = 0;
+            active_equip_table.player_identity().update(equip); // Update the equipment table
+         }
+    }
+    // No need to check armor slots here, as dropping is usually from hotbar/inventory
+    // Armor unequipping happens via equip_armor_from_drag or potentially a context menu action.
+
+    // --- 5. Calculate Drop Position ---
+    let (drop_x, drop_y) = calculate_drop_position(&player);
+    log::debug!("[DropItem] Calculated drop position: ({:.1}, {:.1}) for player {:?}", drop_x, drop_y, sender_id);
+    // TODO: Add collision check for drop position? Ensure it's not inside a wall/tree? For now, just place it.
+
+    // --- 6. Handle Item Quantity (Split or Delete Original) ---
+    if quantity_to_drop == item_to_drop.quantity {
+        // Dropping the entire stack
+        log::info!("[DropItem] Dropping entire stack (ID: {}, Qty: {}). Deleting original InventoryItem.", item_instance_id, quantity_to_drop);
+        ctx.db.inventory_item().instance_id().delete(item_instance_id);
+    } else {
+        // Dropping part of the stack
+        // Need to check if the item is actually stackable for splitting (though UI should prevent this)
+        if !item_def.is_stackable {
+             return Err(format!("Cannot drop partial quantity of non-stackable item '{}'.", item_def.name));
+        }
+        log::info!("[DropItem] Dropping partial stack (ID: {}, QtyDrop: {}). Reducing original quantity.", item_instance_id, quantity_to_drop);
+        item_to_drop.quantity -= quantity_to_drop;
+        // If the item was originally equip/fuel, assign ownership to the sender now
+        if was_originally_equipped_or_fuel {
+             item_to_drop.player_identity = sender_id;
+             log::debug!("[DropItem] Assigning ownership of remaining stack {} to player {:?}", item_instance_id, sender_id);
+        }
+        ctx.db.inventory_item().instance_id().update(item_to_drop);
+    }
+
+    // --- 7. Create Dropped Item Entity in World ---
+    create_dropped_item_entity(ctx, item_def.id, quantity_to_drop, drop_x, drop_y)?;
+
+    log::info!("[DropItem] Successfully dropped {} of item def {} (Original ID: {}) at ({:.1}, {:.1}) for player {:?}.",
+             quantity_to_drop, item_def.id, item_instance_id, drop_x, drop_y, sender_id);
+
+    Ok(())
 } 

@@ -196,21 +196,31 @@ const Hotbar: React.FC<HotbarProps> = ({
       event.preventDefault();
       event.stopPropagation();
       console.log(`[Hotbar ContextMenu] Right-clicked on: ${itemInfo.definition.name} in slot ${itemInfo.instance.hotbarSlot}`);
+      if (!connection?.reducers) return;
+
+      const itemInstanceId = BigInt(itemInfo.instance.instanceId);
 
       // Check if interacting with campfire and item is Wood
-      if (interactingWith?.type === 'campfire' && itemInfo.definition.name === 'Wood' && connection?.reducers) {
+      if (interactingWith?.type === 'campfire' && itemInfo.definition.name === 'Wood') {
           const campfireIdNum = Number(interactingWith.id);
-          const itemInstanceId = BigInt(itemInfo.instance.instanceId);
           console.log(`[Hotbar ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling add_wood...`);
           try {
               connection.reducers.addWoodToFirstAvailableCampfireSlot(campfireIdNum, itemInstanceId);
           } catch (error: any) {
               console.error("[Hotbar ContextMenu] Error calling add_wood... reducer:", error);
-              // TODO: Show user feedback?
           }
+      } 
+      // --- NEW: Check if the item is Armor --- 
+      else if (itemInfo.definition.category.tag === 'Armor') {
+           console.log(`[Hotbar ContextMenu] Item is Armor. Calling equip_armor for item ${itemInstanceId}`);
+           try {
+               connection.reducers.equipArmor(itemInstanceId);
+           } catch (error: any) {
+               console.error("[Hotbar ContextMenu] Failed to call equipArmor reducer:", error);
+           }
       } else {
           // Default behavior for right-clicking other items in hotbar (if any desired later)
-          console.log("[Hotbar ContextMenu] No specific action for this item/context.");
+          console.log("[Hotbar ContextMenu] No specific action for this item/context (Not Wood in Campfire context, Not Armor).");
       }
   };
 

@@ -105,12 +105,12 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
             instanceIds.forEach((instanceIdOpt, index) => {
                 if (instanceIdOpt) {
                     const instanceIdStr = instanceIdOpt.toString();
-                    console.log(`[InventoryUI Populate] Checking slot ${index}, looking for instance ID: ${instanceIdStr}`); // Log search
+                    // console.log(`[InventoryUI Populate] Checking slot ${index}, looking for instance ID: ${instanceIdStr}`); // Log search
                     const foundInvItem = Array.from(inventoryItems.values()).find(invItem =>
                         invItem.instanceId.toString() === instanceIdStr
                     );
                     // Log if found
-                    console.log(`[InventoryUI Populate] Found item in map for ${instanceIdStr}?`, foundInvItem ? `Yes (Slots: I=${foundInvItem.inventorySlot}, H=${foundInvItem.hotbarSlot})` : 'No'); 
+                    // console.log(`[InventoryUI Populate] Found item in map for ${instanceIdStr}?`, foundInvItem ? `Yes (Slots: I=${foundInvItem.inventorySlot}, H=${foundInvItem.hotbarSlot})` : 'No'); 
                     if (foundInvItem) {
                         const definition = itemDefinitions.get(foundInvItem.itemDefId.toString());
                         if (definition) {
@@ -362,10 +362,12 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                             <div className={styles.multiSlotContainer} style={{ display: 'flex', flexDirection: 'row', gap: '5px'}}>
                                 {Array.from({ length: NUM_FUEL_SLOTS }).map((_, index) => {
                                     const itemInSlot = fuelItems[index];
+                                    // --- Pass campfireIdNum as parentId ---
+                                    const currentCampfireSlotInfo: DragSourceSlotInfo = { type: 'campfire_fuel', index: index, parentId: campfireIdNum }; 
                                     return (
                                         <DroppableSlot
                                             key={`campfire-fuel-${campfireIdNum}-${index}`}
-                                            slotInfo={{ type: 'campfire_fuel', index: index }}
+                                            slotInfo={currentCampfireSlotInfo} // Pass updated info
                                             onItemDrop={onItemDrop}
                                             className={styles.slot}
                                             isDraggingOver={false}
@@ -373,7 +375,7 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                                             {itemInSlot && (
                                                 <DraggableItem
                                                     item={itemInSlot}
-                                                    sourceSlot={{ type: 'campfire_fuel', index: index }}
+                                                    sourceSlot={currentCampfireSlotInfo} // Pass updated info
                                                     onItemDragStart={onItemDragStart}
                                                     onItemDrop={onItemDrop}
                                                     onContextMenu={(event) => handleRemoveFuel(event, index)}

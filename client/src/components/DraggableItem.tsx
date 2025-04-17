@@ -93,38 +93,37 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
 
-    // --- Begin Restore Drop Logic --- 
-    let dropOccurred = false;
+    let dropHandled = false;
     if (ghostRef.current) {
       ghostRef.current.style.display = 'none'; // Hide ghost to check element underneath
       const dropTargetElement = document.elementFromPoint(e.clientX, e.clientY);
       
       if (dropTargetElement) {
-          const droppableSlot = dropTargetElement.closest('[data-slot-type]'); // Find nearest slot element
+          const droppableSlot = dropTargetElement.closest('[data-slot-type]');
           
           if (droppableSlot) {
               const targetType = droppableSlot.getAttribute('data-slot-type') as DragSourceSlotInfo['type'];
               const targetIndexAttr = droppableSlot.getAttribute('data-slot-index');
-              // Log the found attributes
               console.log(`[DraggableItem Drop Check] Found slot element. Type: ${targetType}, Index Attr: ${targetIndexAttr}`);
-              
+
               if (targetType && targetIndexAttr !== null) {
-                  const targetIndex: number | string = (targetType === 'inventory' || targetType === 'hotbar' || targetType === 'campfire_fuel') 
+                   const targetIndex: number | string = (targetType === 'inventory' || targetType === 'hotbar' || targetType === 'campfire_fuel') 
                                                       ? parseInt(targetIndexAttr, 10) 
                                                       : targetIndexAttr; // Equipment uses string index
 
-                  // Added campfire_fuel here to ensure index is parsed as number
                   if (!isNaN(targetIndex as number) || typeof targetIndex === 'string') { 
                       const targetSlotInfo: DragSourceSlotInfo = { type: targetType, index: targetIndex };
                       
                       // Check if drop is not on the source slot itself
                       if (!(sourceSlot.type === targetSlotInfo.type && sourceSlot.index === targetSlotInfo.index)) { 
                             console.log(`[DraggableItem] Found drop target:`, targetSlotInfo);
-                            // Call the MAIN drop handler passed from App
-                            onItemDrop(targetSlotInfo); 
-                            dropOccurred = true;
+                            onItemDrop(targetSlotInfo); // Call MAIN drop handler
+                            dropHandled = true;
                        } else {
                            console.log("[DraggableItem] Drop on source slot ignored.");
+                           // Technically a valid drop (onto itself), but no action needed from App.tsx
+                           // We still need to reset state below.
+                           dropHandled = true; // Mark as handled to prevent drop(null)
                        }
                   } else {
                        console.log("[DraggableItem] Drop target missing necessary data attributes.");
@@ -133,10 +132,15 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
                    console.log("[DraggableItem] Drop target missing necessary data attributes.");
               }
           } else {
-              console.log("[DraggableItem] Dropped outside a valid slot.");
+              // --- Dropped outside any slot --- 
+              console.log("[DraggableItem] Dropped outside a valid slot. Calling onItemDrop(null).");
+              onItemDrop(null); // Explicitly signal drop outside
+              dropHandled = true;
           }
       } else {
-           console.log("[DraggableItem] Could not find element at drop point.");
+           console.log("[DraggableItem] Could not find element at drop point. Calling onItemDrop(null).");
+           onItemDrop(null); // Assume drop outside if no element found
+           dropHandled = true;
       }
 
       // Remove ghost from DOM after check
@@ -144,10 +148,13 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
         document.body.removeChild(ghostRef.current);
       }
       ghostRef.current = null;
+    } else {
+        // If no ghost was created (e.g., click without dragging far enough), still reset state
+        console.log("[DraggableItem] MouseUp without significant drag/ghost.");
+        // No drop occurred in this case, so dropHandled remains false, which is fine.
     }
-    // --- End Restore Drop Logic --- 
 
-    // Reset ref and state AFTER handling potential drop
+    // Reset state regardless of whether the drop was valid or not
     isDraggingRef.current = false;
     setIsDraggingState(false);
     document.body.classList.remove('item-dragging');
@@ -155,17 +162,13 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
          itemRef.current.style.opacity = '1';
     }
     
-    // If drop didn't occur on a valid target, PlayerUI's handler still needs to clear the draggedItemInfo state
-    // We now rely on PlayerUI's handleItemDrop to clear the state, which it does.
-    if (!dropOccurred) {
-       // We need to tell PlayerUI the drop finished invalidly so it clears draggedItemInfo
-       // Calling onItemDrop with null or a special flag might be one way.
-       // Let's modify PlayerUI's handleItemDrop to clear state even if targetSlot is null.
-       console.log("[DraggableItem] Drop invalid/outside. Relying on PlayerUI handler to clear drag state.");
-       // Consider calling onItemDrop(null) here if PlayerUI doesn't clear state automatically.
-    }
+    // Log removed - App.tsx's handleItemDrop now always resets the state.
+    // if (!dropHandled) {
+    //   console.log("[DraggableItem] Drop was not handled (e.g., on source or failed check). Ensure App state is cleared.");
+    //   // Potentially call onItemDrop(null) here too if needed, but App.tsx should handle it.
+    // }
 
-  }, [handleMouseMove, item, sourceSlot, onItemDrop]); // Add back dependencies
+  }, [handleMouseMove, item, sourceSlot, onItemDrop]); // Keep dependencies
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // Check stackability and quantity for splitting possibility

@@ -42,6 +42,8 @@ import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
 export { CheckResourceRespawns };
 import { ConsumeItem } from "./consume_item_reducer.ts";
 export { ConsumeItem };
+import { DropItem } from "./drop_item_reducer.ts";
+export { DropItem };
 import { EquipArmor } from "./equip_armor_reducer.ts";
 export { EquipArmor };
 import { EquipArmorFromDrag } from "./equip_armor_from_drag_reducer.ts";
@@ -66,6 +68,8 @@ import { MoveItemToInventory } from "./move_item_to_inventory_reducer.ts";
 export { MoveItemToInventory };
 import { MoveToFirstAvailableHotbarSlot } from "./move_to_first_available_hotbar_slot_reducer.ts";
 export { MoveToFirstAvailableHotbarSlot };
+import { PickupDroppedItem } from "./pickup_dropped_item_reducer.ts";
+export { PickupDroppedItem };
 import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
 import { RegisterPlayer } from "./register_player_reducer.ts";
@@ -106,6 +110,8 @@ import { ActiveEquipmentTableHandle } from "./active_equipment_table.ts";
 export { ActiveEquipmentTableHandle };
 import { CampfireTableHandle } from "./campfire_table.ts";
 export { CampfireTableHandle };
+import { DroppedItemTableHandle } from "./dropped_item_table.ts";
+export { DroppedItemTableHandle };
 import { InventoryItemTableHandle } from "./inventory_item_table.ts";
 export { InventoryItemTableHandle };
 import { ItemDefinitionTableHandle } from "./item_definition_table.ts";
@@ -126,6 +132,8 @@ import { ActiveEquipment } from "./active_equipment_type.ts";
 export { ActiveEquipment };
 import { Campfire } from "./campfire_type.ts";
 export { Campfire };
+import { DroppedItem } from "./dropped_item_type.ts";
+export { DroppedItem };
 import { EquipmentSlot } from "./equipment_slot_type.ts";
 export { EquipmentSlot };
 import { InventoryItem } from "./inventory_item_type.ts";
@@ -159,6 +167,11 @@ const REMOTE_MODULE = {
     campfire: {
       tableName: "campfire",
       rowType: Campfire.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    dropped_item: {
+      tableName: "dropped_item",
+      rowType: DroppedItem.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     inventory_item: {
@@ -218,6 +231,10 @@ const REMOTE_MODULE = {
       reducerName: "consume_item",
       argsType: ConsumeItem.getTypeScriptAlgebraicType(),
     },
+    drop_item: {
+      reducerName: "drop_item",
+      argsType: DropItem.getTypeScriptAlgebraicType(),
+    },
     equip_armor: {
       reducerName: "equip_armor",
       argsType: EquipArmor.getTypeScriptAlgebraicType(),
@@ -265,6 +282,10 @@ const REMOTE_MODULE = {
     move_to_first_available_hotbar_slot: {
       reducerName: "move_to_first_available_hotbar_slot",
       argsType: MoveToFirstAvailableHotbarSlot.getTypeScriptAlgebraicType(),
+    },
+    pickup_dropped_item: {
+      reducerName: "pickup_dropped_item",
+      argsType: PickupDroppedItem.getTypeScriptAlgebraicType(),
     },
     place_campfire: {
       reducerName: "place_campfire",
@@ -366,6 +387,7 @@ export type Reducer = never
 | { name: "CheckCampfireFuelConsumption", args: CheckCampfireFuelConsumption }
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
 | { name: "ConsumeItem", args: ConsumeItem }
+| { name: "DropItem", args: DropItem }
 | { name: "EquipArmor", args: EquipArmor }
 | { name: "EquipArmorFromDrag", args: EquipArmorFromDrag }
 | { name: "EquipItem", args: EquipItem }
@@ -378,6 +400,7 @@ export type Reducer = never
 | { name: "MoveItemToHotbar", args: MoveItemToHotbar }
 | { name: "MoveItemToInventory", args: MoveItemToInventory }
 | { name: "MoveToFirstAvailableHotbarSlot", args: MoveToFirstAvailableHotbarSlot }
+| { name: "PickupDroppedItem", args: PickupDroppedItem }
 | { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RemoveFuelFromCampfire", args: RemoveFuelFromCampfire }
@@ -470,6 +493,22 @@ export class RemoteReducers {
 
   removeOnConsumeItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
     this.connection.offReducer("consume_item", callback);
+  }
+
+  dropItem(itemInstanceId: bigint, quantityToDrop: number) {
+    const __args = { itemInstanceId, quantityToDrop };
+    let __writer = new BinaryWriter(1024);
+    DropItem.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("drop_item", __argsBuffer, this.setCallReducerFlags.dropItemFlags);
+  }
+
+  onDropItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, quantityToDrop: number) => void) {
+    this.connection.onReducer("drop_item", callback);
+  }
+
+  removeOnDropItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, quantityToDrop: number) => void) {
+    this.connection.offReducer("drop_item", callback);
   }
 
   equipArmor(itemInstanceId: bigint) {
@@ -642,6 +681,22 @@ export class RemoteReducers {
 
   removeOnMoveToFirstAvailableHotbarSlot(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
     this.connection.offReducer("move_to_first_available_hotbar_slot", callback);
+  }
+
+  pickupDroppedItem(droppedItemId: bigint) {
+    const __args = { droppedItemId };
+    let __writer = new BinaryWriter(1024);
+    PickupDroppedItem.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("pickup_dropped_item", __argsBuffer, this.setCallReducerFlags.pickupDroppedItemFlags);
+  }
+
+  onPickupDroppedItem(callback: (ctx: ReducerEventContext, droppedItemId: bigint) => void) {
+    this.connection.onReducer("pickup_dropped_item", callback);
+  }
+
+  removeOnPickupDroppedItem(callback: (ctx: ReducerEventContext, droppedItemId: bigint) => void) {
+    this.connection.offReducer("pickup_dropped_item", callback);
   }
 
   placeCampfire(targetX: number, targetY: number) {
@@ -920,6 +975,11 @@ export class SetReducerFlags {
     this.consumeItemFlags = flags;
   }
 
+  dropItemFlags: CallReducerFlags = 'FullUpdate';
+  dropItem(flags: CallReducerFlags) {
+    this.dropItemFlags = flags;
+  }
+
   equipArmorFlags: CallReducerFlags = 'FullUpdate';
   equipArmor(flags: CallReducerFlags) {
     this.equipArmorFlags = flags;
@@ -968,6 +1028,11 @@ export class SetReducerFlags {
   moveToFirstAvailableHotbarSlotFlags: CallReducerFlags = 'FullUpdate';
   moveToFirstAvailableHotbarSlot(flags: CallReducerFlags) {
     this.moveToFirstAvailableHotbarSlotFlags = flags;
+  }
+
+  pickupDroppedItemFlags: CallReducerFlags = 'FullUpdate';
+  pickupDroppedItem(flags: CallReducerFlags) {
+    this.pickupDroppedItemFlags = flags;
   }
 
   placeCampfireFlags: CallReducerFlags = 'FullUpdate';
@@ -1066,6 +1131,10 @@ export class RemoteTables {
 
   get campfire(): CampfireTableHandle {
     return new CampfireTableHandle(this.connection.clientCache.getOrCreateTable<Campfire>(REMOTE_MODULE.tables.campfire));
+  }
+
+  get droppedItem(): DroppedItemTableHandle {
+    return new DroppedItemTableHandle(this.connection.clientCache.getOrCreateTable<DroppedItem>(REMOTE_MODULE.tables.dropped_item));
   }
 
   get inventoryItem(): InventoryItemTableHandle {

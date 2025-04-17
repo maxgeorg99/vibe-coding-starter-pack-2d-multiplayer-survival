@@ -50,6 +50,14 @@ pub fn check_distance_sq(pos_x: f32, pos_y: f32, existing_positions: &[(f32, f32
     false // Not too close
 }
 
+/// Calculates the squared distance between two 2D points.
+#[inline] // Suggest inlining for performance
+pub fn get_distance_squared(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let dx = x1 - x2;
+    let dy = y1 - y2;
+    dx * dx + dy * dy
+}
+
 /// Attempts one resource spawn at a random valid tile.
 /// Handles noise check, distance checks, and insertion.
 /// Returns Ok(true) if successful, Ok(false) if conditions not met (e.g., tile occupied, too close), Err on DB error.
