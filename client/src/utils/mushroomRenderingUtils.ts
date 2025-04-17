@@ -44,7 +44,7 @@ function getMushroomImage(mushroom: Mushroom): HTMLImageElement | null {
 }
 
 // Function to draw a single mushroom
-const TARGET_MUSHROOM_WIDTH_PX = 48; // Target width on screen (adjust as needed)
+const TARGET_MUSHROOM_WIDTH_PX = 64; // Target width on screen (adjust as needed)
 
 export function renderMushroom(ctx: CanvasRenderingContext2D, mushroom: Mushroom, now_ms: number) {
   const img = getMushroomImage(mushroom);

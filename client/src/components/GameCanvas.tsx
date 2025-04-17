@@ -839,24 +839,33 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.translate(cameraOffsetX, cameraOffsetY);
     drawWorldBackground(ctx);
 
-    // Gather ALL renderable world entities
-    const worldEntitiesToRender: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBMushroom | SpacetimeDBDroppedItem)[] = [
-        ...Array.from(players.values()),
-        ...Array.from(trees.values()).filter(tree => tree.health > 0),
-        ...Array.from(stones.values()).filter(stone => stone.health > 0),
-        ...Array.from(mushrooms.values()).filter(mushroom => mushroom.respawnAt === null || mushroom.respawnAt === undefined),
-        ...Array.from(droppedItems.values()),
-    ];
-    worldEntitiesToRender.sort((a, b) => { // Simple posY sort
-        const yA = isPlayer(a) ? a.positionY : (isDroppedItem(a) ? a.posY : a.posY);
-        const yB = isPlayer(b) ? b.positionY : (isDroppedItem(b) ? b.posY : b.posY);
+    // 1. Gather and Categorize Entities
+    const groundItems: (SpacetimeDBMushroom | SpacetimeDBDroppedItem)[] = [];
+    const ySortableEntities: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBCampfire)[] = [];
+
+    // Add Mushrooms and Dropped Items to groundItems
+    mushrooms.forEach(m => { if (m.respawnAt === null || m.respawnAt === undefined) groundItems.push(m); });
+    droppedItems.forEach(i => groundItems.push(i));
+
+    // Add Players, Trees, Stones, Campfires to ySortableEntities
+    players.forEach(p => ySortableEntities.push(p));
+    trees.forEach(t => { if (t.health > 0) ySortableEntities.push(t); });
+    stones.forEach(s => { if (s.health > 0) ySortableEntities.push(s); });
+    campfires.forEach(c => ySortableEntities.push(c));
+
+    // 2. Sort Y-Sortable Entities
+    ySortableEntities.sort((a, b) => {
+        const yA = isPlayer(a) ? a.positionY : a.posY;
+        const yB = isPlayer(b) ? b.positionY : b.posY;
         return yA - yB;
     });
+
+    // --- Common Data (needed before finding closest) ---
     const now_ms = Date.now();
     const currentWorldMouseX = worldMousePosRef.current.x;
     const currentWorldMouseY = worldMousePosRef.current.y;
 
-    // --- Find Closest Interactable Mushroom ---
+    // 3. Find Closest Interactables (Mushrooms, Campfires, DroppedItems)
     let closestDistSq = PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED;
     closestInteractableMushroomIdRef.current = null; // Reset each frame
     if (localPlayerData) {
@@ -877,7 +886,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       });
     }
-    // --- End Finding Closest Mushroom ---
 
     // --- Find Closest Interactable Campfire ---
     let closestCampfireDistSq = PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED;
@@ -916,7 +924,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     // --- End Finding Closest DroppedItem ---
 
-    // --- Calculate if placement preview is out of range --- 
+    // --- Calculate if placement preview is out of range (needed before rendering preview) ---
     let isPlacementTooFar = false;
     if (isPlacingCampfire && localPlayerData && currentWorldMouseX !== null && currentWorldMouseY !== null) {
          const placeDistSq = (currentWorldMouseX - localPlayerData.positionX)**2 + (currentWorldMouseY - localPlayerData.positionY)**2;
@@ -927,10 +935,53 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
          }
     }
 
-    // Render Sorted World Entities (Including Dropped Items)
-    worldEntitiesToRender.forEach(entity => {
+    // 4. Render Ground Items (Mushrooms, Dropped Items) - Always Below Others
+    groundItems.forEach(entity => {
+        // Check for DroppedItem FIRST
+        if (isDroppedItem(entity)) {
+            // --- Correct Dropped Item Rendering Logic --- 
+            const itemDef = itemDefinitions.get(entity.itemDefId.toString());
+            let itemImg: HTMLImageElement | null = null;
+            let iconAssetName: string | null = null;
+            console.log(`[Debug DroppedItem ${entity.id}] Processing itemDefId: ${entity.itemDefId}`); // Log ID
+            if (itemDef) {
+                iconAssetName = itemDef.iconAssetName;
+                itemImg = itemImagesRef.current.get(iconAssetName) ?? null;
+                // console.log(`[Debug DroppedItem ${entity.id}] Found itemDef: ${itemDef.name}, iconAssetName: ${iconAssetName}, image found in cache: ${!!itemImg}`); // Log def details
+            } else {
+                 console.warn(`[Render DroppedItem] Definition not found for ID: ${entity.itemDefId}`);
+            }
+            const canRenderIcon = itemDef && iconAssetName && itemImg && itemImg.complete && itemImg.naturalHeight !== 0;
+
+            const drawWidth = 64;
+            const drawHeight = 64;
+            if (canRenderIcon && iconAssetName) {
+               ctx.drawImage(itemImg!, entity.posX - drawWidth / 2, entity.posY - drawHeight / 2, drawWidth, drawHeight);
+                // Eagerly load image if not already cached
+                if (!itemImagesRef.current.has(iconAssetName)) {
+                     const iconSrc = itemIcons[iconAssetName] || '';
+                     if (iconSrc) {
+                         const img = new Image();
+                         img.src = iconSrc;
+                         img.onload = () => itemImagesRef.current.set(iconAssetName!, img);
+                         itemImagesRef.current.set(iconAssetName, img); // Add placeholder immediately
+                     }
+                }
+            } else {
+                // Fallback rendering if icon isn't ready or definition missing
+                ctx.fillStyle = '#CCCCCC'; // Grey square fallback
+                ctx.fillRect(entity.posX - drawWidth / 2, entity.posY - drawHeight / 2, drawWidth, drawHeight);
+            }
+        // Check for Mushroom SECOND
+        } else if (isMushroom(entity)) {
+            renderMushroom(ctx, entity, now_ms);
+        }
+    });
+
+    // 5. Render Y-Sorted Entities (Players, Trees, Stones, Campfires) - On Top of Ground Items
+    ySortableEntities.forEach(entity => {
        if (isPlayer(entity)) {
-           // --- Player Rendering Logic ---
+           // --- Player Rendering Logic (No Label) ---
            const playerId = entity.identity.toHexString();
            const lastPos = lastPositionsRef.current.get(playerId);
            let isPlayerMoving = false;
@@ -991,97 +1042,63 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               }
            }
            // --- End Conditional Rendering Order ---
-       } else if (isTree(entity)) {
+       } else if (isTree(entity)) { // Tree
            renderTree(ctx, entity, now_ms);
-       } else if (isStone(entity)) {
+       } else if (isStone(entity)) { // Stone
            renderStone(ctx, entity, now_ms);
-       } else if (isDroppedItem(entity)) {
-           // --- Get Item Definition and Image --- 
-           const itemDef = itemDefinitions.get(entity.itemDefId.toString());
-           let itemImg: HTMLImageElement | null = null;
-           let iconAssetName: string | null = null;
-           if (itemDef) {
-               iconAssetName = itemDef.iconAssetName;
-               itemImg = itemImagesRef.current.get(iconAssetName) ?? null;
-           } else {
-                console.warn(`[Render DroppedItem] Definition not found for ID: ${entity.itemDefId}`);
-           }
-           const canRenderIcon = itemDef && iconAssetName && itemImg && itemImg.complete && itemImg.naturalHeight !== 0;
-
-           // --- Draw Item Icon or Fallback --- 
-           const drawWidth = 48; // Reverted size to match inventory
-           const drawHeight = 48; // Reverted size to match inventory
-           if (canRenderIcon && iconAssetName) {
-              ctx.drawImage(itemImg!, entity.posX - drawWidth / 2, entity.posY - drawHeight / 2, drawWidth, drawHeight);
-              if (!itemImagesRef.current.has(iconAssetName)) {
-                   const iconSrc = itemIcons[iconAssetName] || ''; 
-                   if (iconSrc) {
-                       const img = new Image();
-                       img.src = iconSrc;
-                       img.onload = () => itemImagesRef.current.set(iconAssetName!, img);
-                       itemImagesRef.current.set(iconAssetName, img);
-                   }
-              }
-           } else {
-               ctx.fillStyle = '#CCCCCC';
-               ctx.fillRect(entity.posX - drawWidth / 2, entity.posY - drawHeight / 2, drawWidth, drawHeight);
-           }
-
-           // --- Render Interaction Prompt --- 
-           if (closestInteractableDroppedItemIdRef.current === entity.id) {
-               const itemName = itemDef ? itemDef.name : 'Item';
-               const text = `Press E to pick up ${itemName} (x${entity.quantity})`;
-               const textX = entity.posX;
-               const textY = entity.posY - 25;
-               ctx.fillStyle = "white";
-               ctx.strokeStyle = "black";
-               ctx.lineWidth = 2;
-               ctx.font = '14px "Press Start 2P", cursive';
-               ctx.textAlign = "center";
-               ctx.strokeText(text, textX, textY);
-               ctx.fillText(text, textX, textY);
-           }
-       } else if (isMushroom(entity)) {
-           renderMushroom(ctx, entity, now_ms);
-           // --- Render Mushroom Interaction Prompt --- 
-           if (closestInteractableMushroomIdRef.current === entity.id) {
-              const text = "Press E to Collect";
-              const textX = entity.posX;
-              const textY = entity.posY - 60;
-              ctx.fillStyle = "white";
-              ctx.strokeStyle = "black";
-              ctx.lineWidth = 2;
-              ctx.font = '14px "Press Start 2P", cursive';
-              ctx.textAlign = "center";
-              ctx.strokeText(text, textX, textY);
-              ctx.fillText(text, textX, textY);
-           }
+       } else if (isCampfire(entity)) { // Render campfire SPRITE in world space
+           // Render the campfire sprite using its world coordinates
+           // Note: We pass 0, 0 for screen coordinates because we're already translated
+           renderCampfire(ctx, entity.posX, entity.posY, entity.isBurning);
        }
     });
 
-    // --- NEW: Render Campfire Prompt in World Space ---
-    const closestId = closestInteractableCampfireIdRef.current;
-    if (closestId !== null) { 
-        // Iterate campfires again here to find the one matching the ID
-        campfires.forEach((fire) => {
-            if (fire.id === closestId) { // Direct comparison
-                // Draw prompt text using world coordinates
-                const text = "Press E to Use";
-                const textX = fire.posX; 
-                const textY = fire.posY - (CAMPFIRE_HEIGHT / 2) - 10; // 10px above the sprite top
-                ctx.fillStyle = "white";
-                ctx.strokeStyle = "black";
-                ctx.lineWidth = 2;
-                ctx.font = '14px "Press Start 2P", cursive';
-                ctx.textAlign = "center";
-                ctx.strokeText(text, textX, textY);
-                ctx.fillText(text, textX, textY);
-                // Assuming only one closest, we could potentially break here
-                // but iterating all is harmless
-            }
-        });
-    }
-    // --- End NEW Prompt Rendering ---
+    // 6. Render Interaction Labels (World Space - On Top of Everything)
+    mushrooms.forEach(mushroom => {
+        if (closestInteractableMushroomIdRef.current === mushroom.id) {
+            // Draw mushroom label
+            const text = "Press E to Collect";
+            const textX = mushroom.posX;
+            const textY = mushroom.posY - 60;
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 2;
+            ctx.font = '14px "Press Start 2P", cursive';
+            ctx.textAlign = "center";
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+        }
+    });
+    droppedItems.forEach(item => {
+         if (closestInteractableDroppedItemIdRef.current === item.id) {
+            const itemDef = itemDefinitions.get(item.itemDefId.toString());
+            const itemName = itemDef ? itemDef.name : 'Item';
+            const text = `Press E to pick up ${itemName} (x${item.quantity})`;
+            const textX = item.posX;
+            const textY = item.posY - 25;
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 2;
+            ctx.font = '14px "Press Start 2P", cursive';
+            ctx.textAlign = "center";
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+        }
+    });
+    campfires.forEach(fire => {
+         if (closestInteractableCampfireIdRef.current === fire.id) {
+            const text = "Press E to Use";
+            const textX = fire.posX;
+            const textY = fire.posY - (CAMPFIRE_HEIGHT / 2) - 10; // 10px above the sprite top
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 2;
+            ctx.font = '14px "Press Start 2P", cursive';
+            ctx.textAlign = "center";
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+         }
+    });
 
     // Render placement preview (in world space)
     if (isPlacingCampfire && currentWorldMouseX !== null && currentWorldMouseY !== null && campfireImageRef.current) {
@@ -1161,21 +1178,37 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
 
     // 3. Draw Campfire Sprites (AFTER Masked Overlay)
+    // --- MOVED: Campfire sprites are now rendered in the world space ground layer ---
+    /* 
     campfires.forEach(fire => {
         const screenX = fire.posX + cameraOffsetX;
         const screenY = fire.posY + cameraOffsetY;
         // Pass the isBurning state from the campfire data
         renderCampfire(ctx, screenX, screenY, fire.isBurning);
 
-        // --- NEW: Draw Interaction Indicator --- 
+        // --- NEW: Draw Interaction Indicator ---
         if (interactionProgress && interactionProgress.targetId === fire.id) {
             const interactionDuration = Date.now() - interactionProgress.startTime;
             const progressPercent = Math.min(interactionDuration / HOLD_INTERACTION_DURATION_MS, 1);
             // Use the helper function to draw the indicator above the campfire
             drawInteractionIndicator(ctx, screenX, screenY - CAMPFIRE_HEIGHT / 2 - 15, progressPercent);
         }
-        // --- End Interaction Indicator --- 
+        // --- End Interaction Indicator ---
     });
+    */
+    
+    // --- NEW: Draw Campfire Interaction Indicator (Screen Space) ---
+    // We draw this *after* the overlay, but before the glow, so the indicator itself isn't shaded.
+    campfires.forEach(fire => {
+        if (interactionProgress && interactionProgress.targetId === fire.id) {
+             const screenX = fire.posX + cameraOffsetX;
+             const screenY = fire.posY + cameraOffsetY;
+             const interactionDuration = Date.now() - interactionProgress.startTime;
+             const progressPercent = Math.min(interactionDuration / HOLD_INTERACTION_DURATION_MS, 1);
+             drawInteractionIndicator(ctx, screenX, screenY - CAMPFIRE_HEIGHT / 2 - 15, progressPercent);
+         }
+    });
+    // --- End Interaction Indicator ---
 
     // 4. Draw Campfire Light Glow (Additively)
     ctx.save();
@@ -1228,8 +1261,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       placementError,
       activeEquipments,
       itemDefinitions,
-      onSetInteractingWith,
-      interactionProgress,
+      interactionProgress, // Still needed for campfire interaction indicator
       droppedItems
     ]);
 
