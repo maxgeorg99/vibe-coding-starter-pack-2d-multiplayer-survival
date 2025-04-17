@@ -30,34 +30,34 @@ import {
   Timestamp,
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
-
-import { CampfireFuelCheckSchedule as __CampfireFuelCheckSchedule } from "./campfire_fuel_check_schedule_type";
-
-export type CheckCampfireFuelConsumption = {
-  schedule: __CampfireFuelCheckSchedule,
+export type CampfireFuelCheckSchedule = {
+  id: bigint,
+  scheduledAt: { tag: "Interval", value: TimeDuration } | { tag: "Time", value: Timestamp },
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace CheckCampfireFuelConsumption {
+export namespace CampfireFuelCheckSchedule {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("schedule", __CampfireFuelCheckSchedule.getTypeScriptAlgebraicType()),
+      new ProductTypeElement("id", AlgebraicType.createU64Type()),
+      new ProductTypeElement("scheduledAt", AlgebraicType.createScheduleAtType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: CheckCampfireFuelConsumption): void {
-    CheckCampfireFuelConsumption.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: CampfireFuelCheckSchedule): void {
+    CampfireFuelCheckSchedule.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): CheckCampfireFuelConsumption {
-    return CheckCampfireFuelConsumption.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): CampfireFuelCheckSchedule {
+    return CampfireFuelCheckSchedule.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
+
 

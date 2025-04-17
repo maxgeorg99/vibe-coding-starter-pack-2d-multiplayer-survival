@@ -32,6 +32,8 @@ use crate::player as PlayerTableTrait; // Needed for ctx.db.player()
 use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 // Import the schedule table trait
 use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
+// NEW: Import the campfire fuel check schedule table trait
+use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTableTrait;
 
 // Use specific items needed globally (or use qualified paths)
 // use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
@@ -112,6 +114,8 @@ pub fn init_module(ctx: &ReducerContext) -> Result<(), String> {
 
     // Initialize the dropped item despawn schedule
     crate::dropped_item::init_dropped_item_schedule(ctx)?;
+    // NEW: Initialize the campfire fuel check schedule
+    crate::campfire::init_campfire_fuel_schedule(ctx)?;
 
     // Remove commented-out schedule init logic
     /*
@@ -1078,12 +1082,6 @@ pub fn update_player_position(
         Err(e) => log::error!("Error checking resource respawns: {}", e),
     }
     
-    // --- Check Campfire Fuel Consumption --- 
-    match crate::campfire::check_campfire_fuel_consumption(ctx) {
-        Ok(_) => { /* Campfire fuel checked successfully */ }
-        Err(e) => log::error!("Error checking campfire fuel: {}", e),
-    }
-
     Ok(())
 }
 

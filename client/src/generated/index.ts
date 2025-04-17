@@ -112,6 +112,8 @@ import { ActiveEquipmentTableHandle } from "./active_equipment_table.ts";
 export { ActiveEquipmentTableHandle };
 import { CampfireTableHandle } from "./campfire_table.ts";
 export { CampfireTableHandle };
+import { CampfireFuelCheckScheduleTableHandle } from "./campfire_fuel_check_schedule_table.ts";
+export { CampfireFuelCheckScheduleTableHandle };
 import { DroppedItemTableHandle } from "./dropped_item_table.ts";
 export { DroppedItemTableHandle };
 import { DroppedItemDespawnScheduleTableHandle } from "./dropped_item_despawn_schedule_table.ts";
@@ -136,6 +138,8 @@ import { ActiveEquipment } from "./active_equipment_type.ts";
 export { ActiveEquipment };
 import { Campfire } from "./campfire_type.ts";
 export { Campfire };
+import { CampfireFuelCheckSchedule } from "./campfire_fuel_check_schedule_type.ts";
+export { CampfireFuelCheckSchedule };
 import { DroppedItem } from "./dropped_item_type.ts";
 export { DroppedItem };
 import { DroppedItemDespawnSchedule } from "./dropped_item_despawn_schedule_type.ts";
@@ -173,6 +177,11 @@ const REMOTE_MODULE = {
     campfire: {
       tableName: "campfire",
       rowType: Campfire.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    campfire_fuel_check_schedule: {
+      tableName: "campfire_fuel_check_schedule",
+      rowType: CampfireFuelCheckSchedule.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     dropped_item: {
@@ -471,15 +480,19 @@ export class RemoteReducers {
     this.connection.offReducer("add_wood_to_first_available_campfire_slot", callback);
   }
 
-  checkCampfireFuelConsumption() {
-    this.connection.callReducer("check_campfire_fuel_consumption", new Uint8Array(0), this.setCallReducerFlags.checkCampfireFuelConsumptionFlags);
+  checkCampfireFuelConsumption(schedule: CampfireFuelCheckSchedule) {
+    const __args = { schedule };
+    let __writer = new BinaryWriter(1024);
+    CheckCampfireFuelConsumption.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("check_campfire_fuel_consumption", __argsBuffer, this.setCallReducerFlags.checkCampfireFuelConsumptionFlags);
   }
 
-  onCheckCampfireFuelConsumption(callback: (ctx: ReducerEventContext) => void) {
+  onCheckCampfireFuelConsumption(callback: (ctx: ReducerEventContext, schedule: CampfireFuelCheckSchedule) => void) {
     this.connection.onReducer("check_campfire_fuel_consumption", callback);
   }
 
-  removeOnCheckCampfireFuelConsumption(callback: (ctx: ReducerEventContext) => void) {
+  removeOnCheckCampfireFuelConsumption(callback: (ctx: ReducerEventContext, schedule: CampfireFuelCheckSchedule) => void) {
     this.connection.offReducer("check_campfire_fuel_consumption", callback);
   }
 
@@ -1168,6 +1181,10 @@ export class RemoteTables {
 
   get campfire(): CampfireTableHandle {
     return new CampfireTableHandle(this.connection.clientCache.getOrCreateTable<Campfire>(REMOTE_MODULE.tables.campfire));
+  }
+
+  get campfireFuelCheckSchedule(): CampfireFuelCheckScheduleTableHandle {
+    return new CampfireFuelCheckScheduleTableHandle(this.connection.clientCache.getOrCreateTable<CampfireFuelCheckSchedule>(REMOTE_MODULE.tables.campfire_fuel_check_schedule));
   }
 
   get droppedItem(): DroppedItemTableHandle {

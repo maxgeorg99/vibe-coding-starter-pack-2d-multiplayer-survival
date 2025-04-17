@@ -844,11 +844,21 @@ function App() {
                      console.log(`Calling splitStack with target ${targetSlotType}, index ${targetIndexNum}`);
                      connection.reducers.splitStack(itemInstanceId, quantityToSplit, targetSlotType, targetIndexNum);
                  } else if (targetSlotType === 'campfire_fuel') {
-                     if (campfireIdNum === null || targetIndexNum === null) { console.error("Missing CampfireID or TargetIndex for split INTO campfire"); return; }
-                     console.log(`Calling splitStackIntoCampfire: Item ${itemInstanceId}, Qty ${quantityToSplit} to Campfire ${campfireIdNum} Slot ${targetIndexNum}`);
-                     // Check if splitStackIntoCampfire exists, otherwise log error (or adapt)
+                     // --- FIX #2: Use interactingWith for splitting INTO campfire --- 
+                     const targetFuelIndex = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+
+                     // Get campfire ID from interaction context when splitting INTO it
+                     const targetCampfireId = interactingWith?.type === 'campfire' ? Number(interactingWith.id) : null;
+                     
+                     if (targetCampfireId === null || isNaN(targetFuelIndex)) { 
+                         console.error("[App Drop] Missing CampfireID (from interactingWith) or TargetIndex for split INTO campfire"); 
+                         setError("Could not determine target campfire slot for split.");
+                         return; 
+                     }
+                     
+                     console.log(`Calling splitStackIntoCampfire: Item ${itemInstanceId}, Qty ${quantityToSplit} to Campfire ${targetCampfireId} Slot ${targetFuelIndex}`);
                      if (connection.reducers.splitStackIntoCampfire) {
-                         connection.reducers.splitStackIntoCampfire(itemInstanceId, quantityToSplit, campfireIdNum, targetIndexNum);
+                         connection.reducers.splitStackIntoCampfire(itemInstanceId, quantityToSplit, targetCampfireId, targetFuelIndex);
                      } else {
                          console.error("Reducer 'splitStackIntoCampfire' not found!");
                          setError("Splitting into campfire not supported.");
@@ -858,20 +868,26 @@ function App() {
                       setError("Cannot split item to that location.");
                  }
             } else if (sourceSlotType === 'campfire_fuel') {
+                 // Splitting FROM campfire should use parentId from sourceSlot
+                 const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
                  const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
-                 if (isNaN(sourceIndexNum)) { console.error("Invalid source index for campfire split"); return; }
-                 if (campfireIdNum === null) { console.error("Missing CampfireID for split FROM/WITHIN campfire"); return; }
+                 
+                 if (sourceCampfireId === null || isNaN(sourceIndexNum)) { 
+                    console.error("[App Drop] Missing CampfireID or SourceIndex for split FROM campfire"); 
+                    setError("Could not determine source campfire slot for split.");
+                    return; 
+                 }
 
                  if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
                      if (targetIndexNum === null) { console.error("Target index null for inv/hotbar split from campfire"); return; }
-                     console.log(`Calling splitStackFromCampfire: Campfire ${campfireIdNum} Slot ${sourceIndexNum}, Item ${itemInstanceId}, Qty ${quantityToSplit} to ${targetSlotType}:${targetIndexNum}`);
-                     connection.reducers.splitStackFromCampfire(campfireIdNum, sourceIndexNum, quantityToSplit, targetSlotType, targetIndexNum);
+                     console.log(`Calling splitStackFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum}, Item ${itemInstanceId}, Qty ${quantityToSplit} to ${targetSlotType}:${targetIndexNum}`);
+                     connection.reducers.splitStackFromCampfire(sourceCampfireId, sourceIndexNum, quantityToSplit, targetSlotType, targetIndexNum);
                  } else if (targetSlotType === 'campfire_fuel') {
+                     // Splitting WITHIN campfire - Target index already parsed, sourceCampfireId is correct.
                      if (targetIndexNum === null) { console.error("Target index null for within-campfire split"); return; }
-                     console.log(`Calling splitStackWithinCampfire: Campfire ${campfireIdNum}, Source Slot ${sourceIndexNum}, Item ${itemInstanceId}, Qty ${quantityToSplit} to Target Slot ${targetIndexNum}`);
-                     // Check if splitStackWithinCampfire exists
+                     console.log(`Calling splitStackWithinCampfire: Campfire ${sourceCampfireId}, Source Slot ${sourceIndexNum}, Item ${itemInstanceId}, Qty ${quantityToSplit} to Target Slot ${targetIndexNum}`);
                      if (connection.reducers.splitStackWithinCampfire) {
-                         connection.reducers.splitStackWithinCampfire(campfireIdNum, sourceIndexNum, quantityToSplit, targetIndexNum);
+                         connection.reducers.splitStackWithinCampfire(sourceCampfireId, sourceIndexNum, quantityToSplit, targetIndexNum);
                      } else {
                          console.error("Reducer 'splitStackWithinCampfire' not found!");
                          setError("Splitting within campfire not supported.");
