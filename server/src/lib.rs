@@ -28,6 +28,7 @@ use crate::world_state::world_state as WorldStateTableTrait; // Already present
 use crate::items::inventory_item as InventoryItemTableTrait; // Already present
 use crate::items::item_definition as ItemDefinitionTableTrait; // Already present
 use crate::player as PlayerTableTrait; // Needed for ctx.db.player()
+use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 
 // Use specific items needed globally (or use qualified paths)
 // use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
@@ -141,8 +142,31 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
     
     if let Some(player) = players.identity().find(sender_id) {
         let username = player.username.clone();
+        // 1. Delete the Player entity
         players.identity().delete(sender_id);
-        log::info!("Attempted delete for disconnected player: {} ({:?})", username, sender_id);
+        log::info!("Deleted Player entity for disconnected player: {} ({:?})", username, sender_id);
+
+        // 2. Delete player's inventory items
+        let inventory = ctx.db.inventory_item();
+        let mut items_to_delete = Vec::new();
+        for item in inventory.iter().filter(|i| i.player_identity == sender_id) {
+            items_to_delete.push(item.instance_id);
+        }
+        let delete_count = items_to_delete.len();
+        for item_instance_id in items_to_delete {
+            inventory.instance_id().delete(item_instance_id);
+        }
+        log::info!("Deleted {} inventory items for player {:?}", delete_count, sender_id);
+
+        // 3. Delete player's active equipment entry
+        let equipment_table = ctx.db.active_equipment();
+        if equipment_table.player_identity().find(&sender_id).is_some() {
+            equipment_table.player_identity().delete(sender_id);
+            log::info!("Deleted active equipment for player {:?}", sender_id);
+        }
+
+    } else {
+        log::warn!("Disconnected identity {:?} did not have a registered player entity. No cleanup needed.", sender_id);
     }
 }
 
@@ -445,18 +469,40 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
         log::info!("Player {} consumed one Camp Fire item. {} remaining.", player.username, remaining_quantity);
     }
 
-    // --- 7. Create Campfire Entity --- 
+    // --- Create Initial Fuel Item (Wood) --- 
+    let wood_def = item_defs.iter()
+        .find(|def| def.name == "Wood")
+        .ok_or_else(|| "Wood item definition not found for initial fuel".to_string())?;
+        
+    let initial_fuel_item = crate::items::InventoryItem {
+        instance_id: 0, // Auto-inc
+        player_identity: sender_id, // Belongs to the placer initially
+        item_def_id: wood_def.id,
+        quantity: 50, // Start with 50 wood
+        hotbar_slot: None, // Not in hotbar
+        inventory_slot: None, // Not in inventory (it's "in" the campfire slot 0)
+    };
+    // Insert the fuel item and get its generated instance ID
+    let inserted_fuel_item = inventory_items.insert(initial_fuel_item);
+    let fuel_instance_id = inserted_fuel_item.instance_id;
+    log::info!("Created initial fuel item (Wood, instance {}) for campfire.", fuel_instance_id);
+    
+    // --- Create Campfire Entity --- 
     let current_time = ctx.timestamp;
+    // Calculate the first consumption time
+    let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS).into();
+    
     let new_campfire = Campfire {
         id: 0, // Auto-incremented
         pos_x: target_x,
         pos_y: target_y,
         placed_by: sender_id,
         placed_at: current_time,
-        is_burning: false, // Start extinguished
-        // Initialize individual fuel slots to None
-        fuel_instance_id_0: None,
-        fuel_def_id_0: None,
+        is_burning: true, // Start burning immediately
+        // Set slot 0 with the new wood item
+        fuel_instance_id_0: Some(fuel_instance_id),
+        fuel_def_id_0: Some(wood_def.id),
+        // Initialize other slots to None
         fuel_instance_id_1: None,
         fuel_def_id_1: None,
         fuel_instance_id_2: None,
@@ -465,12 +511,12 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
         fuel_def_id_3: None,
         fuel_instance_id_4: None,
         fuel_def_id_4: None,
-        next_fuel_consume_at: None,
+        next_fuel_consume_at: Some(first_consumption_time), // Schedule first consumption
     };
 
     campfires.try_insert(new_campfire)?;
-    log::info!("Player {} placed a campfire at ({:.1}, {:.1}).", 
-             player.username, target_x, target_y);
+    log::info!("Player {} placed a campfire at ({:.1}, {:.1}) with initial fuel (Item {} in slot 0).", 
+             player.username, target_x, target_y, fuel_instance_id);
 
     Ok(())
 }

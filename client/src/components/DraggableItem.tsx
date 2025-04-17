@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { PopulatedItem } from './InventoryUI'; // Assuming type is exported from InventoryUI
-import { DragSourceSlotInfo, DraggedItemInfo } from './PlayerUI'; // Import types from PlayerUI
+import { DragSourceSlotInfo, DraggedItemInfo } from '../types/dragDropTypes'; // Correct import path
 import { itemIcons, getItemIcon } from '../utils/itemIconUtils';
 import styles from './DraggableItem.module.css'; // We'll create this CSS file
 
@@ -158,27 +158,24 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
   }, [handleMouseMove, item, sourceSlot, onItemDrop]); // Add back dependencies
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // Only proceed if the item is stackable and quantity > 1 for splitting
+    // Check stackability and quantity for splitting possibility
     const canSplit = item.definition.isStackable && item.instance.quantity > 1;
     let splitQuantity: number | null = null;
 
     // Determine split quantity based on button and modifiers
+    // Allow splitting regardless of sourceSlot type
     if (canSplit) {
         if (e.button === 1) { // Middle mouse button
-            e.preventDefault(); // Prevent default middle-click behavior (like autoscroll)
+            e.preventDefault(); 
             if (e.shiftKey) {
-                // Shift + Middle: Split 1/3
                 splitQuantity = Math.max(1, Math.floor(item.instance.quantity / 3));
                 console.log('[DraggableItem] Middle + Shift Down: Splitting 1/3 ->', splitQuantity);
             } else {
-                // Middle only: Split half
                 splitQuantity = Math.max(1, Math.floor(item.instance.quantity / 2));
                 console.log('[DraggableItem] Middle Down: Splitting half ->', splitQuantity);
             }
         } else if (e.button === 2) { // Right mouse button
-             // Prevent context menu during drag sequence
             e.preventDefault(); 
-            // Right only: Split 1
             splitQuantity = 1;
             console.log('[DraggableItem] Right Down: Splitting 1 ->', splitQuantity);
         }
@@ -187,12 +184,9 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     // Handle normal left-click drag OR if splitting is not possible/intended
     if (e.button === 0 || !splitQuantity) {
          console.log('[DraggableItem] Left Mouse Down (or cannot split)');
-         // Reset split quantity ref if it's a left click
          currentSplitQuantity.current = null; 
-         // Prevent default only for left click to allow right-click context menu if needed (handled by onContextMenu prop)
          if (e.button === 0) e.preventDefault(); 
     } else {
-         // We are splitting (Middle or Right click)
          currentSplitQuantity.current = splitQuantity; // Store for ghost creation
     }
     
@@ -205,12 +199,11 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
     
-    // Pass the calculated split quantity (can be null) to the drag start info
     const dragInfo: DraggedItemInfo = { item, sourceSlot, splitQuantity: splitQuantity ?? undefined };
     console.log('[DraggableItem] Calling onItemDragStart with:', dragInfo);
     onItemDragStart(dragInfo);
 
-  }, [item, sourceSlot, onItemDragStart, handleMouseMove, handleMouseUp, createGhostElement]); // Added createGhostElement dependency
+  }, [item, sourceSlot, onItemDragStart, handleMouseMove, handleMouseUp, createGhostElement]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // Prevent context menu IF a drag wasn't initiated by right-click

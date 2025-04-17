@@ -34,6 +34,8 @@ import {
 // Import and reexport all reducer arg types
 import { AddFuelToCampfire } from "./add_fuel_to_campfire_reducer.ts";
 export { AddFuelToCampfire };
+import { AddWoodToFirstAvailableCampfireSlot } from "./add_wood_to_first_available_campfire_slot_reducer.ts";
+export { AddWoodToFirstAvailableCampfireSlot };
 import { CheckCampfireFuelConsumption } from "./check_campfire_fuel_consumption_reducer.ts";
 export { CheckCampfireFuelConsumption };
 import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
@@ -56,6 +58,8 @@ import { InteractWithMushroom } from "./interact_with_mushroom_reducer.ts";
 export { InteractWithMushroom };
 import { Jump } from "./jump_reducer.ts";
 export { Jump };
+import { MoveFuelWithinCampfire } from "./move_fuel_within_campfire_reducer.ts";
+export { MoveFuelWithinCampfire };
 import { MoveItemToHotbar } from "./move_item_to_hotbar_reducer.ts";
 export { MoveItemToHotbar };
 import { MoveItemToInventory } from "./move_item_to_inventory_reducer.ts";
@@ -64,6 +68,8 @@ import { MoveToFirstAvailableHotbarSlot } from "./move_to_first_available_hotbar
 export { MoveToFirstAvailableHotbarSlot };
 import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
+import { ReconnectPlayer } from "./reconnect_player_reducer.ts";
+export { ReconnectPlayer };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
 import { RemoveFuelFromCampfire } from "./remove_fuel_from_campfire_reducer.ts";
@@ -80,6 +86,12 @@ import { SetSprinting } from "./set_sprinting_reducer.ts";
 export { SetSprinting };
 import { SplitStack } from "./split_stack_reducer.ts";
 export { SplitStack };
+import { SplitStackFromCampfire } from "./split_stack_from_campfire_reducer.ts";
+export { SplitStackFromCampfire };
+import { SplitStackIntoCampfire } from "./split_stack_into_campfire_reducer.ts";
+export { SplitStackIntoCampfire };
+import { SplitStackWithinCampfire } from "./split_stack_within_campfire_reducer.ts";
+export { SplitStackWithinCampfire };
 import { TickWorldState } from "./tick_world_state_reducer.ts";
 export { TickWorldState };
 import { ToggleCampfireBurning } from "./toggle_campfire_burning_reducer.ts";
@@ -192,6 +204,10 @@ const REMOTE_MODULE = {
       reducerName: "add_fuel_to_campfire",
       argsType: AddFuelToCampfire.getTypeScriptAlgebraicType(),
     },
+    add_wood_to_first_available_campfire_slot: {
+      reducerName: "add_wood_to_first_available_campfire_slot",
+      argsType: AddWoodToFirstAvailableCampfireSlot.getTypeScriptAlgebraicType(),
+    },
     check_campfire_fuel_consumption: {
       reducerName: "check_campfire_fuel_consumption",
       argsType: CheckCampfireFuelConsumption.getTypeScriptAlgebraicType(),
@@ -236,6 +252,10 @@ const REMOTE_MODULE = {
       reducerName: "jump",
       argsType: Jump.getTypeScriptAlgebraicType(),
     },
+    move_fuel_within_campfire: {
+      reducerName: "move_fuel_within_campfire",
+      argsType: MoveFuelWithinCampfire.getTypeScriptAlgebraicType(),
+    },
     move_item_to_hotbar: {
       reducerName: "move_item_to_hotbar",
       argsType: MoveItemToHotbar.getTypeScriptAlgebraicType(),
@@ -251,6 +271,10 @@ const REMOTE_MODULE = {
     place_campfire: {
       reducerName: "place_campfire",
       argsType: PlaceCampfire.getTypeScriptAlgebraicType(),
+    },
+    reconnect_player: {
+      reducerName: "reconnect_player",
+      argsType: ReconnectPlayer.getTypeScriptAlgebraicType(),
     },
     register_player: {
       reducerName: "register_player",
@@ -283,6 +307,18 @@ const REMOTE_MODULE = {
     split_stack: {
       reducerName: "split_stack",
       argsType: SplitStack.getTypeScriptAlgebraicType(),
+    },
+    split_stack_from_campfire: {
+      reducerName: "split_stack_from_campfire",
+      argsType: SplitStackFromCampfire.getTypeScriptAlgebraicType(),
+    },
+    split_stack_into_campfire: {
+      reducerName: "split_stack_into_campfire",
+      argsType: SplitStackIntoCampfire.getTypeScriptAlgebraicType(),
+    },
+    split_stack_within_campfire: {
+      reducerName: "split_stack_within_campfire",
+      argsType: SplitStackWithinCampfire.getTypeScriptAlgebraicType(),
     },
     tick_world_state: {
       reducerName: "tick_world_state",
@@ -332,6 +368,7 @@ const REMOTE_MODULE = {
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
 | { name: "AddFuelToCampfire", args: AddFuelToCampfire }
+| { name: "AddWoodToFirstAvailableCampfireSlot", args: AddWoodToFirstAvailableCampfireSlot }
 | { name: "CheckCampfireFuelConsumption", args: CheckCampfireFuelConsumption }
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
 | { name: "ConsumeItem", args: ConsumeItem }
@@ -343,10 +380,12 @@ export type Reducer = never
 | { name: "InteractWithCampfire", args: InteractWithCampfire }
 | { name: "InteractWithMushroom", args: InteractWithMushroom }
 | { name: "Jump", args: Jump }
+| { name: "MoveFuelWithinCampfire", args: MoveFuelWithinCampfire }
 | { name: "MoveItemToHotbar", args: MoveItemToHotbar }
 | { name: "MoveItemToInventory", args: MoveItemToInventory }
 | { name: "MoveToFirstAvailableHotbarSlot", args: MoveToFirstAvailableHotbarSlot }
 | { name: "PlaceCampfire", args: PlaceCampfire }
+| { name: "ReconnectPlayer", args: ReconnectPlayer }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RemoveFuelFromCampfire", args: RemoveFuelFromCampfire }
 | { name: "RequestRespawn", args: RequestRespawn }
@@ -355,6 +394,9 @@ export type Reducer = never
 | { name: "SeedWorldState", args: SeedWorldState }
 | { name: "SetSprinting", args: SetSprinting }
 | { name: "SplitStack", args: SplitStack }
+| { name: "SplitStackFromCampfire", args: SplitStackFromCampfire }
+| { name: "SplitStackIntoCampfire", args: SplitStackIntoCampfire }
+| { name: "SplitStackWithinCampfire", args: SplitStackWithinCampfire }
 | { name: "TickWorldState", args: TickWorldState }
 | { name: "ToggleCampfireBurning", args: ToggleCampfireBurning }
 | { name: "UnequipItem", args: UnequipItem }
@@ -379,6 +421,22 @@ export class RemoteReducers {
 
   removeOnAddFuelToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, targetSlotIndex: number, itemInstanceId: bigint) => void) {
     this.connection.offReducer("add_fuel_to_campfire", callback);
+  }
+
+  addWoodToFirstAvailableCampfireSlot(campfireId: number, itemInstanceId: bigint) {
+    const __args = { campfireId, itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    AddWoodToFirstAvailableCampfireSlot.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("add_wood_to_first_available_campfire_slot", __argsBuffer, this.setCallReducerFlags.addWoodToFirstAvailableCampfireSlotFlags);
+  }
+
+  onAddWoodToFirstAvailableCampfireSlot(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("add_wood_to_first_available_campfire_slot", callback);
+  }
+
+  removeOnAddWoodToFirstAvailableCampfireSlot(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("add_wood_to_first_available_campfire_slot", callback);
   }
 
   checkCampfireFuelConsumption() {
@@ -529,6 +587,22 @@ export class RemoteReducers {
     this.connection.offReducer("jump", callback);
   }
 
+  moveFuelWithinCampfire(campfireId: number, sourceSlotIndex: number, targetSlotIndex: number) {
+    const __args = { campfireId, sourceSlotIndex, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    MoveFuelWithinCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_fuel_within_campfire", __argsBuffer, this.setCallReducerFlags.moveFuelWithinCampfireFlags);
+  }
+
+  onMoveFuelWithinCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number, targetSlotIndex: number) => void) {
+    this.connection.onReducer("move_fuel_within_campfire", callback);
+  }
+
+  removeOnMoveFuelWithinCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number, targetSlotIndex: number) => void) {
+    this.connection.offReducer("move_fuel_within_campfire", callback);
+  }
+
   moveItemToHotbar(itemInstanceId: bigint, targetHotbarSlot: number) {
     const __args = { itemInstanceId, targetHotbarSlot };
     let __writer = new BinaryWriter(1024);
@@ -591,6 +665,22 @@ export class RemoteReducers {
 
   removeOnPlaceCampfire(callback: (ctx: ReducerEventContext, targetX: number, targetY: number) => void) {
     this.connection.offReducer("place_campfire", callback);
+  }
+
+  reconnectPlayer(username: string) {
+    const __args = { username };
+    let __writer = new BinaryWriter(1024);
+    ReconnectPlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("reconnect_player", __argsBuffer, this.setCallReducerFlags.reconnectPlayerFlags);
+  }
+
+  onReconnectPlayer(callback: (ctx: ReducerEventContext, username: string) => void) {
+    this.connection.onReducer("reconnect_player", callback);
+  }
+
+  removeOnReconnectPlayer(callback: (ctx: ReducerEventContext, username: string) => void) {
+    this.connection.offReducer("reconnect_player", callback);
   }
 
   registerPlayer(username: string) {
@@ -705,6 +795,54 @@ export class RemoteReducers {
     this.connection.offReducer("split_stack", callback);
   }
 
+  splitStackFromCampfire(sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) {
+    const __args = { sourceCampfireId, sourceSlotIndex, quantityToSplit, targetSlotType, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    SplitStackFromCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_stack_from_campfire", __argsBuffer, this.setCallReducerFlags.splitStackFromCampfireFlags);
+  }
+
+  onSplitStackFromCampfire(callback: (ctx: ReducerEventContext, sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.onReducer("split_stack_from_campfire", callback);
+  }
+
+  removeOnSplitStackFromCampfire(callback: (ctx: ReducerEventContext, sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.offReducer("split_stack_from_campfire", callback);
+  }
+
+  splitStackIntoCampfire(sourceItemInstanceId: bigint, quantityToSplit: number, targetCampfireId: number, targetSlotIndex: number) {
+    const __args = { sourceItemInstanceId, quantityToSplit, targetCampfireId, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    SplitStackIntoCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_stack_into_campfire", __argsBuffer, this.setCallReducerFlags.splitStackIntoCampfireFlags);
+  }
+
+  onSplitStackIntoCampfire(callback: (ctx: ReducerEventContext, sourceItemInstanceId: bigint, quantityToSplit: number, targetCampfireId: number, targetSlotIndex: number) => void) {
+    this.connection.onReducer("split_stack_into_campfire", callback);
+  }
+
+  removeOnSplitStackIntoCampfire(callback: (ctx: ReducerEventContext, sourceItemInstanceId: bigint, quantityToSplit: number, targetCampfireId: number, targetSlotIndex: number) => void) {
+    this.connection.offReducer("split_stack_into_campfire", callback);
+  }
+
+  splitStackWithinCampfire(campfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotIndex: number) {
+    const __args = { campfireId, sourceSlotIndex, quantityToSplit, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    SplitStackWithinCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_stack_within_campfire", __argsBuffer, this.setCallReducerFlags.splitStackWithinCampfireFlags);
+  }
+
+  onSplitStackWithinCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotIndex: number) => void) {
+    this.connection.onReducer("split_stack_within_campfire", callback);
+  }
+
+  removeOnSplitStackWithinCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotIndex: number) => void) {
+    this.connection.offReducer("split_stack_within_campfire", callback);
+  }
+
   tickWorldState(timestamp: Timestamp) {
     const __args = { timestamp };
     let __writer = new BinaryWriter(1024);
@@ -785,6 +923,11 @@ export class SetReducerFlags {
     this.addFuelToCampfireFlags = flags;
   }
 
+  addWoodToFirstAvailableCampfireSlotFlags: CallReducerFlags = 'FullUpdate';
+  addWoodToFirstAvailableCampfireSlot(flags: CallReducerFlags) {
+    this.addWoodToFirstAvailableCampfireSlotFlags = flags;
+  }
+
   checkCampfireFuelConsumptionFlags: CallReducerFlags = 'FullUpdate';
   checkCampfireFuelConsumption(flags: CallReducerFlags) {
     this.checkCampfireFuelConsumptionFlags = flags;
@@ -830,6 +973,11 @@ export class SetReducerFlags {
     this.jumpFlags = flags;
   }
 
+  moveFuelWithinCampfireFlags: CallReducerFlags = 'FullUpdate';
+  moveFuelWithinCampfire(flags: CallReducerFlags) {
+    this.moveFuelWithinCampfireFlags = flags;
+  }
+
   moveItemToHotbarFlags: CallReducerFlags = 'FullUpdate';
   moveItemToHotbar(flags: CallReducerFlags) {
     this.moveItemToHotbarFlags = flags;
@@ -848,6 +996,11 @@ export class SetReducerFlags {
   placeCampfireFlags: CallReducerFlags = 'FullUpdate';
   placeCampfire(flags: CallReducerFlags) {
     this.placeCampfireFlags = flags;
+  }
+
+  reconnectPlayerFlags: CallReducerFlags = 'FullUpdate';
+  reconnectPlayer(flags: CallReducerFlags) {
+    this.reconnectPlayerFlags = flags;
   }
 
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
@@ -888,6 +1041,21 @@ export class SetReducerFlags {
   splitStackFlags: CallReducerFlags = 'FullUpdate';
   splitStack(flags: CallReducerFlags) {
     this.splitStackFlags = flags;
+  }
+
+  splitStackFromCampfireFlags: CallReducerFlags = 'FullUpdate';
+  splitStackFromCampfire(flags: CallReducerFlags) {
+    this.splitStackFromCampfireFlags = flags;
+  }
+
+  splitStackIntoCampfireFlags: CallReducerFlags = 'FullUpdate';
+  splitStackIntoCampfire(flags: CallReducerFlags) {
+    this.splitStackIntoCampfireFlags = flags;
+  }
+
+  splitStackWithinCampfireFlags: CallReducerFlags = 'FullUpdate';
+  splitStackWithinCampfire(flags: CallReducerFlags) {
+    this.splitStackWithinCampfireFlags = flags;
   }
 
   tickWorldStateFlags: CallReducerFlags = 'FullUpdate';

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ItemDefinition, InventoryItem, DbConnection } from '../generated';
+import { ItemDefinition, InventoryItem, DbConnection, Campfire as SpacetimeDBCampfire } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 
 // Import Custom Components
@@ -31,6 +31,9 @@ interface HotbarProps {
   onItemDragStart: (info: DraggedItemInfo) => void; // Required
   onItemDrop: (targetSlotInfo: DragSourceSlotInfo | null) => void; // Required
   draggedItemInfo: DraggedItemInfo | null; // Required
+  // Add props needed for context menu interaction
+  interactingWith: { type: string; id: number | bigint } | null;
+  campfires: Map<string, SpacetimeDBCampfire>; // Needed for context check, though not direct use
 }
 
 // --- Hotbar Component ---
@@ -44,6 +47,9 @@ const Hotbar: React.FC<HotbarProps> = ({
     onItemDragStart,
     onItemDrop,
     draggedItemInfo,
+    // Destructure new props
+    interactingWith,
+    campfires, // Even if not directly used, it indicates context
 }) => {
   // console.log("Hotbar Props:", { playerIdentity, itemDefinitions, inventoryItems }); // Log received props
   const [selectedSlot, setSelectedSlot] = useState<number>(0); // 0-indexed (0-5)
@@ -185,26 +191,26 @@ const Hotbar: React.FC<HotbarProps> = ({
       }
   };
 
-  // --- Context Menu Handler for Items --- 
-  const handleItemContextMenu = (event: React.MouseEvent<HTMLDivElement>, itemInfo: PopulatedItem) => {
-      event.preventDefault(); // Prevent browser context menu
+  // --- Context Menu Handler for Hotbar Items ---
+  const handleHotbarItemContextMenu = (event: React.MouseEvent<HTMLDivElement>, itemInfo: PopulatedItem) => {
+      event.preventDefault();
       event.stopPropagation();
-      console.log(`[Hotbar ContextMenu] Right-clicked on:`, itemInfo.definition.name);
+      console.log(`[Hotbar ContextMenu] Right-clicked on: ${itemInfo.definition.name} in slot ${itemInfo.instance.hotbarSlot}`);
 
-      // Check connection and item category
-      if (connection?.reducers && itemInfo.definition.category.tag === 'Armor') {
-          console.log(`[Hotbar ContextMenu] Equipping ARMOR instance ${itemInfo.instance.instanceId}`);
-          cancelCampfirePlacement(); // Cancel placement if trying to equip
+      // Check if interacting with campfire and item is Wood
+      if (interactingWith?.type === 'campfire' && itemInfo.definition.name === 'Wood' && connection?.reducers) {
+          const campfireIdNum = Number(interactingWith.id);
+          const itemInstanceId = BigInt(itemInfo.instance.instanceId);
+          console.log(`[Hotbar ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling add_wood...`);
           try {
-              connection.reducers.equipArmor(BigInt(itemInfo.instance.instanceId));
-          } catch (err) { 
-              console.error("[Hotbar ContextMenu] Error calling equipArmor:", err);
+              connection.reducers.addWoodToFirstAvailableCampfireSlot(campfireIdNum, itemInstanceId);
+          } catch (error: any) {
+              console.error("[Hotbar ContextMenu] Error calling add_wood... reducer:", error);
+              // TODO: Show user feedback?
           }
-      } else if (!connection?.reducers) {
-           console.warn("[Hotbar ContextMenu] No connection/reducers available.");
       } else {
-          // Optional: Handle right-click on non-armor items if needed later
-          console.log("[Hotbar ContextMenu] Right-clicked on non-armor item, no action defined yet.");
+          // Default behavior for right-clicking other items in hotbar (if any desired later)
+          console.log("[Hotbar ContextMenu] No specific action for this item/context.");
       }
   };
 
@@ -268,7 +274,8 @@ const Hotbar: React.FC<HotbarProps> = ({
                     sourceSlot={currentSlotInfo}
                     onItemDragStart={onItemDragStart}
                     onItemDrop={onItemDrop}
-                    onContextMenu={(event) => handleItemContextMenu(event, populatedItem)}
+                    // Pass the NEW hotbar-specific context menu handler
+                    onContextMenu={(event) => handleHotbarItemContextMenu(event, populatedItem)}
                  />
             )}
           </DroppableSlot>

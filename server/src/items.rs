@@ -967,7 +967,68 @@ pub fn equip_armor_from_drag(ctx: &ReducerContext, item_instance_id: u64, target
     Ok(())
 }
 
-// Reducer to split a stack of items
+// Calculates the result of merging source onto target
+// Returns: (qty_to_transfer, source_new_qty, target_new_qty, delete_source)
+pub(crate) fn calculate_merge_result(
+    source_item: &InventoryItem,
+    target_item: &InventoryItem, 
+    item_def: &ItemDefinition
+) -> Result<(u32, u32, u32, bool), String> {
+    if !item_def.is_stackable || source_item.item_def_id != target_item.item_def_id {
+        return Err("Items cannot be merged".to_string());
+    }
+
+    let space_available = item_def.stack_size.saturating_sub(target_item.quantity);
+    if space_available == 0 {
+        return Err("Target stack is full".to_string()); // Or handle as a swap later
+    }
+
+    let qty_to_transfer = std::cmp::min(source_item.quantity, space_available);
+    let source_new_qty = source_item.quantity - qty_to_transfer;
+    let target_new_qty = target_item.quantity + qty_to_transfer;
+    let delete_source = source_new_qty == 0;
+
+    Ok((qty_to_transfer, source_new_qty, target_new_qty, delete_source))
+}
+
+// Renamed helper function
+pub(crate) fn split_stack_helper(
+    ctx: &ReducerContext,
+    source_item: &mut InventoryItem, // Takes mutable reference to modify quantity
+    quantity_to_split: u32
+) -> Result<u64, String> {
+    // Validations already done in reducers calling this, but sanity check:
+    if quantity_to_split == 0 || quantity_to_split >= source_item.quantity {
+        return Err("Invalid split quantity".to_string());
+    }
+
+    // Decrease quantity of the source item
+    source_item.quantity -= quantity_to_split;
+    // Update source item in DB *before* creating new one to avoid potential unique constraint issues if moved immediately
+    ctx.db.inventory_item().instance_id().update(source_item.clone()); 
+
+    // Create the new item stack with the split quantity
+    let new_item = InventoryItem {
+        instance_id: 0, // Will be auto-generated
+        player_identity: source_item.player_identity, // Initially belongs to the same player
+        item_def_id: source_item.item_def_id,
+        quantity: quantity_to_split,
+        hotbar_slot: None, // New item has no location yet
+        inventory_slot: None,
+    };
+    let inserted_item = ctx.db.inventory_item().insert(new_item);
+    let new_instance_id = inserted_item.instance_id;
+
+    log::info!(
+        "[SplitStack Helper] Split {} from item {}. New stack ID: {}. Original stack qty: {}.",
+        quantity_to_split, source_item.instance_id, new_instance_id, source_item.quantity
+    );
+
+    Ok(new_instance_id)
+}
+
+// --- UNCOMMENTED Original Split Stack Reducer ---
+
 #[spacetimedb::reducer]
 pub fn split_stack(
     ctx: &ReducerContext,
@@ -976,7 +1037,8 @@ pub fn split_stack(
     target_slot_type: String,    // "inventory" or "hotbar"
     target_slot_index: u32,    // Use u32 to accept both potential u8/u16 client values easily
 ) -> Result<(), String> {
-    let sender_id = ctx.sender;
+    // Logic of the original reducer restored
+     let sender_id = ctx.sender;
     log::info!(
         "[SplitStack] Player {:?} attempting to split {} from item {} to {} slot {}",
         sender_id, quantity_to_split, source_item_instance_id, target_slot_type, target_slot_index
@@ -1057,14 +1119,118 @@ pub fn split_stack(
     Ok(())
 }
 
+// --- NEW: Split Stack From Campfire Reducer ---
+
+#[spacetimedb::reducer]
+pub fn split_stack_from_campfire(
+    ctx: &ReducerContext,
+    source_campfire_id: u32,
+    source_slot_index: u8,
+    quantity_to_split: u32,
+    target_slot_type: String, // "inventory" or "hotbar"
+    target_slot_index: u32,   // Index for inventory/hotbar
+) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let mut inventory_items = ctx.db.inventory_item();
+    let campfires = ctx.db.campfire();
+
+    log::info!("[SplitFromCampfire] Player {:?} splitting {} from campfire {} slot {} to {} slot {}",
+             sender_id, quantity_to_split, source_campfire_id, source_slot_index, target_slot_type, target_slot_index);
+
+    // 1. Validate source slot index
+    if source_slot_index >= crate::campfire::NUM_FUEL_SLOTS as u8 {
+        return Err(format!("Invalid source fuel slot index: {}", source_slot_index));
+    }
+
+    // 2. Find source campfire
+    let campfire = campfires.id().find(source_campfire_id)
+        .ok_or(format!("Source campfire {} not found", source_campfire_id))?;
+
+    // 3. Find the item instance ID in the source campfire slot
+    let source_instance_id = match source_slot_index {
+        0 => campfire.fuel_instance_id_0,
+        1 => campfire.fuel_instance_id_1,
+        2 => campfire.fuel_instance_id_2,
+        3 => campfire.fuel_instance_id_3,
+        4 => campfire.fuel_instance_id_4,
+        _ => None,
+    }.ok_or(format!("No item found in source campfire slot {}", source_slot_index))?;
+
+    // 4. Get the source item (mutable needed for split_stack helper)
+    let mut source_item = inventory_items.instance_id().find(source_instance_id)
+        .ok_or("Source item instance not found in inventory table")?;
+
+    // 5. Validate split quantity (using info from mutable source_item)
+    if quantity_to_split == 0 || quantity_to_split >= source_item.quantity {
+        return Err(format!("Invalid split quantity {} (must be > 0 and < {})", quantity_to_split, source_item.quantity));
+    }
+    
+    // --- Validate Target --- (Similar to move reducers, simplified here)
+    let target_is_inventory = match target_slot_type.as_str() {
+        "inventory" => true,
+        "hotbar" => false,
+        _ => return Err(format!("Invalid target slot type: {}", target_slot_type)),
+    };
+    if target_is_inventory && target_slot_index >= 24 { return Err("Invalid target inventory slot".to_string()); }
+    if !target_is_inventory && target_slot_index >= 6 { return Err("Invalid target hotbar slot".to_string()); }
+
+    // --- Check Target Occupancy (Simplified - No Merge/Swap for split target yet) ---
+    let target_inv_slot_check = if target_is_inventory { Some(target_slot_index as u16) } else { None };
+    let target_hotbar_slot_check = if !target_is_inventory { Some(target_slot_index as u8) } else { None };
+    let target_occupied = inventory_items.iter().any(|i| {
+        i.player_identity == sender_id &&
+        ((target_is_inventory && i.inventory_slot == target_inv_slot_check) ||
+         (!target_is_inventory && i.hotbar_slot == target_hotbar_slot_check))
+    });
+    if target_occupied {
+        return Err(format!("Target {} slot {} is already occupied (merging split not implemented yet).", target_slot_type, target_slot_index));
+    }
+
+    // --- Perform Split --- 
+    // Call the RENAMED helper (updates original source_item quantity and DB row)
+    let new_item_instance_id = split_stack_helper(ctx, &mut source_item, quantity_to_split)?;
+
+    // --- Place NEW Item --- 
+    // Get the newly created item instance
+    let mut new_item = inventory_items.instance_id().find(new_item_instance_id)
+                     .ok_or("Newly split item instance not found!")?;
+                     
+    // Assign ownership (should already be correct, but good practice) and location
+    new_item.player_identity = sender_id; 
+    if target_is_inventory {
+        new_item.inventory_slot = Some(target_slot_index as u16);
+        new_item.hotbar_slot = None;
+    } else {
+        new_item.inventory_slot = None;
+        new_item.hotbar_slot = Some(target_slot_index as u8);
+    }
+    inventory_items.instance_id().update(new_item);
+
+    log::info!("[SplitFromCampfire] Split successful. New item {} (qty {}) placed in {} slot {}.", 
+             new_item_instance_id, quantity_to_split, target_slot_type, target_slot_index);
+
+    Ok(())
+}
+
+// --- Re-Add missing Reducer ---
 // NEW Reducer: Moves an item to the first available hotbar slot
 #[spacetimedb::reducer]
 pub fn move_to_first_available_hotbar_slot(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), String> {
     let sender_id = ctx.sender;
-    log::info!("[MoveToHotbar] Player {:?} trying to move item {} to first available hotbar slot.", sender_id, item_instance_id);
+    log::info!("[MoveToFirstAvailHotbar] Player {:?} trying to move item {} to first available hotbar slot.", sender_id, item_instance_id);
 
     // 1. Validate item exists and belongs to player (get_player_item does this)
-    let _item_to_move = get_player_item(ctx, item_instance_id)?;
+    // Need to get the item to check its current location
+    let item_to_move = get_player_item(ctx, item_instance_id)?;
+    // Check if it's already in the hotbar
+    if item_to_move.hotbar_slot.is_some() {
+        return Err("Item is already in the hotbar.".to_string());
+    }
+    // Check if it's in the inventory (must be to move to hotbar like this)
+    if item_to_move.inventory_slot.is_none() {
+        return Err("Item must be in main inventory to move to hotbar this way.".to_string());
+    }
+
 
     // 2. Find the first empty hotbar slot (0-5)
     let occupied_slots: std::collections::HashSet<u8> = ctx.db.inventory_item().iter()
@@ -1074,12 +1240,12 @@ pub fn move_to_first_available_hotbar_slot(ctx: &ReducerContext, item_instance_i
 
     match (0..6).find(|slot| !occupied_slots.contains(slot)) {
         Some(empty_slot) => {
-            log::info!("[MoveToHotbar] Found empty slot: {}. Calling move_item_to_hotbar.", empty_slot);
+            log::info!("[MoveToFirstAvailHotbar] Found empty slot: {}. Calling move_item_to_hotbar.", empty_slot);
             // 3. Call the existing move_item_to_hotbar reducer
             move_item_to_hotbar(ctx, item_instance_id, empty_slot)
         }
         None => {
-            log::warn!("[MoveToHotbar] No empty hotbar slots available for player {:?}.", sender_id);
+            log::warn!("[MoveToFirstAvailHotbar] No empty hotbar slots available for player {:?}.", sender_id);
             Err("No empty hotbar slots available.".to_string())
         }
     }

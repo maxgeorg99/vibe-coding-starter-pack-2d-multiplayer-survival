@@ -132,34 +132,41 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
         }
     }
 
-    // --- Right Click Handler ---
+    // --- Right Click Handler (Inventory) ---
     const handleInventoryItemContextMenu = (event: React.MouseEvent<HTMLDivElement>, itemInfo: PopulatedItem) => {
-        console.log("[InventoryUI] Context menu handler called for:", itemInfo?.definition?.name);
+        console.log("[InventoryUI] Context menu on:", itemInfo?.definition?.name);
         if (!connection?.reducers || !itemInfo) return;
 
         const itemInstanceId = BigInt(itemInfo.instance.instanceId);
 
-        // Check if the item category is Armor
-        if (itemInfo.definition.category.tag === 'Armor') {
-            console.log(`[InventoryUI] Item is Armor. Calling equip_armor for item ${itemInstanceId}`);
+        // --- NEW: Check for Campfire interaction + Wood --- 
+        if (isCampfireInteraction && campfireIdNum !== null && itemInfo.definition.name === 'Wood') {
+             console.log(`[InventoryUI ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling add_wood_to_first_available_campfire_slot...`);
             try {
-                // Call the new reducer for armor
+                connection.reducers.addWoodToFirstAvailableCampfireSlot(campfireIdNum, itemInstanceId);
+                // No further action needed here, backend handles moving the item
+            } catch (error: any) {
+                console.error("[InventoryUI ContextMenu] Failed to call add_wood_to_first_available_campfire_slot reducer:", error);
+                // TODO: Show user feedback? (e.g., "Campfire full")
+            }
+            return; // Stop processing this context menu event
+        }
+        // --- END NEW Check --- 
+
+        // --- Existing Armor/Hotbar Logic --- 
+        if (itemInfo.definition.category.tag === 'Armor') {
+            console.log(`[InventoryUI ContextMenu] Item is Armor. Calling equip_armor for item ${itemInstanceId}`);
+            try {
                 connection.reducers.equipArmor(itemInstanceId);
             } catch (error: any) {
-                console.error("[InventoryUI] Failed to call equipArmor reducer:", error);
-                // Optionally show user message using error.message
+                console.error("[InventoryUI ContextMenu] Failed to call equipArmor reducer:", error);
             }
-        }
-        // Otherwise (Tool, Material, Placeable, etc.) try equipping to hotbar
-        else {
-            // We removed the isEquippable check here, let the backend reducer handle it
-            console.log(`[InventoryUI] Item is not Armor. Calling move_to_first_available_hotbar_slot for item ${itemInstanceId}`);
+        } else {
+            console.log(`[InventoryUI ContextMenu] Item is not Armor/Wood-in-Campfire-Context. Calling move_to_first_available_hotbar_slot for item ${itemInstanceId}`);
             try {
-                // Call the correct reducer - it finds the first available slot itself
                 connection.reducers.moveToFirstAvailableHotbarSlot(itemInstanceId);
             } catch (error: any) {
-                console.error("[InventoryUI] Failed to call moveToFirstAvailableHotbarSlot reducer:", error);
-                // Optionally show user message using error.message
+                console.error("[InventoryUI ContextMenu] Failed to call moveToFirstAvailableHotbarSlot reducer:", error);
             }
         }
     };

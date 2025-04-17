@@ -36,6 +36,7 @@ import { itemIcons } from '../utils/itemIconUtils';
 import { renderEquippedItem } from '../utils/equippedItemRenderingUtils';
 // Import the reducer function type if needed (optional but good practice)
 // import { requestRespawn } from '../generated'; // Removed - Not needed for callReducer by string
+import { drawInteractionIndicator } from '../utils/interactionIndicator'; // Import drawing function
 
 // Threshold for movement animation (position delta)
 const MOVEMENT_POSITION_THRESHOLD = 0.1; // Small threshold to account for float precision
@@ -55,12 +56,11 @@ const CAMPFIRE_LIGHT_OUTER_COLOR = 'rgba(255, 100, 0, 0.0)';  // Fade to transpa
 const CAMPFIRE_WIDTH_PREVIEW = 64;
 const CAMPFIRE_HEIGHT_PREVIEW = 64;
 
-const SWING_DURATION_MS = 300; // Duration of the item swing animation - REMOVED (now in util)
-const SWING_ANGLE_MAX_RAD = Math.PI / 2.5; // Maximum angle during swing (approx 72 degrees) - REMOVED (now in util)
-
 // --- Interaction Constants ---
 const PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
 const PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
+
+const HOLD_INTERACTION_DURATION_MS = 250; // Time to hold E for inventory (halved)
 
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
@@ -229,6 +229,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const isInputDisabled = useRef<boolean>(false); // Ref to track input disable state
   const closestInteractableMushroomIdRef = useRef<bigint | null>(null); // Ref for nearby mushroom ID
   const closestInteractableCampfireIdRef = useRef<number | null>(null); // Ref for nearby campfire ID (u32 maps to number)
+  const isEHeldDownRef = useRef<boolean>(false);
+  const eKeyDownTimestampRef = useRef<number>(0);
+  const eKeyHoldTimerRef = useRef<number | null>(null);
+  const [interactionProgress, setInteractionProgress] = useState<{ targetId: number | bigint | null; startTime: number } | null>(null);
 
   const animationFrame = useAnimationCycle(ANIMATION_INTERVAL_MS, 4);
 
@@ -342,33 +346,44 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       // Handle interaction key ('e')
-      if (key === 'e' && !e.repeat) {
-        // Prioritize campfire interaction if available
-        const closestCampfireId = closestInteractableCampfireIdRef.current; // Read ref value
-        if (closestCampfireId !== null && connection?.reducers) {
-          console.log(`Attempting to interact with campfire: ${closestCampfireId}`);
-          try {
-            // Call the campfire interaction reducer (currently just proximity check)
-            connection.reducers.interactWithCampfire(closestCampfireId);
-            // Set the interaction state in App.tsx to open the inventory
-            onSetInteractingWith({ type: 'campfire', id: closestCampfireId }); 
-          } catch (err) {
-            console.error("Error calling interactWithCampfire reducer:", err);
+      if (key === 'e' && !e.repeat && !isEHeldDownRef.current) {
+        const closestCampfireId = closestInteractableCampfireIdRef.current;
+        if (closestCampfireId !== null) {
+          console.log(`E key down near campfire ${closestCampfireId}`);
+          isEHeldDownRef.current = true;
+          eKeyDownTimestampRef.current = Date.now();
+          setInteractionProgress({ targetId: closestCampfireId, startTime: Date.now() }); // Start visual indicator
+
+          // Clear any existing timer before setting a new one
+          if (eKeyHoldTimerRef.current) {
+            clearTimeout(eKeyHoldTimerRef.current);
           }
+
+          // Set timer for hold action
+          eKeyHoldTimerRef.current = setTimeout(() => {
+            if (isEHeldDownRef.current) { // Check if still held
+              console.log(`E key held long enough for campfire ${closestCampfireId}, opening inventory.`);
+              onSetInteractingWith({ type: 'campfire', id: closestCampfireId }); 
+              // Reset state AFTER triggering action
+              isEHeldDownRef.current = false;
+              setInteractionProgress(null);
+              eKeyHoldTimerRef.current = null;
+            }
+          }, HOLD_INTERACTION_DURATION_MS);
+          // Do NOT call other reducers here anymore
+          return; // Prevent adding 'e' to keysPressed for movement
         }
-        // Else, check for mushroom interaction
+         // --- Handle Mushroom Interaction (Immediate) ---
         else {
             const closestMushroomId = closestInteractableMushroomIdRef.current;
             if (closestMushroomId !== null && connection?.reducers) {
-                console.log(`Attempting to interact with mushroom: ${closestMushroomId}`);
+                console.log(`E key down near mushroom ${closestMushroomId}`);
                 try {
-                    // Use the BigInt ID directly
                     connection.reducers.interactWithMushroom(closestMushroomId);
-                    // Note: No inventory opening for mushrooms currently
-                    // onSetInteractingWith({ type: 'mushroom', id: closestMushroomId }); 
                 } catch (err) {
                     console.error("Error calling interactWithMushroom reducer:", err);
                 }
+                 return; // Prevent adding 'e' to keysPressed
             }
         }
       }
@@ -388,6 +403,44 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
       keysPressed.current.delete(key);
+
+      // --- 'E' Key Up Logic ---
+      if (key === 'e') {
+          if (isEHeldDownRef.current) {
+              console.log("E key up");
+              isEHeldDownRef.current = false;
+              // Clear the hold timer if it exists
+              if (eKeyHoldTimerRef.current) {
+                  clearTimeout(eKeyHoldTimerRef.current);
+                  eKeyHoldTimerRef.current = null;
+              }
+              // Always hide indicator on key up
+              setInteractionProgress(null);
+              
+              const closestCampfireId = closestInteractableCampfireIdRef.current;
+              if (closestCampfireId !== null) {
+                  const holdDuration = Date.now() - eKeyDownTimestampRef.current;
+                  console.log(`E hold duration: ${holdDuration}ms`);
+                  
+                  // If held for less than the threshold, trigger toggle
+                  if (holdDuration < HOLD_INTERACTION_DURATION_MS) {
+                       if(connection?.reducers) {
+                           console.log(`E key tapped near campfire ${closestCampfireId}, toggling burn state.`);
+                           try {
+                              connection.reducers.toggleCampfireBurning(closestCampfireId);
+                           } catch (err) {
+                               console.error("Error calling toggleCampfireBurning reducer:", err);
+                           }
+                       } else {
+                           console.warn("Cannot toggle campfire: Connection or reducers unavailable.");
+                       }
+                  } // Else (hold was long enough), the timeout callback handled opening inventory
+              } 
+              // Reset timestamp just in case
+              eKeyDownTimestampRef.current = 0; 
+          }
+      }
+      // --- End 'E' Key Up Logic ---
     };
 
     // --- Placement Click Listener ---
@@ -962,6 +1015,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const screenY = fire.posY + cameraOffsetY;
         // Pass the isBurning state from the campfire data
         renderCampfire(ctx, screenX, screenY, fire.isBurning);
+
+        // --- NEW: Draw Interaction Indicator --- 
+        if (interactionProgress && interactionProgress.targetId === fire.id) {
+            const interactionDuration = Date.now() - interactionProgress.startTime;
+            const progressPercent = Math.min(interactionDuration / HOLD_INTERACTION_DURATION_MS, 1);
+            // Use the helper function to draw the indicator above the campfire
+            drawInteractionIndicator(ctx, screenX, screenY - CAMPFIRE_HEIGHT / 2 - 15, progressPercent);
+        }
+        // --- End Interaction Indicator --- 
     });
 
     // 4. Draw Campfire Light Glow (Additively)
@@ -1015,7 +1077,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       placementError,
       activeEquipments,
       itemDefinitions,
-      onSetInteractingWith
+      onSetInteractingWith,
+      interactionProgress
     ]);
 
   const gameLoop = useCallback(() => {
