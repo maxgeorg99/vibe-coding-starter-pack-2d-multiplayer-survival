@@ -1,0 +1,118 @@
+---
+description: Guide for adding new deployable items (e.g., structures, placeables) to the world.
+globs: 
+alwaysApply: false
+---
+# Guide: Adding New Deployable Items
+
+This guide outlines the steps required to add new items that players can place in the game world, such as structures, crafting stations, or containers. Refer to the implementation of `Campfire` (@/server/src/campfire.rs, @/client/src/utils/campfireRenderingUtils.ts) and `WoodenStorageBox` (@/server/src/wooden_storage_box.rs, @/client/src/utils/woodenStorageBoxRenderingUtils.ts) as examples.
+
+Also consult the main architecture guide @/guide.mdc for core patterns.
+
+## Overview
+
+Adding a deployable involves server-side logic (defining the item, the placed entity, and the placement action) and client-side integration (handling placement mode, rendering the entity).
+
+## Server-Side Implementation (`server/src/`)
+
+1.  **Define Placed Entity Table:**
+    *   Create a new Rust file (e.g., `new_deployable.rs`).
+    *   Define a struct representing the placed entity (e.g., `NewDeployable`).
+    *   Annotate the struct with `#[spacetimedb::table(name = new_deployable, public)]`.
+        *   Use snake_case for the `name`.
+        *   Include `public` if clients need to see it directly.
+    *   Add `#[derive(Clone)]`.
+    *   Define fields: `#[primary_key] #[auto_inc] pub id: u32`, `pub pos_x: f32`, `pub pos_y: f32`, `pub placed_by: Identity`, and any other state.
+    *   **Collision (Optional):** If the item should have collision:
+        *   Define `pub(crate)` constants within the module (e.g., `DEPLOYABLE_COLLISION_RADIUS`, `DEPLOYABLE_COLLISION_Y_OFFSET`, `PLAYER_DEPLOYABLE_COLLISION_DISTANCE_SQUARED`). See `wooden_storage_box.rs` for examples.
+
+2.  **Implement Placement Reducer:**
+    *   In the same file (`new_deployable.rs`), create a reducer function (e.g., `place_new_deployable`).
+    *   Annotate with `#[spacetimedb::reducer]`, taking `ctx: &ReducerContext`, `world_x: f32`, `world_y: f32`.
+    *   **Logic:**
+        *   Get the sender `Identity` (`ctx.sender`).
+        *   Get necessary table handles (`ctx.db.item_definition()`, `ctx.db.inventory_item()`, `ctx.db.new_deployable()`, etc.).
+        *   Find the `ItemDefinition` for the deployable item by name.
+        *   Find an instance of the item in the player's inventory/hotbar.
+        *   Validate placement distance (check against `player` position).
+        *   **Collision (Optional):** Validate placement position against other entities (players, trees, stones, campfires, *other deployables*). See `lib.rs::register_player` and `lib.rs::place_campfire` for collision check examples.
+        *   Consume the `InventoryItem` (delete it).
+        *   Insert the new entity into the `new_deployable` table.
+
+3.  **Define Deployable Item:**
+    *   In `@/server/src/items.rs`, within the `seed_items` function's `initial_items` vector:
+        *   Add an `ItemDefinition` entry for the deployable item.
+        *   Set `category: ItemCategory::Placeable`.
+        *   Define `icon_asset_name` (e.g., `"new_deployable.png"`) - this MUST match the client asset.
+        *   Set `is_stackable: false`, `stack_size: 1`.
+        *   Set `is_equippable: false`.
+
+4.  **Grant Starting Item (Optional):**
+    *   In `@/server/src/starting_items.rs`, within the `grant_starting_items` function:
+        *   If players should start with this item, add an entry to the `starting_inv_items` array:
+            *   `("New Deployable Name", 1, Some(slot_index_u8), None)` for hotbar (slot 0-5).
+            *   `("New Deployable Name", 1, None, Some(slot_index_u16))` for inventory.
+
+5.  **Add Module to `lib.rs`:**
+    *   Declare the new module: `mod new_deployable;`
+    *   Import the table trait if needed elsewhere: `use crate::new_deployable::new_deployable as NewDeployableTableTrait;`
+    *   **Collision (If Added):**
+        *   Add the table handle `let new_deployables = ctx.db.new_deployable();` in `register_player` and `update_player_position`.
+        *   Add collision check loops in `register_player` spawn logic and `update_player_position` movement logic (both sliding check and iterative resolution). Reference the loops for trees/stones/boxes.
+
+## Client-Side Implementation (`client/src/`)
+
+1.  **Create Icon Asset:**
+    *   Place the deployable item's icon (e.g., `new_deployable.png`) in `@/client/src/assets/items/`.
+    *   Place the deployable entity's world sprite (e.g., `new_deployable_sprite.png`) in `@/client/src/assets/doodads/`.
+
+2.  **Map Item Icon:**
+    *   In `@/client/src/utils/itemIconUtils.ts`:
+        *   Import the icon asset: `import newDeployableIcon from '../assets/items/new_deployable.png';`
+        *   Add an entry to `iconMap`: `'new_deployable.png': newDeployableIcon,`
+
+3.  **Create Rendering Utility:**
+    *   Create `@/client/src/utils/newDeployableRenderingUtils.ts`.
+    *   Implement `preloadNewDeployableImage()` and `renderNewDeployable()` functions, referencing `campfireRenderingUtils.ts` or `woodenStorageBoxRenderingUtils.ts`.
+        *   Import the doodad sprite.
+        *   Define width/height constants.
+        *   Include `drawShadow()` from `@/client/src/utils/shadowUtils.ts`.
+
+4.  **Handle Placement Activation:**
+    *   In `@/client/src/components/Hotbar.tsx`:
+        *   The existing check for `categoryTag === 'Placeable'` in `handleKeyDown` and `handleSlotClick` should automatically trigger `startPlacement` for your new item.
+    *   In `@/client/src/hooks/usePlacementManager.ts`:
+        *   Add a `case "New Deployable Name":` to the `switch` statement in `attemptPlacement`.
+        *   Call the corresponding placement reducer: `connection.reducers.placeNewDeployable(worldX, worldY);`.
+
+5.  **Integrate Rendering:**
+    *   In `@/client/src/components/GameCanvas.tsx`:
+        *   Import the type: `import { NewDeployable as SpacetimeDBNewDeployable } from '../generated';`
+        *   Import the rendering utils: `import { renderNewDeployable, preloadNewDeployableImage } from '../utils/newDeployableRenderingUtils.ts';`
+        *   Add the prop: `newDeployables: Map<string, SpacetimeDBNewDeployable>;` to `GameCanvasProps`.
+        *   Call `preloadNewDeployableImage()` in the initial `useEffect` hook.
+        *   Define a type guard `isNewDeployable(entity: any): entity is SpacetimeDBNewDeployable`.
+        *   Determine render layer:
+            *   **Ground Item (No Collision/Y-Sort):** Add type to `groundItems` array, add `forEach` loop to push data, add `else if (isNewDeployable(entity))` block in the `groundItems.forEach` loop to call `renderNewDeployable`.
+            *   **Y-Sorted Item (With Collision):** Add type to `ySortableEntities` array, add `forEach` loop to push data, update the sort function to handle `isNewDeployable` and use `.posY`, add `else if (isNewDeployable(entity))` block in the `ySortableEntities.forEach` loop to call `renderNewDeployable`.
+        *   Add `newDeployables` to the dependency array of the `renderGame` `useCallback`.
+
+6.  **Manage State & Subscription:**
+    *   In `@/client/src/App.tsx`:
+        *   Add state: `const [newDeployables, setNewDeployables] = useState<Map<string, SpacetimeDBNewDeployable>>(new Map());`
+        *   Import the type: `import { NewDeployable as SpacetimeDBNewDeployable } from './generated';`
+        *   Add subscription variable `let newDeployableSubscription: any = null;`
+        *   Add callbacks (`handleNewDeployableInsert`, `Update`, `Delete`) similar to other tables.
+            *   Crucially, in `handleNewDeployableInsert`, check if the `placedBy` matches the local player and if `placementInfoRef.current?.itemName` matches the new item name. If so, call `cancelPlacementActionRef.current();`.
+        *   Register the callbacks `connection.db.newDeployable.onInsert(...)`, etc.
+        *   Add the subscription: `.subscribe('SELECT * FROM new_deployable');`
+        *   Add cleanup for listeners and subscription.
+        *   Pass the state down: `newDeployables={newDeployables}` to `GameCanvas`.
+
+## Example AI Prompt
+
+"Please add a new deployable item called 'Large Wooden Box'.
+
+1.  **Server:** Create `large_wooden_box.rs`, define the `LargeWoodenBox` table struct (like `WoodenStorageBox` but maybe different dimensions later) with collision constants (Radius 24, Y-Offset 12). Implement the `place_large_wooden_box` reducer. Add the 'Large Wooden Box' `ItemDefinition` in `items.rs` (icon: `large_wooden_box.png`). Modify `lib.rs` to add the module and collision checks.
+2.  **Client:** Add `large_wooden_box.png` to `assets/items` and `large_wooden_box_sprite.png` to `assets/doodads`. Update `itemIconUtils.ts`. Create `largeWoodenBoxRenderingUtils.ts` (render size 80x80). Update `usePlacementManager.ts` to call the new reducer. Update `GameCanvas.tsx` to import, preload, define type guard, render as a Y-Sorted item, and accept the prop. Update `App.tsx` to manage state and subscribe to the `large_wooden_box` table, passing the prop to `GameCanvas`."
+""
