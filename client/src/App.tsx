@@ -329,8 +329,18 @@ function App() {
             const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
             if (isNaN(targetIndexNum)) { console.error("Invalid inventory index", targetSlot.index); return; }
             
-            // <<< NEW: Check source type >>>
-            if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
+            // Check source type
+            if (sourceInfo.sourceSlot.type === 'campfire_fuel') {
+                const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                if (sourceCampfireId === null || isNaN(sourceIndexNum)) { 
+                    console.error("[App Drop] Missing CampfireID or SourceIndex for move FROM campfire"); 
+                    setError("Could not determine source campfire slot for move.");
+                    return; 
+                }
+                console.log(`[App Drop] Calling moveFuelItemToPlayerSlot (to inventory) for campfire ${sourceCampfireId} slot ${sourceIndexNum}`);
+                connection.reducers.moveFuelItemToPlayerSlot(sourceCampfireId, sourceIndexNum, targetSlot.type, targetIndexNum);
+            } else if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
                 const sourceBoxId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
                 const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
                  if (sourceBoxId === null || isNaN(sourceIndexNum)) { 
@@ -350,8 +360,18 @@ function App() {
             const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
             if (isNaN(targetIndexNum)) { console.error("Invalid hotbar index", targetSlot.index); return; }
 
-            // <<< NEW: Check source type >>>
-            if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
+            // Check source type
+            if (sourceInfo.sourceSlot.type === 'campfire_fuel') {
+                const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                 if (sourceCampfireId === null || isNaN(sourceIndexNum)) { 
+                    console.error("[App Drop] Missing CampfireID or SourceIndex for move FROM campfire"); 
+                    setError("Could not determine source campfire slot for move.");
+                    return; 
+                 }
+                 console.log(`[App Drop] Calling moveFuelItemToPlayerSlot (to hotbar) for campfire ${sourceCampfireId} slot ${sourceIndexNum}`);
+                 connection.reducers.moveFuelItemToPlayerSlot(sourceCampfireId, sourceIndexNum, targetSlot.type, targetIndexNum);
+            } else if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
                 const sourceBoxId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
                 const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
                  if (sourceBoxId === null || isNaN(sourceIndexNum)) { 

@@ -1014,6 +1014,85 @@ pub fn add_wood_to_first_available_campfire_slot(
     }
 }
 
+// --- NEW: Move Fuel Item to Player Slot Reducer --- 
+
+#[spacetimedb::reducer]
+pub fn move_fuel_item_to_player_slot(
+    ctx: &ReducerContext,
+    campfire_id: u32,
+    source_slot_index: u8,
+    target_slot_type: String,
+    target_slot_index: u32, // u32 to match client flexibility
+) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let mut campfires = ctx.db.campfire();
+    // Inventory items table needed for move functions
+    let inventory_items = ctx.db.inventory_item(); 
+
+    log::info!(
+        "[MoveFuelToPlayer] Player {:?} moving fuel from campfire {} slot {} to {} slot {}",
+        sender_id, campfire_id, source_slot_index, target_slot_type, target_slot_index
+    );
+
+    // 1. Validate source slot index
+    if source_slot_index >= NUM_FUEL_SLOTS as u8 {
+        return Err(format!("Invalid source fuel slot index: {}", source_slot_index));
+    }
+
+    // 2. Find Campfire
+    let mut campfire = campfires.id().find(campfire_id)
+        .ok_or(format!("Campfire {} not found", campfire_id))?;
+
+    // 3. Get the instance ID from the source slot
+    let fuel_instance_id = match source_slot_index {
+        0 => campfire.fuel_instance_id_0,
+        1 => campfire.fuel_instance_id_1,
+        2 => campfire.fuel_instance_id_2,
+        3 => campfire.fuel_instance_id_3,
+        4 => campfire.fuel_instance_id_4,
+        _ => None,
+    }.ok_or(format!("No fuel item in campfire slot {} to move", source_slot_index))?;
+
+    // 4. Call the appropriate move function from items.rs
+    let move_result = match target_slot_type.as_str() {
+        "inventory" => {
+            if target_slot_index >= 24 { return Err("Invalid inventory target index".to_string()); }
+            crate::items::move_item_to_inventory(ctx, fuel_instance_id, target_slot_index as u16)
+        },
+        "hotbar" => {
+            if target_slot_index >= 6 { return Err("Invalid hotbar target index".to_string()); }
+            crate::items::move_item_to_hotbar(ctx, fuel_instance_id, target_slot_index as u8)
+        },
+        _ => Err(format!("Invalid target slot type '{}'", target_slot_type)),
+    };
+
+    // 5. If move was successful, clear the source slot in the campfire
+    if move_result.is_ok() {
+        log::info!(
+            "[MoveFuelToPlayer] Move successful. Clearing campfire {} slot {}.",
+            campfire_id, source_slot_index
+        );
+        match source_slot_index {
+            0 => { campfire.fuel_instance_id_0 = None; campfire.fuel_def_id_0 = None; },
+            1 => { campfire.fuel_instance_id_1 = None; campfire.fuel_def_id_1 = None; },
+            2 => { campfire.fuel_instance_id_2 = None; campfire.fuel_def_id_2 = None; },
+            3 => { campfire.fuel_instance_id_3 = None; campfire.fuel_def_id_3 = None; },
+            4 => { campfire.fuel_instance_id_4 = None; campfire.fuel_def_id_4 = None; },
+            _ => {} // Should not happen
+        }
+        // Update campfire state AFTER clearing the slot
+        campfires.id().update(campfire);
+    } else {
+        // Log error if move failed, but return the original error from move_result
+        log::error!(
+            "[MoveFuelToPlayer] Failed to move fuel item {} to player slot: {:?}. Campfire slot {} unchanged.",
+            fuel_instance_id, move_result.as_ref().err(), source_slot_index
+        );
+    }
+
+    move_result // Return the actual result of the move operation
+}
+
 // --- Init Helper --- 
 pub(crate) fn init_campfire_fuel_schedule(ctx: &ReducerContext) -> Result<(), String> {
     let schedule_table = ctx.db.campfire_fuel_check_schedule(); 

@@ -68,6 +68,8 @@ import { InteractWithStorageBox } from "./interact_with_storage_box_reducer.ts";
 export { InteractWithStorageBox };
 import { Jump } from "./jump_reducer.ts";
 export { Jump };
+import { MoveFuelItemToPlayerSlot } from "./move_fuel_item_to_player_slot_reducer.ts";
+export { MoveFuelItemToPlayerSlot };
 import { MoveFuelWithinCampfire } from "./move_fuel_within_campfire_reducer.ts";
 export { MoveFuelWithinCampfire };
 import { MoveItemFromBox } from "./move_item_from_box_reducer.ts";
@@ -338,6 +340,10 @@ const REMOTE_MODULE = {
       reducerName: "jump",
       argsType: Jump.getTypeScriptAlgebraicType(),
     },
+    move_fuel_item_to_player_slot: {
+      reducerName: "move_fuel_item_to_player_slot",
+      argsType: MoveFuelItemToPlayerSlot.getTypeScriptAlgebraicType(),
+    },
     move_fuel_within_campfire: {
       reducerName: "move_fuel_within_campfire",
       argsType: MoveFuelWithinCampfire.getTypeScriptAlgebraicType(),
@@ -511,6 +517,7 @@ export type Reducer = never
 | { name: "InteractWithMushroom", args: InteractWithMushroom }
 | { name: "InteractWithStorageBox", args: InteractWithStorageBox }
 | { name: "Jump", args: Jump }
+| { name: "MoveFuelItemToPlayerSlot", args: MoveFuelItemToPlayerSlot }
 | { name: "MoveFuelWithinCampfire", args: MoveFuelWithinCampfire }
 | { name: "MoveItemFromBox", args: MoveItemFromBox }
 | { name: "MoveItemToBox", args: MoveItemToBox }
@@ -810,6 +817,22 @@ export class RemoteReducers {
 
   removeOnJump(callback: (ctx: ReducerEventContext) => void) {
     this.connection.offReducer("jump", callback);
+  }
+
+  moveFuelItemToPlayerSlot(campfireId: number, sourceSlotIndex: number, targetSlotType: string, targetSlotIndex: number) {
+    const __args = { campfireId, sourceSlotIndex, targetSlotType, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    MoveFuelItemToPlayerSlot.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_fuel_item_to_player_slot", __argsBuffer, this.setCallReducerFlags.moveFuelItemToPlayerSlotFlags);
+  }
+
+  onMoveFuelItemToPlayerSlot(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.onReducer("move_fuel_item_to_player_slot", callback);
+  }
+
+  removeOnMoveFuelItemToPlayerSlot(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.offReducer("move_fuel_item_to_player_slot", callback);
   }
 
   moveFuelWithinCampfire(campfireId: number, sourceSlotIndex: number, targetSlotIndex: number) {
@@ -1381,6 +1404,11 @@ export class SetReducerFlags {
   jumpFlags: CallReducerFlags = 'FullUpdate';
   jump(flags: CallReducerFlags) {
     this.jumpFlags = flags;
+  }
+
+  moveFuelItemToPlayerSlotFlags: CallReducerFlags = 'FullUpdate';
+  moveFuelItemToPlayerSlot(flags: CallReducerFlags) {
+    this.moveFuelItemToPlayerSlotFlags = flags;
   }
 
   moveFuelWithinCampfireFlags: CallReducerFlags = 'FullUpdate';

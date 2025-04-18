@@ -637,6 +637,14 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
             },
             Err(_) => {
                 // Merge Failed: Swap
+                // Check if the source item is a newly split stack (no original slot)
+                if item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none() {
+                    // This is likely a split stack being dropped onto an incompatible item.
+                    log::warn!("[MoveInv Swap] Cannot place split stack {} onto incompatible item {} in inv slot {}. Aborting.", 
+                             item_instance_id, target_item.instance_id, target_inventory_slot);
+                    return Err(format!("Cannot place split stack onto incompatible item in slot {}.", target_inventory_slot));
+                }
+                // Otherwise, proceed with the normal swap logic
                 log::info!("[MoveInv Swap] Cannot merge. Swapping inv slot {} (item {}) with source item {}.", 
                          target_inventory_slot, target_item.instance_id, item_instance_id);
                 
@@ -732,6 +740,14 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
             },
             Err(_) => {
                 // Merge Failed: Swap
+                // Check if the source item is a newly split stack (no original slot)
+                if item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none() {
+                    // This is likely a split stack being dropped onto an incompatible item.
+                     log::warn!("[MoveHotbar Swap] Cannot place split stack {} onto incompatible item {} in hotbar slot {}. Aborting.", 
+                              item_instance_id, target_item.instance_id, target_hotbar_slot);
+                    return Err(format!("Cannot place split stack onto incompatible item in hotbar slot {}.", target_hotbar_slot));
+                }
+                // Otherwise, proceed with the normal swap logic
                 log::info!("[MoveHotbar Swap] Cannot merge. Swapping hotbar slot {} (item {}) with source item {}.", 
                          target_hotbar_slot, target_item.instance_id, item_instance_id);
                 
