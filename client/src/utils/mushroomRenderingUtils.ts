@@ -1,6 +1,7 @@
 // client/src/utils/mushroomRenderingUtils.ts
 import { Mushroom } from '../generated'; // Import generated Mushroom type
 import mushroomImage from '../assets/doodads/mushroom.png'; // Adjust path if needed
+import { drawShadow } from './shadowUtils'; // Import the shadow utility
 
 // Define image sources map
 export const mushroomImageSources: { [key: string]: string } = {
@@ -57,8 +58,16 @@ export function renderMushroom(ctx: CanvasRenderingContext2D, mushroom: Mushroom
   const drawWidth = TARGET_MUSHROOM_WIDTH_PX;
   const drawHeight = img.naturalHeight * scaleFactor;
 
-  const drawX = mushroom.posX - drawWidth / 2; // Center horizontally
-  const drawY = mushroom.posY - drawHeight; // Draw upwards from position y using scaled height
+  const centerX = mushroom.posX;
+  const baseY = mushroom.posY; // Shadow sits at the base Y coordinate
+  const drawX = centerX - drawWidth / 2; // Top-left corner for image drawing
+  const drawY = baseY - drawHeight; // Draw image upwards from base Y
+
+  // Draw shadow first (small dot/ellipse)
+  const shadowRadiusX = drawWidth * 0.3;
+  const shadowRadiusY = shadowRadiusX * 0.4;
+  const shadowOffsetY = -drawHeight * 0.3; // Push shadow up slightly less (15% of mushroom height)
+  drawShadow(ctx, centerX, baseY + shadowOffsetY, shadowRadiusX, shadowRadiusY);
 
   ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 

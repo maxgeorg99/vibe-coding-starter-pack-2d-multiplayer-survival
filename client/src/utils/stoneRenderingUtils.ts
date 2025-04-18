@@ -1,5 +1,6 @@
 import { Stone } from '../generated'; // Import generated Stone type
 import stoneImage from '../assets/doodads/stone.png'; // Ensure this path is correct
+import { drawShadow } from './shadowUtils'; // Import shadow utility
 
 // Define image source
 const stoneImageSource: string = stoneImage;
@@ -63,10 +64,14 @@ export function renderStone(ctx: CanvasRenderingContext2D, stone: Stone, now_ms:
   const drawWidth = TARGET_STONE_WIDTH_PX; // Set width to target
   const drawHeight = img.naturalHeight * scaleFactor; // Scale height proportionally
 
-  let drawX = stone.posX - drawWidth / 2; // Center horizontally
-  let drawY = stone.posY - drawHeight; // Draw upwards from position y using scaled height
+  const centerX = stone.posX;
+  const baseY = stone.posY; // Shadow sits at the base Y coordinate
+  let drawX = centerX - drawWidth / 2; // Top-left corner for image drawing
+  let drawY = baseY - drawHeight; // Draw image upwards from base Y
 
   // --- Shake Logic (Copied from Tree, adjust intensity) ---
+  let shakeOffsetX = 0;
+  let shakeOffsetY = 0;
   if (stone.lastHitTime) { 
     const lastHitTimeMs = Number(stone.lastHitTime.microsSinceUnixEpoch / 1000n);
     const elapsedSinceHit = now_ms - lastHitTimeMs;
@@ -74,15 +79,24 @@ export function renderStone(ctx: CanvasRenderingContext2D, stone: Stone, now_ms:
     if (elapsedSinceHit >= 0 && elapsedSinceHit < SHAKE_DURATION_MS) {
       const shakeFactor = 1.0 - (elapsedSinceHit / SHAKE_DURATION_MS); 
       const currentShakeIntensity = SHAKE_INTENSITY_PX * shakeFactor;
-      const shakeX = (Math.random() - 0.5) * 2 * currentShakeIntensity;
-      const shakeY = (Math.random() - 0.5) * 2 * currentShakeIntensity;
-      drawX += shakeX;
-      drawY += shakeY;
+      shakeOffsetX = (Math.random() - 0.5) * 2 * currentShakeIntensity;
+      shakeOffsetY = (Math.random() - 0.5) * 2 * currentShakeIntensity;
+      // Apply shake later, after shadow is drawn relative to unshaken position
     }
   }
   // --- End Shake Logic ---
 
-  ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+  // Draw shadow first (relative to unshaken position)
+  const shadowRadiusX = drawWidth * 0.4;
+  const shadowRadiusY = shadowRadiusX * 0.5;
+  const shadowOffsetY = -drawHeight * 0.225; // Push shadow up slightly less (10% of stone height)
+  drawShadow(ctx, centerX, baseY + shadowOffsetY, shadowRadiusX, shadowRadiusY);
+
+  // Apply shake offset for drawing the image
+  const shakenDrawX = drawX + shakeOffsetX;
+  const shakenDrawY = drawY + shakeOffsetY;
+
+  ctx.drawImage(img, shakenDrawX, shakenDrawY, drawWidth, drawHeight);
 
   // Optional: Draw health bar or other info for debugging (similar to trees)
   // ctx.fillStyle = 'darkred';

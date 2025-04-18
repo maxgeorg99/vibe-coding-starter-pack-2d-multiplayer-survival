@@ -1,6 +1,8 @@
 import campfireSprite from '../assets/doodads/campfire.png';
 import campfireOffSprite from '../assets/doodads/campfire_off.png'; // Import the off state sprite
 
+import { drawShadow } from './shadowUtils'; // Import shadow utility
+
 // --- Constants ---
 export const CAMPFIRE_WIDTH = 64;
 export const CAMPFIRE_HEIGHT = 64;
@@ -42,31 +44,31 @@ export function preloadCampfireImage() {
 
 // --- Rendering Function ---
 // Change signature to include isBurning state
-export function renderCampfire(ctx: CanvasRenderingContext2D, screenX: number, screenY: number, isBurning: boolean) {
-    // console.log(`[renderCampfire] Drawing at screen (${screenX.toFixed(0)}, ${screenY.toFixed(0)}), Image Loaded: ${isCampfireImageLoaded}`);
+export function renderCampfire(ctx: CanvasRenderingContext2D, worldX: number, worldY: number, isBurning: boolean) {
+    const img = getImage(isBurning);
+    if (!img) return; // Image not loaded
 
-    const imageToDraw = isBurning ? campfireImage : campfireOffImage;
-    const isImageReady = isBurning ? isCampfireImageLoaded : isCampfireOffImageLoaded;
+    const drawWidth = CAMPFIRE_WIDTH;
+    const drawHeight = CAMPFIRE_HEIGHT;
+    const centerX = worldX;
+    const baseY = worldY; // Shadow sits at the base Y coordinate
+    const drawX = centerX - drawWidth / 2; // Center horizontally
+    const drawY = baseY - drawHeight; // Draw upwards from base Y
 
-    if (!isImageReady || !imageToDraw) {
-        // Draw fallback at screen coordinates (Yellow for burning, Gray for off)
-        ctx.fillStyle = isBurning ? '#FFFF00' : '#808080';
-        ctx.beginPath();
-        ctx.arc(screenX, screenY, 15, 0, Math.PI * 2); // Draw centered at screenX, screenY
-        ctx.fill();
-        // console.warn(`[renderCampfire] Fallback drawn at screen (${screenX.toFixed(0)}, ${screenY.toFixed(0)}) - Burning: ${isBurning}`);
-        return;
+    // Draw shadow first
+    const shadowRadiusX = drawWidth * 0.4;
+    const shadowRadiusY = shadowRadiusX * 0.5;
+    const shadowOffsetY = -drawHeight * 0.25; // Push shadow up slightly (10% of campfire height)
+    drawShadow(ctx, centerX, baseY + shadowOffsetY, shadowRadiusX, shadowRadiusY);
+
+    // Draw the campfire image
+    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+}
+
+function getImage(isBurning: boolean) {
+    if (isBurning) {
+        return campfireImage;
+    } else {
+        return campfireOffImage;
     }
-
-    // Draw the correct campfire sprite, centered at the given screen coordinates
-    const drawX = screenX - CAMPFIRE_WIDTH / 2;
-    const drawY = screenY - CAMPFIRE_HEIGHT / 2; // Center vertically
-
-    ctx.drawImage(
-        imageToDraw!,
-        drawX,
-        drawY,
-        CAMPFIRE_WIDTH,
-        CAMPFIRE_HEIGHT
-    );
 } 

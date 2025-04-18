@@ -1,6 +1,7 @@
 import { Tree } from '../generated'; // Import generated types
 import treeOakImage from '../assets/doodads/tree.png'; // Adjust path if needed
 // import treeStumpImage from '../assets/doodads/tree_stump.png'; // REMOVED
+import { drawShadow } from './shadowUtils'; // Import shadow utility
 
 // Define image sources map (could be moved to config)
 // Use string literals for keys based on the expected enum tags/values
@@ -73,28 +74,38 @@ export function renderTree(ctx: CanvasRenderingContext2D, tree: Tree, now_ms: nu
   const drawWidth = TARGET_TREE_WIDTH_PX; // Set width to target
   const drawHeight = img.naturalHeight * scaleFactor; // Scale height proportionally
 
-  let drawX = tree.posX - drawWidth / 2; // Center horizontally
-  let drawY = tree.posY - drawHeight; // Draw upwards from position y using scaled height
+  const centerX = tree.posX;
+  const baseY = tree.posY; // Shadow sits at the base Y coordinate
+  const drawX = centerX - drawWidth / 2; // Top-left corner for image drawing
+  const drawY = baseY - drawHeight; // Draw image upwards from base Y
 
-  // --- Shake Logic ---
-  if (tree.lastHitTime) { // Check if lastHitTime exists (it's Option<Timestamp> on server)
-    // Convert SpacetimeDB Timestamp (microseconds BigInt) to milliseconds number
+  // Calculate shake offset
+  let shakeOffsetX = 0;
+  let shakeOffsetY = 0;
+  if (tree.lastHitTime) {
     const lastHitTimeMs = Number(tree.lastHitTime.microsSinceUnixEpoch / 1000n);
     const elapsedSinceHit = now_ms - lastHitTimeMs;
 
     if (elapsedSinceHit >= 0 && elapsedSinceHit < SHAKE_DURATION_MS) {
       const shakeFactor = 1.0 - (elapsedSinceHit / SHAKE_DURATION_MS); // Fade out shake
       const currentShakeIntensity = SHAKE_INTENSITY_PX * shakeFactor;
-      const shakeX = (Math.random() - 0.5) * 2 * currentShakeIntensity;
-      const shakeY = (Math.random() - 0.5) * 2 * currentShakeIntensity;
-      drawX += shakeX;
-      drawY += shakeY;
-      // console.log(`Shaking Tree ${tree.id}: offset (${shakeX.toFixed(1)}, ${shakeY.toFixed(1)})`); // Debug log
+      shakeOffsetX = (Math.random() - 0.5) * 2 * currentShakeIntensity;
+      shakeOffsetY = (Math.random() - 0.5) * 2 * currentShakeIntensity;
     }
   }
-  // --- End Shake Logic ---
 
-  ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+  const shakenDrawX = drawX + shakeOffsetX;
+  const shakenDrawY = drawY + shakeOffsetY;
+
+  // Draw shadow first
+  const shadowRadiusX = drawWidth * 0.4;
+  const shadowRadiusY = shadowRadiusX * 0.5;
+  // Draw shadow relative to unshaken base position
+  const shadowOffsetY = -drawHeight * 0.05; // Push shadow up slightly (consistent with stone maybe? Adjust if needed)
+  drawShadow(ctx, centerX, baseY + shadowOffsetY, shadowRadiusX, shadowRadiusY);
+
+  // Draw the tree image with shake
+  ctx.drawImage(img, shakenDrawX, shakenDrawY, drawWidth, drawHeight);
 
   // Optional: Draw health bar or other info for debugging
   // ctx.fillStyle = 'red';

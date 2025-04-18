@@ -25,6 +25,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
   const [isDraggingState, setIsDraggingState] = useState(false); // State for component re-render/styling
   const isDraggingRef = useRef(false); // Ref for up-to-date state in document listeners
   const dragStartPos = useRef({ x: 0, y: 0 });
+  const didDragRef = useRef(false);
 
   const createGhostElement = useCallback((e: MouseEvent | Touch, splitQuantity: number | null) => {
     console.log(`[DraggableItem] Creating ghost element... Split: ${splitQuantity}`);
@@ -70,7 +71,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     const dx = e.clientX - dragStartPos.current.x;
     const dy = e.clientY - dragStartPos.current.y;
     const distSq = dx*dx + dy*dy;
-    const thresholdSq = 3*3; // Compare squared distances
+    const thresholdSq = 2*2; // Compare squared distances. Lowered from 3*3 for more sensitivity.
 
     // Update ghost position IF it exists
     if (ghostRef.current) {
@@ -79,163 +80,150 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     }
     // Create ghost only if threshold is met AND ghost doesn't exist yet
     else if (distSq >= thresholdSq) {
-        console.log("[DraggableItem] Drag threshold met, creating ghost.");
-        // Pass the current split quantity (might be null) to the ghost creation
+        didDragRef.current = true;
+        console.log(`[DraggableItem] Drag threshold met, didDrag = true.`);
         createGhostElement(e, currentSplitQuantity.current);
     }
   }, [createGhostElement]);
 
   const handleMouseUp = useCallback((e: MouseEvent) => {
-    if (!isDraggingRef.current) return;
-    console.log("[DraggableItem] handleMouseUp Fired.");
+    // Capture drag state BEFORE removing listeners / resetting state
+    const wasDragging = didDragRef.current;
+    console.log(`[DraggableItem MouseUp] Button: ${e.button}, wasDragging: ${wasDragging}`);
 
-    // Cleanup listeners FIRST
+    if (!isDraggingRef.current) {
+        // Safety check - mouseup when not dragging shouldn't happen often here
+        // but ensure listeners are cleaned up if it does.
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        return; 
+    }
+
+    // --- Remove Listeners FIRST --- 
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
 
-    let dropHandled = false;
+    // --- Determine Drop Target --- 
+    let targetSlotInfo: DragSourceSlotInfo | null = null;
+    let dropHandledInternal = false; 
     if (ghostRef.current) {
-      ghostRef.current.style.display = 'none'; // Hide ghost to check element underneath
+      ghostRef.current.style.display = 'none'; 
       const dropTargetElement = document.elementFromPoint(e.clientX, e.clientY);
-      
       if (dropTargetElement) {
           const droppableSlot = dropTargetElement.closest('[data-slot-type]');
-          
           if (droppableSlot) {
               const targetType = droppableSlot.getAttribute('data-slot-type') as DragSourceSlotInfo['type'];
               const targetIndexAttr = droppableSlot.getAttribute('data-slot-index');
-              console.log(`[DraggableItem Drop Check] Found slot element. Type: ${targetType}, Index Attr: ${targetIndexAttr}`);
-
               if (targetType && targetIndexAttr !== null) {
                    const targetIndex: number | string = (targetType === 'inventory' || targetType === 'hotbar' || targetType === 'campfire_fuel') 
                                                       ? parseInt(targetIndexAttr, 10) 
-                                                      : targetIndexAttr; // Equipment uses string index
-
+                                                      : targetIndexAttr; 
                   if (!isNaN(targetIndex as number) || typeof targetIndex === 'string') { 
-                      const targetSlotInfo: DragSourceSlotInfo = { type: targetType, index: targetIndex };
-                      
-                      // Check if drop is not on the source slot itself
+                      targetSlotInfo = { type: targetType, index: targetIndex };
                       if (!(sourceSlot.type === targetSlotInfo.type && sourceSlot.index === targetSlotInfo.index)) { 
-                            console.log(`[DraggableItem] Found drop target:`, targetSlotInfo);
-                            onItemDrop(targetSlotInfo); // Call MAIN drop handler
-                            dropHandled = true;
+                           dropHandledInternal = true;
                        } else {
-                           console.log("[DraggableItem] Drop on source slot ignored.");
-                           // Technically a valid drop (onto itself), but no action needed from App.tsx
-                           // We still need to reset state below.
-                           dropHandled = true; // Mark as handled to prevent drop(null)
+                           console.log("[DraggableItem] Drop on source slot ignored (no action needed).");
+                           dropHandledInternal = true; 
+                           targetSlotInfo = null; 
                        }
-                  } else {
-                       console.log("[DraggableItem] Drop target missing necessary data attributes.");
                   }
-              } else {
-                   console.log("[DraggableItem] Drop target missing necessary data attributes.");
               }
-          } else {
-              // --- Dropped outside any slot --- 
-              console.log("[DraggableItem] Dropped outside a valid slot. Calling onItemDrop(null).");
-              onItemDrop(null); // Explicitly signal drop outside
-              dropHandled = true;
-          }
-      } else {
-           console.log("[DraggableItem] Could not find element at drop point. Calling onItemDrop(null).");
-           onItemDrop(null); // Assume drop outside if no element found
-           dropHandled = true;
+          } 
       }
-
-      // Remove ghost from DOM after check
        if (ghostRef.current && document.body.contains(ghostRef.current)) { 
         document.body.removeChild(ghostRef.current);
       }
       ghostRef.current = null;
     } else {
-        // If no ghost was created (e.g., click without dragging far enough), still reset state
         console.log("[DraggableItem] MouseUp without significant drag/ghost.");
-        // No drop occurred in this case, so dropHandled remains false, which is fine.
     }
+    // --- End Drop Target Determination ---
 
-    // Reset state regardless of whether the drop was valid or not
+    // --- NEW Decision Logic --- 
+    if (e.button === 2) { // Right Button Release
+        if (wasDragging) {
+            // Right-DRAG: Perform the drop action (split/merge)
+            console.log("[DraggableItem MouseUp] Right-DRAG detected. Calling onItemDrop.");
+             if (dropHandledInternal) {
+                onItemDrop(targetSlotInfo); 
+            } else {
+                onItemDrop(null); // Dropped outside
+            }
+        } else {
+            // Right-CLICK: Perform the context menu action
+            console.log("[DraggableItem MouseUp] Right-CLICK detected. Calling onContextMenu prop.");
+            if (onContextMenu) {
+                // We might need to pass a simulated event if the handler expects it,
+                // but for now, let's pass null or a minimal object. 
+                // Pass the original mouse event `e` for position info if needed.
+                onContextMenu(e as any, item); // Call the prop function
+            }
+        }
+    } else { // Left or Middle Button Release
+        console.log("[DraggableItem MouseUp] Left/Middle drag release. Calling onItemDrop.");
+        if (dropHandledInternal) {
+            onItemDrop(targetSlotInfo); 
+        } else {
+            onItemDrop(null);
+        }
+    }
+    // --- End Decision Logic ---
+
+    // Common Cleanup (Visuals, Dragging State)
     isDraggingRef.current = false;
     setIsDraggingState(false);
     document.body.classList.remove('item-dragging');
     if (itemRef.current) {
          itemRef.current.style.opacity = '1';
     }
-    
-    // Log removed - App.tsx's handleItemDrop now always resets the state.
-    // if (!dropHandled) {
-    //   console.log("[DraggableItem] Drop was not handled (e.g., on source or failed check). Ensure App state is cleared.");
-    //   // Potentially call onItemDrop(null) here too if needed, but App.tsx should handle it.
-    // }
 
-  }, [handleMouseMove, item, sourceSlot, onItemDrop]); // Keep dependencies
+  }, [handleMouseMove, item, sourceSlot, onItemDrop, onContextMenu]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // --- RESTORE Resetting didDrag flag --- 
+    didDragRef.current = false;
+    // --- END RESTORE ---
+
+    // --- NEW: Prevent default for right-click --- 
+    if (e.button === 2) {
+        console.log('[DraggableItem MouseDown] Right button pressed, preventing default.');
+        e.preventDefault(); // Attempt to suppress native context menu
+    }
+    // --- END NEW ---
+
     // Check stackability and quantity for splitting possibility
     const canSplit = item.definition.isStackable && item.instance.quantity > 1;
     let splitQuantity: number | null = null;
-
-    // Determine split quantity based on button and modifiers
-    // Allow splitting regardless of sourceSlot type
     if (canSplit) {
         if (e.button === 1) { // Middle mouse button
             e.preventDefault(); 
             if (e.shiftKey) {
                 splitQuantity = Math.max(1, Math.floor(item.instance.quantity / 3));
-                console.log('[DraggableItem] Middle + Shift Down: Splitting 1/3 ->', splitQuantity);
             } else {
                 splitQuantity = Math.max(1, Math.floor(item.instance.quantity / 2));
-                console.log('[DraggableItem] Middle Down: Splitting half ->', splitQuantity);
             }
         } else if (e.button === 2) { // Right mouse button
             e.preventDefault(); 
             splitQuantity = 1;
-            console.log('[DraggableItem] Right Down: Splitting 1 ->', splitQuantity);
         }
     }
-
-    // Handle normal left-click drag OR if splitting is not possible/intended
     if (e.button === 0 || !splitQuantity) {
-         console.log('[DraggableItem] Left Mouse Down (or cannot split)');
          currentSplitQuantity.current = null; 
          if (e.button === 0) e.preventDefault(); 
     } else {
-         currentSplitQuantity.current = splitQuantity; // Store for ghost creation
+         currentSplitQuantity.current = splitQuantity; 
     }
-    
-    // Common drag setup logic
     e.stopPropagation();
     isDraggingRef.current = true;
     setIsDraggingState(true); 
     dragStartPos.current = { x: e.clientX, y: e.clientY };
-
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-    
     const dragInfo: DraggedItemInfo = { item, sourceSlot, splitQuantity: splitQuantity ?? undefined };
-    console.log('[DraggableItem] Calling onItemDragStart with:', dragInfo);
     onItemDragStart(dragInfo);
 
   }, [item, sourceSlot, onItemDragStart, handleMouseMove, handleMouseUp, createGhostElement]);
-
-  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // Prevent context menu IF a drag wasn't initiated by right-click
-    if (!isDraggingRef.current) {
-        if (onContextMenu) {
-            e.preventDefault(); // Prevent browser menu
-            e.stopPropagation();
-            console.log(`[DraggableItem] Right-click detected on item:`, item);
-            onContextMenu(e, item); // Pass event and item info up
-        } 
-        // else { // Optional: Allow default if no handler provided and not dragging
-           // console.log("[DraggableItem] No context menu handler, allowing default.");
-        //} 
-    } else {
-        // If dragging started with right-click, prevent context menu on mouse up
-         e.preventDefault(); 
-         console.log("[DraggableItem] Preventing context menu because right-drag is active.");
-    }
-  }, [onContextMenu, item]); // Removed isDraggingRef dependency - it caused issues
 
   // Basic rendering of the item
   return (
@@ -243,7 +231,6 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
       ref={itemRef}
       className={`${styles.draggableItem} ${isDraggingState ? styles.isDraggingFeedback : ''}`}
       onMouseDown={handleMouseDown}
-      onContextMenu={handleContextMenu}
       title={`${item.definition.name}${item.definition.description ? ' - ' + item.definition.description : ''}`}
     >
       <img
@@ -259,4 +246,4 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
   );
 };
 
-export default DraggableItem; 
+export default DraggableItem;

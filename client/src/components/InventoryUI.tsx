@@ -134,6 +134,8 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
 
     // --- Right Click Handler (Inventory) ---
     const handleInventoryItemContextMenu = (event: React.MouseEvent<HTMLDivElement>, itemInfo: PopulatedItem) => {
+        event.preventDefault(); // Keep preventing default browser menu
+
         console.log("[InventoryUI] Context menu on:", itemInfo?.definition?.name);
         if (!connection?.reducers || !itemInfo) return;
 

@@ -38,6 +38,7 @@ import { renderEquippedItem } from '../utils/equippedItemRenderingUtils';
 // Import the reducer function type if needed (optional but good practice)
 // import { requestRespawn } from '../generated'; // Removed - Not needed for callReducer by string
 import { drawInteractionIndicator } from '../utils/interactionIndicator'; // Import drawing function
+import { drawShadow } from '../utils/shadowUtils'; // Import shadow utility
 
 // Threshold for movement animation (position delta)
 const MOVEMENT_POSITION_THRESHOLD = 0.1; // Small threshold to account for float precision
@@ -943,7 +944,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             const itemDef = itemDefinitions.get(entity.itemDefId.toString());
             let itemImg: HTMLImageElement | null = null;
             let iconAssetName: string | null = null;
-            console.log(`[Debug DroppedItem ${entity.id}] Processing itemDefId: ${entity.itemDefId}`); // Log ID
+            // console.log(`[Debug DroppedItem ${entity.id}] Processing itemDefId: ${entity.itemDefId}`); // Log ID
             if (itemDef) {
                 iconAssetName = itemDef.iconAssetName;
                 itemImg = itemImagesRef.current.get(iconAssetName) ?? null;
@@ -956,6 +957,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             const drawWidth = 64;
             const drawHeight = 64;
             if (canRenderIcon && iconAssetName) {
+               // Draw shadow first
+               const centerX = entity.posX;
+               const baseY = entity.posY;
+               const shadowRadiusX = drawWidth * 0.3;
+               const shadowRadiusY = shadowRadiusX * 0.4;
+               const shadowOffsetY = -drawHeight * -0.2; // Push shadow UP slightly (10% of item height)
+               drawShadow(ctx, centerX, baseY + shadowOffsetY, shadowRadiusX, shadowRadiusY);
+
                ctx.drawImage(itemImg!, entity.posX - drawWidth / 2, entity.posY - drawHeight / 2, drawWidth, drawHeight);
                 // Eagerly load image if not already cached
                 if (!itemImagesRef.current.has(iconAssetName)) {

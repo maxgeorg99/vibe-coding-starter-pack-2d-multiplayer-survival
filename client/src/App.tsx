@@ -828,7 +828,7 @@ function App() {
                 } else if (targetSlotType === 'campfire_fuel') {
                     // Target is Campfire -> Parse Index & Get ID
                     targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
-                    targetCampfireIdNum = interactingWith?.type === 'campfire' ? Number(interactingWith.id) : (targetSlot.parentId ? Number(targetSlot.parentId) : null);
+                    targetCampfireIdNum = targetSlot.parentId ? Number(targetSlot.parentId) : null;
                      if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum) || targetCampfireIdNum === null || isNaN(targetCampfireIdNum)) {
                          console.error("[App Drop] Split failed: Invalid target index or missing CampfireID for campfire target.");
                          setError("Invalid target slot or context for campfire split.");
