@@ -39,6 +39,8 @@ import { renderEquippedItem } from '../utils/equippedItemRenderingUtils';
 // import { requestRespawn } from '../generated'; // Removed - Not needed for callReducer by string
 import { drawInteractionIndicator } from '../utils/interactionIndicator'; // Import drawing function
 import { drawShadow } from '../utils/shadowUtils'; // Import shadow utility
+// NEW: Import placement types
+import { PlacementItemInfo, PlacementActions } from '../hooks/usePlacementManager';
 
 // Threshold for movement animation (position delta)
 const MOVEMENT_POSITION_THRESHOLD = 0.1; // Small threshold to account for float precision
@@ -69,21 +71,20 @@ interface GameCanvasProps {
   trees: Map<string, SpacetimeDBTree>;
   stones: Map<string, SpacetimeDBStone>;
   campfires: Map<string, SpacetimeDBCampfire>;
-  mushrooms: Map<string, SpacetimeDBMushroom>; // Use imported type alias
+  mushrooms: Map<string, SpacetimeDBMushroom>; 
   droppedItems: Map<string, SpacetimeDBDroppedItem>;
   inventoryItems: Map<string, SpacetimeDBInventoryItem>;
   itemDefinitions: Map<string, SpacetimeDBItemDefinition>;
   worldState: SpacetimeDBWorldState | null;
   localPlayerId?: string;
-  connection: any | null; // Use any for now, replace with correct type later
+  connection: any | null; 
   activeEquipments: Map<string, SpacetimeDBActiveEquipment>;
   updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
   callJumpReducer: () => void;
   callSetSprintingReducer: (isSprinting: boolean) => void;
-  isPlacingCampfire: boolean;
-  handlePlaceCampfire: (worldX: number, worldY: number) => void;
-  cancelCampfirePlacement: () => void;
-  placementError: string | null;
+  placementInfo: PlacementItemInfo | null;
+  placementActions: PlacementActions;
+  placementError: string | null; 
   onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
 }
 
@@ -220,9 +221,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   updatePlayerPosition,
   callJumpReducer,
   callSetSprintingReducer,
-  isPlacingCampfire,
-  handlePlaceCampfire,
-  cancelCampfirePlacement,
+  placementInfo,
+  placementActions,
   placementError,
   onSetInteractingWith,
 }) => {
@@ -251,6 +251,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const eKeyDownTimestampRef = useRef<number>(0);
   const eKeyHoldTimerRef = useRef<number | null>(null);
   const [interactionProgress, setInteractionProgress] = useState<{ targetId: number | bigint | null; startTime: number } | null>(null);
+
+  // --- Ref for Placement Actions Object --- 
+  const placementActionsRef = useRef(placementActions);
+
+  // Update ref when placement actions object prop changes
+  useEffect(() => {
+    placementActionsRef.current = placementActions;
+  }, [placementActions]);
+  // --- End Refs --- 
 
   const animationFrame = useAnimationCycle(ANIMATION_INTERVAL_MS, 4);
 
@@ -363,20 +372,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [connection, localPlayerId, activeEquipments]); // Dependencies
 
-  // --- Input Handling useEffect ---
+  // --- Input Handling useEffect --- 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore input if player is dead or placing campfire (except escape)
       if (isInputDisabled.current && e.key.toLowerCase() !== 'escape') return;
-
       const key = e.key.toLowerCase();
-
-      // Cancel placement on Escape key (allow even if dead)
-      if (key === 'escape' && isPlacingCampfire) {
-        cancelCampfirePlacement();
-        return; // Prevent further processing
+      if (key === 'escape' && placementInfo) { 
+        if (placementActionsRef.current) {
+             placementActionsRef.current.cancelPlacement();
+        }
+        return; 
       }
-      // Ignore all other input if dead
       if (isInputDisabled.current) return;
 
       // Avoid processing modifier keys if they are the only key pressed initially
@@ -413,7 +419,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         
         // Prioritize interaction: DroppedItem > Campfire > Mushroom
         if (closestDroppedItemId !== null && connection?.reducers) {
-             console.log(`E key down near dropped item ${closestDroppedItemId}`);
              try {
                  connection.reducers.pickupDroppedItem(closestDroppedItemId);
              } catch (err) {
@@ -422,7 +427,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
              }
              return; // Handled dropped item, prevent other interactions
         } else if (closestCampfireId !== null) {
-          console.log(`E key down near campfire ${closestCampfireId}`);
           isEHeldDownRef.current = true;
           eKeyDownTimestampRef.current = Date.now();
           setInteractionProgress({ targetId: closestCampfireId, startTime: Date.now() }); // Start visual indicator
@@ -435,7 +439,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           // Set timer for hold action
           eKeyHoldTimerRef.current = setTimeout(() => {
             if (isEHeldDownRef.current) { // Check if still held
-              console.log(`E key held long enough for campfire ${closestCampfireId}, opening inventory.`);
               onSetInteractingWith({ type: 'campfire', id: closestCampfireId }); 
               // Reset state AFTER triggering action
               isEHeldDownRef.current = false;
@@ -446,7 +449,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           // Do NOT call other reducers here anymore
           return; // Prevent adding 'e' to keysPressed for movement
         } else if (closestMushroomId !== null && connection?.reducers) {
-            console.log(`E key down near mushroom ${closestMushroomId}`);
             try {
                 connection.reducers.interactWithMushroom(closestMushroomId);
             } catch (err) {
@@ -475,7 +477,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       // --- 'E' Key Up Logic ---
       if (key === 'e') {
           if (isEHeldDownRef.current) {
-              console.log("E key up");
               isEHeldDownRef.current = false;
               // Clear the hold timer if it exists
               if (eKeyHoldTimerRef.current) {
@@ -488,12 +489,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               const closestCampfireId = closestInteractableCampfireIdRef.current;
               if (closestCampfireId !== null) {
                   const holdDuration = Date.now() - eKeyDownTimestampRef.current;
-                  console.log(`E hold duration: ${holdDuration}ms`);
                   
                   // If held for less than the threshold, trigger toggle
                   if (holdDuration < HOLD_INTERACTION_DURATION_MS) {
                        if(connection?.reducers) {
-                           console.log(`E key tapped near campfire ${closestCampfireId}, toggling burn state.`);
                            try {
                               connection.reducers.toggleCampfireBurning(closestCampfireId);
                            } catch (err) {
@@ -513,37 +512,41 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     const handleCanvasClick = (event: MouseEvent) => {
         if (isInputDisabled.current) return;
-
-        if (isPlacingCampfire && worldMousePosRef.current.x !== null && worldMousePosRef.current.y !== null) {
+        if (placementInfo && worldMousePosRef.current.x !== null && worldMousePosRef.current.y !== null) {
              if (event.button === 0) {
-                 handlePlaceCampfire(worldMousePosRef.current.x, worldMousePosRef.current.y);
+                 if (typeof placementActionsRef.current?.attemptPlacement === 'function') {
+                    placementActionsRef.current.attemptPlacement(worldMousePosRef.current.x, worldMousePosRef.current.y);
+                 } else {
+                    console.error("[GameCanvas handleCanvasClick] attemptPlacement function missing on ref!");
+                 }
                  return; 
              }
+         }
+    };
+
+    const handleContextMenu = (event: MouseEvent) => {
+         if (isInputDisabled.current) return;
+        if (placementInfo) {
+            event.preventDefault(); 
+            if (placementActionsRef.current) {
+                placementActionsRef.current.cancelPlacement();
+            }
         }
     };
 
-    // --- Placement Right-Click/Context Menu Listener ---
-     const handleContextMenu = (event: MouseEvent) => {
-         if (isInputDisabled.current) return; // Ignore right-clicks if dead
-        if (isPlacingCampfire) {
-            event.preventDefault(); // Prevent browser context menu
-            cancelCampfirePlacement();
-        }
-    };
-
-    // --- Mouse Wheel Listener for Cancelling Placement ---
     const handleWheel = (event: WheelEvent) => {
-        if (isPlacingCampfire) {
-            console.log("Mouse wheel scrolled, cancelling placement.");
-            cancelCampfirePlacement();
+        if (placementInfo) {
+            if (placementActionsRef.current) {
+               placementActionsRef.current.cancelPlacement(); 
+            }
         }
     };
 
     // --- NEW: Mouse Down/Up Listeners for Swinging ---
     const handleMouseDown = (event: MouseEvent) => {
-        if (isInputDisabled.current || event.button !== 0 || isPlacingCampfire) return;
+         if (isInputDisabled.current || event.button !== 0 || placementInfo) return; 
         isMouseDownRef.current = true;
-        attemptSwing(); // Attempt first swing immediately on click
+        attemptSwing(); 
     };
 
     const handleMouseUp = (event: MouseEvent) => {
@@ -586,7 +589,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         canvas.removeEventListener('contextmenu', handleContextMenu);
       }
     };
-  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, attemptSwing]);
+  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, placementInfo, attemptSwing]);
 
   const updatePlayerBasedOnInput = useCallback(() => {
     if (isInputDisabled.current) return; // Skip input processing if dead
@@ -814,6 +817,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!ctx || !maskCtx) return;
 
     const localPlayerData = getLocalPlayer();
+    const now_ms = Date.now();
+    const currentWorldMouseX = worldMousePosRef.current.x;
+    const currentWorldMouseY = worldMousePosRef.current.y;
     const currentCanvasWidth = canvasSize.width;
     const currentCanvasHeight = canvasSize.height;
     const cameraOffsetX = localPlayerData ? (canvasSize.width / 2 - localPlayerData.positionX) : 0;
@@ -830,18 +836,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     drawWorldBackground(ctx);
 
     // 1. Gather and Categorize Entities
-    const groundItems: (SpacetimeDBMushroom | SpacetimeDBDroppedItem)[] = [];
-    const ySortableEntities: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBCampfire)[] = [];
+    const groundItems: (SpacetimeDBMushroom | SpacetimeDBDroppedItem | SpacetimeDBCampfire)[] = [];
+    const ySortableEntities: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone)[] = [];
 
     // Add Mushrooms and Dropped Items to groundItems
     mushrooms.forEach(m => { if (m.respawnAt === null || m.respawnAt === undefined) groundItems.push(m); });
     droppedItems.forEach(i => groundItems.push(i));
+    // ADD Campfires to groundItems
+    campfires.forEach(c => groundItems.push(c));
 
-    // Add Players, Trees, Stones, Campfires to ySortableEntities
+    // Add Players, Trees, Stones to ySortableEntities
     players.forEach(p => ySortableEntities.push(p));
     trees.forEach(t => { if (t.health > 0) ySortableEntities.push(t); });
     stones.forEach(s => { if (s.health > 0) ySortableEntities.push(s); });
-    campfires.forEach(c => ySortableEntities.push(c));
 
     // 2. Sort Y-Sortable Entities
     ySortableEntities.sort((a, b) => {
@@ -849,11 +856,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const yB = isPlayer(b) ? b.positionY : b.posY;
         return yA - yB;
     });
-
-    // --- Common Data (needed before finding closest) ---
-    const now_ms = Date.now();
-    const currentWorldMouseX = worldMousePosRef.current.x;
-    const currentWorldMouseY = worldMousePosRef.current.y;
 
     // 3. Find Closest Interactables (Mushrooms, Campfires, DroppedItems)
     let closestDistSq = PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED;
@@ -914,18 +916,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     // --- End Finding Closest DroppedItem ---
 
-    // --- Calculate if placement preview is out of range (needed before rendering preview) ---
+    // --- UPDATED Placement Preview Rendering --- 
     let isPlacementTooFar = false;
-    if (isPlacingCampfire && localPlayerData && currentWorldMouseX !== null && currentWorldMouseY !== null) {
+    // Check generic placementInfo
+    if (placementInfo && localPlayerData && currentWorldMouseX !== null && currentWorldMouseY !== null) {
          const placeDistSq = (currentWorldMouseX - localPlayerData.positionX)**2 + (currentWorldMouseY - localPlayerData.positionY)**2;
-         // Use a value slightly larger than the server constant to avoid flickering at the exact edge
-         const clientPlacementRangeSq = (96.0 * 96.0) * 1.05; // Match server logic (96px) + 5% buffer
+         const clientPlacementRangeSq = (96.0 * 96.0) * 1.05; 
          if (placeDistSq > clientPlacementRangeSq) {
              isPlacementTooFar = true;
          }
     }
 
-    // 4. Render Ground Items (Mushrooms, Dropped Items) - Always Below Others
+    // 4. Render Ground Items (Mushrooms, Dropped Items, Campfires)
     groundItems.forEach(entity => {
         // Check for DroppedItem FIRST
         if (isDroppedItem(entity)) {
@@ -971,10 +973,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         // Check for Mushroom SECOND
         } else if (isMushroom(entity)) {
             renderMushroom(ctx, entity, now_ms);
+        // Check for Campfire THIRD
+        } else if (isCampfire(entity)) {
+            // Render the campfire sprite using its world coordinates
+            renderCampfire(ctx, entity.posX, entity.posY, entity.isBurning);
         }
     });
 
-    // 5. Render Y-Sorted Entities (Players, Trees, Stones, Campfires) - On Top of Ground Items
+    // 5. Render Y-Sorted Entities (Players, Trees, Stones) - On Top of Ground Items
     ySortableEntities.forEach(entity => {
        if (isPlayer(entity)) {
            // --- Player Rendering Logic (No Label) ---
@@ -1038,15 +1044,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               }
            }
            // --- End Conditional Rendering Order ---
-       } else if (isTree(entity)) { // Tree
+       } else if (isTree(entity)) { 
            renderTree(ctx, entity, now_ms);
-       } else if (isStone(entity)) { // Stone
+       } else if (isStone(entity)) { 
            renderStone(ctx, entity, now_ms);
-       } else if (isCampfire(entity)) { // Render campfire SPRITE in world space
-           // Render the campfire sprite using its world coordinates
-           // Note: We pass 0, 0 for screen coordinates because we're already translated
-           renderCampfire(ctx, entity.posX, entity.posY, entity.isBurning);
-       }
+       } 
     });
 
     // 6. Render Interaction Labels (World Space - On Top of Everything)
@@ -1096,38 +1098,41 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
          }
     });
 
-    // Render placement preview (in world space)
-    if (isPlacingCampfire && currentWorldMouseX !== null && currentWorldMouseY !== null && campfireImageRef.current) {
-        const img = campfireImageRef.current;
-        const drawWidth = CAMPFIRE_WIDTH_PREVIEW;
-        const drawHeight = CAMPFIRE_HEIGHT_PREVIEW;
-        
-        ctx.save(); // Save context state before applying filters/alpha
-        
-        // Apply visual feedback if too far or collision error
-        let placementMessage = placementError; // Use existing collision error by default
-        if (isPlacementTooFar) {
-            ctx.filter = 'grayscale(80%) brightness(1.2) contrast(0.8) opacity(50%)'; // Greyed out, slightly faded
-            placementMessage = "Too far away"; // Override message
-        } else {
-            // Apply normal transparency if not too far and no collision error
-            ctx.globalAlpha = 0.6;
-        }
-
-        ctx.drawImage(img, currentWorldMouseX - drawWidth / 2, currentWorldMouseY - drawHeight / 2, drawWidth, drawHeight);
-        
-        // Display placement message (either range error or collision error)
-        if (placementMessage) {
-            ctx.fillStyle = isPlacementTooFar ? 'orange' : 'red'; // Orange for range, Red for collision
-            ctx.font = '12px "Press Start 2P", cursive';
-            ctx.textAlign = 'center';
-            // Draw text without filter/alpha applied by the preview image draw
-            ctx.filter = 'none'; 
-            ctx.globalAlpha = 1.0;
-            ctx.fillText(placementMessage, currentWorldMouseX, currentWorldMouseY - drawHeight / 2 - 5);
-        }
-        
-        ctx.restore(); // Restore context state (removes filter/alpha)
+    // Render placement preview (generic)
+    if (placementInfo && currentWorldMouseX !== null && currentWorldMouseY !== null) {
+        // ... (preview rendering using placementInfo.iconAssetName) ...
+         // Get the image using the iconAssetName from placementInfo
+         const previewImg = itemImagesRef.current.get(placementInfo.iconAssetName);
+         
+         if (previewImg && previewImg.complete && previewImg.naturalHeight !== 0) {
+             const drawWidth = CAMPFIRE_WIDTH_PREVIEW; // TODO: Make this dynamic based on item type?
+             const drawHeight = CAMPFIRE_HEIGHT_PREVIEW;
+             
+             ctx.save(); 
+             let placementMessage = placementError; // Use error from hook
+             if (isPlacementTooFar) {
+                 ctx.filter = 'grayscale(80%) brightness(1.2) contrast(0.8) opacity(50%)';
+                 placementMessage = "Too far away"; 
+             } else {
+                 ctx.globalAlpha = 0.6;
+             }
+ 
+             ctx.drawImage(previewImg, currentWorldMouseX - drawWidth / 2, currentWorldMouseY - drawHeight / 2, drawWidth, drawHeight);
+             
+             if (placementMessage) {
+                 ctx.fillStyle = isPlacementTooFar ? 'orange' : 'red'; 
+                 ctx.font = '12px "Press Start 2P", cursive';
+                 ctx.textAlign = 'center';
+                 ctx.filter = 'none'; 
+                 ctx.globalAlpha = 1.0;
+                 ctx.fillText(placementMessage, currentWorldMouseX, currentWorldMouseY - drawHeight / 2 - 5);
+             }
+             ctx.restore(); 
+         } else {
+             // Fallback if image not loaded yet
+             ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+             ctx.fillRect(currentWorldMouseX - 32, currentWorldMouseY - 32, 64, 64);
+         }
     }
     ctx.restore(); // Restore from world space rendering
 
@@ -1253,7 +1258,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       canvasSize.width,
       canvasSize.height,
       animationFrame,
-      isPlacingCampfire,
       placementError,
       activeEquipments,
       itemDefinitions,
@@ -1332,8 +1336,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ref={canvasRef}
         width={canvasSize.width}
         height={canvasSize.height}
-        style={{ cursor: isInputDisabled.current ? 'default' : 'crosshair' }} // Change cursor when dead
-        onContextMenu={isPlacingCampfire ? (e) => e.preventDefault() : undefined}
+        style={{ cursor: isInputDisabled.current ? 'default' : (placementInfo ? 'cell' : 'crosshair') }}
+        onContextMenu={placementInfo ? (e) => e.preventDefault() : undefined}
       />
     </>
   );

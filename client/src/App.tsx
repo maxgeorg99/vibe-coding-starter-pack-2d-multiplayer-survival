@@ -8,6 +8,7 @@ import githubLogo from '../public/github.png'; // Import the logo
 import * as SpacetimeDB from './generated';
 import { Identity as SpacetimeDBIdentity } from '@clockworklabs/spacetimedb-sdk';
 import { DbConnection } from './generated'; // Correct import source
+import { usePlacementManager, PlacementItemInfo, PlacementState, PlacementActions } from './hooks/usePlacementManager';
 
 // SpacetimeDB connection parameters
 const SPACETIME_DB_ADDRESS = 'ws://localhost:3000';
@@ -47,63 +48,297 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const usernameInputRef = useRef<HTMLInputElement>(null); // Ref for autofocus
   
-  // --- Campfire Placement State ---
-  const [isPlacingCampfire, setIsPlacingCampfire] = useState<boolean>(false);
-  const [placementError, setPlacementError] = useState<string | null>(null); // Error message for placement
+  // NEW: Use Placement Manager Hook
+  const [placementState, placementActions] = usePlacementManager(connection);
+  // Destructure for convenience (optional, could pass down objects)
+  const { isPlacing, placementInfo, placementError } = placementState;
+  const { startPlacement, cancelPlacement, attemptPlacement } = placementActions;
+  
+  // RE-ADD Interaction and Drag/Drop State
   const [interactingWith, setInteractingWith] = useState<{ type: string; id: number | bigint } | null>(null);
   const [draggedItemInfo, setDraggedItemInfo] = useState<DraggedItemInfo | null>(null);
   const draggedItemRef = useRef<DraggedItemInfo | null>(null);
+  
+  // --- Refs for Subscription Callbacks --- 
+  // Ref to access the current placement info within subscription callbacks
+  const placementInfoRef = useRef(placementInfo);
+  // Ref to access the stable cancelPlacement action within subscription callbacks
+  const cancelPlacementActionRef = useRef(cancelPlacement);
 
-  // --- Define Placement Handlers EARLIER --- 
-  const cancelCampfirePlacement = useCallback(() => {
-    console.log("[App] cancelCampfirePlacement called. Setting isPlacingCampfire=false");
-    setIsPlacingCampfire(false);
-    setPlacementError(null);
-  }, [setIsPlacingCampfire, setPlacementError]);
-
-  const startCampfirePlacement = useCallback(() => {
-    console.log("[App] startCampfirePlacement called. Setting isPlacingCampfire=true");
-    setIsPlacingCampfire(true);
-    setPlacementError(null);
-  }, [setIsPlacingCampfire, setPlacementError]);
-
-  const handlePlaceCampfire = useCallback((worldX: number, worldY: number) => {
-    // Check connection *inside* the handler now
-    if (!connection) {
-        console.error("Cannot place campfire: No connection.");
-        setError("Not connected.");
-        return;
+  // Keep refs updated
+  useEffect(() => {
+    placementInfoRef.current = placementInfo;
+  }, [placementInfo]);
+  useEffect(() => {
+    cancelPlacementActionRef.current = cancelPlacement;
+  }, [cancelPlacement]);
+  // --- End Refs --- 
+  
+  // --- Handle Enter key submission --- 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && !isLoading && username.trim()) {
+      handleRegisterPlayer();
     }
-    // Check isPlacingCampfire inside
-    if (!isPlacingCampfire) return;
+  };
 
-    console.log(`Attempting to place campfire at (${worldX}, ${worldY})`);
-    setPlacementError(null); // Clear previous error before attempting
+  // --- Autofocus on initial render --- 
+  useEffect(() => {
+    if (!isConnected && usernameInputRef.current) {
+      usernameInputRef.current.focus();
+    }
+  }, [isConnected]); // Re-run if connection status changes (e.g., disconnect)
+  
+  // --- Prevent global context menu --- 
+  useEffect(() => {
+    const handleGlobalContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('contextmenu', handleGlobalContextMenu);
+
+    // Cleanup listener on component unmount
+    return () => {
+      window.removeEventListener('contextmenu', handleGlobalContextMenu);
+    };
+  }, []); // Empty dependency array ensures this runs only once on mount
+  
+  // --- Reducer Calls ---
+  // Function to call the updatePlayerPosition reducer
+  const updatePlayerPosition = (dx: number, dy: number, intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null) => {
+    if (!connection?.reducers) return;
+
+    // Log the direction being sent
+    // console.log(`Calling updatePlayerPosition with dx: ${dx}, dy: ${dy}, direction: ${intendedDirection}`);
+
     try {
-      connection.reducers.placeCampfire(worldX, worldY);
-    } catch (err: any) {
-      console.error('Failed to call place campfire reducer (client-side error):', err);
-      const errorMessage = err?.message || "Failed to place campfire. Check logs.";
-      setError(`Placement failed: ${errorMessage}`); 
-      setPlacementError(errorMessage); 
+      // Call the reducer, passing the optional direction
+      connection.reducers.updatePlayerPosition(dx, dy, intendedDirection ?? undefined);
+    } catch (error) {
+      console.error("Error calling updatePlayerPosition reducer:", error);
     }
-  }, [connection, isPlacingCampfire, setError, setPlacementError]); 
+  };
+  
+  // Function to call the setSprinting reducer
+  const callSetSprintingReducer = (isSprinting: boolean) => {
+    if (connection) {
+      try {
+        // Call the new SpacetimeDB reducer using camelCase
+        connection.reducers.setSprinting(isSprinting);
+      } catch (err) {
+        console.error('Failed to call setSprinting reducer:', err);
+      }
+    }
+  };
+  
+  // --- Jump Reducer Call ---
+  const callJumpReducer = () => {
+    if (connection) {
+      try {
+        // Call the actual SpacetimeDB reducer using camelCase
+        connection.reducers.jump();
+      } catch (err) {
+        console.error('Failed to call jump reducer:', err);
+        // Optionally set an error state here
+      }
+    }
+  };
+  
+  // --- LIFTED Drag/Drop Handlers --- 
+  const handleItemDragStart = useCallback((info: DraggedItemInfo) => {
+    console.log("[App] Drag Start:", info);
+    setDraggedItemInfo(info); // Set state, which will update the ref via useEffect
+    document.body.classList.add('item-dragging');
+  }, []); // No dependencies needed here
 
-  // --- NEW: Refs for callbacks/state used in subscriptions --- 
-  const isPlacingRef = useRef(isPlacingCampfire);
-  const cancelPlacementRef = useRef(cancelCampfirePlacement);
+  // Use useCallback to memoize the drop handler
+  const handleItemDrop = useCallback((targetSlot: DragSourceSlotInfo | null) => {
+    console.log("[App] Drop Target:", targetSlot);
+    document.body.classList.remove('item-dragging');
+    const sourceInfo = draggedItemRef.current;
+    // Always clear drag state, regardless of whether drop is valid
+    draggedItemRef.current = null;
+    setDraggedItemInfo(null);
 
-  // Update refs when state/callbacks change
-  useEffect(() => {
-    isPlacingRef.current = isPlacingCampfire;
-  }, [isPlacingCampfire]);
+    if (!sourceInfo) { 
+      console.log("[App Drop] No source info found, ignoring drop.");
+      return; 
+    } // Early exit if no source
+    if (!connection?.reducers) { 
+        console.log("[App Drop] No reducers connection, ignoring drop.");
+        return; 
+    } // Early exit if no connection
 
-  useEffect(() => {
-    // Re-wrap cancelCampfirePlacement in useCallback before assigning to ref
-    // This ensures the ref always holds the latest *stable* function reference
-    cancelPlacementRef.current = cancelCampfirePlacement;
-  }, [cancelCampfirePlacement]);
+    const itemInstanceId = BigInt(sourceInfo.item.instance.instanceId);
 
+    // --- Handle Dropping Item into the World --- 
+    if (targetSlot === null) {
+      console.log(`[App Drop] Target is NULL. Dropping item ${itemInstanceId} into the world.`);
+      const quantityToDrop = sourceInfo.splitQuantity ?? sourceInfo.item.instance.quantity;
+      try {
+          connection.reducers.dropItem(itemInstanceId, quantityToDrop);
+      } catch (error) {
+          console.error("[App Drop] Error calling dropItem reducer:", error);
+          setError(`Failed to drop item: ${error}`); // Show user feedback
+      }
+      return; // Drop handled, exit
+    }
+
+    // --- Proceed with existing logic for dropping onto a slot --- 
+    console.log(`[App Drop] Processing drop onto slot: Item ${itemInstanceId} from ${sourceInfo.sourceSlot.type}:${sourceInfo.sourceSlot.index} to ${targetSlot.type}:${targetSlot.index}`);
+
+    try {
+        // --- Handle Stack Splitting First (if target is valid slot) --- 
+        if (sourceInfo.splitQuantity && sourceInfo.splitQuantity > 0) {
+            const quantityToSplit = sourceInfo.splitQuantity;
+            const sourceSlotType = sourceInfo.sourceSlot.type;
+            const targetSlotType = targetSlot.type;
+            const sourceInstanceId = BigInt(sourceInfo.item.instance.instanceId);
+
+            console.log(`[App Drop] Initiating SPLIT: Qty ${quantityToSplit} from ${sourceSlotType}:${sourceInfo.sourceSlot.index} to ${targetSlotType}:${targetSlot.index}`);
+
+            // --- Refactored Split Logic --- 
+
+            if (sourceSlotType === 'inventory' || sourceSlotType === 'hotbar') {
+                // Splitting FROM Inventory/Hotbar
+                let targetSlotIndexNum: number | null = null;
+                let targetCampfireIdNum: number | null = null;
+
+                if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
+                    // Target is Inv/Hotbar -> Parse Index
+                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                    if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum)) {
+                         console.error("[App Drop] Split failed: Invalid target index for inv/hotbar.");
+                         setError("Invalid target slot for split.");
+                         return;
+                    }
+                } else if (targetSlotType === 'campfire_fuel') {
+                    // Target is Campfire -> Parse Index & Get ID
+                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                    targetCampfireIdNum = targetSlot.parentId ? Number(targetSlot.parentId) : null;
+                     if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum) || targetCampfireIdNum === null || isNaN(targetCampfireIdNum)) {
+                         console.error("[App Drop] Split failed: Invalid target index or missing CampfireID for campfire target.");
+                         setError("Invalid target slot or context for campfire split.");
+                         return; 
+                     }
+                } else {
+                     // Invalid target for split from inv/hotbar (e.g., equipment)
+                    console.warn(`[App Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
+                    setError("Cannot split item to that location.");
+                    return;
+                }
+                
+                // Call splitAndMove (targetSlotIndexNum is guaranteed non-null here for valid targets)
+                console.log(`[App Drop] Calling splitAndMove for source ${sourceInstanceId}`);
+                 connection.reducers.splitAndMove(
+                    sourceInstanceId, 
+                    quantityToSplit, 
+                    targetSlotType, 
+                    targetSlotIndexNum!, // Assert non-null
+                    targetCampfireIdNum ?? undefined
+                );
+
+            } else if (sourceSlotType === 'campfire_fuel') {
+                // Splitting FROM Campfire
+                const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                
+                if (sourceCampfireId === null || isNaN(sourceIndexNum)) { 
+                   console.error("[App Drop] Missing CampfireID or SourceIndex for split FROM campfire"); 
+                   setError("Could not determine source campfire slot for split.");
+                   return; 
+                }
+                
+                // Parse target index generically (could be inv, hotbar, or campfire)
+                let targetSlotIndexNum: number | null = null; 
+                if (typeof targetSlot.index === 'number') {
+                    targetSlotIndexNum = targetSlot.index;
+                } else if (typeof targetSlot.index === 'string') { 
+                     targetSlotIndexNum = parseInt(targetSlot.index, 10);
+                     if (isNaN(targetSlotIndexNum)) targetSlotIndexNum = null;
+                }
+
+                // Target index must be valid for any split target
+                if (targetSlotIndexNum === null) { 
+                    console.error("[App Drop] Invalid target index number for split from campfire."); 
+                    setError("Invalid target slot for split.");
+                    return; 
+                }
+
+                // Call the new dedicated reducer
+                console.log(`[App Drop] Calling splitAndMoveFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum} -> ${targetSlotType}:${targetSlotIndexNum}`);
+                connection.reducers.splitAndMoveFromCampfire(
+                    sourceCampfireId, 
+                    sourceIndexNum, 
+                    quantityToSplit, 
+                    targetSlotType, 
+                    targetSlotIndexNum,
+                    // No target campfire ID needed as separate arg for this reducer
+                );
+            } else {
+                console.warn(`[App Drop] Split ignored: Cannot split from source type ${sourceSlotType}`);
+                setError("Cannot split from this item source.");
+            }
+            return; // Split attempt handled, exit
+        }
+
+        // --- Standard Item Move (Full Stack) ---
+        // Based on target slot type, call the appropriate reducer
+        if (targetSlot.type === 'inventory') {
+            // Ensure target index is a number
+            const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+            if (isNaN(targetIndexNum)) { console.error("Invalid inventory index", targetSlot.index); return; }
+            connection.reducers.moveItemToInventory(itemInstanceId, targetIndexNum);
+        } else if (targetSlot.type === 'hotbar') {
+            const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+            if (isNaN(targetIndexNum)) { console.error("Invalid hotbar index", targetSlot.index); return; }
+             connection.reducers.moveItemToHotbar(itemInstanceId, targetIndexNum);
+        } else if (targetSlot.type === 'equipment' && typeof targetSlot.index === 'string') {
+            // Equipment uses string index ('Head', 'Chest', etc.)
+            connection.reducers.equipArmorFromDrag(itemInstanceId, targetSlot.index);
+        } else if (targetSlot.type === 'campfire_fuel') {
+            const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+            if (isNaN(targetIndexNum)) { console.error("Invalid campfire fuel index", targetSlot.index); return; }
+            
+            // Determine Campfire ID (using parentId if available, otherwise fallback to interactionTarget)
+            let campfireIdNum: number | null = null;
+            if (targetSlot.parentId) {
+                campfireIdNum = Number(targetSlot.parentId);
+            } else if (sourceInfo.sourceSlot.parentId) { // Check source slot if target doesn't have it
+                 campfireIdNum = Number(sourceInfo.sourceSlot.parentId);
+            } else if (interactingWith?.type === 'campfire') { // Fallback to interaction target
+                campfireIdNum = Number(interactingWith.id);
+            }
+
+            if (campfireIdNum === null || isNaN(campfireIdNum)) {
+                console.error("[App Drop] Cannot move to/within campfire slot: Campfire ID could not be determined.");
+                setError("Cannot move item: Campfire context lost.");
+                return;
+            }
+
+            // --- Differentiate between adding fuel and moving fuel --- 
+            if (sourceInfo.sourceSlot.type === 'campfire_fuel') {
+                 // Moving FROM a campfire slot TO another campfire slot
+                 const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                 if (isNaN(sourceIndexNum)) { console.error("Invalid source campfire fuel index", sourceInfo.sourceSlot.index); return; }
+                 
+                 console.log(`[App Drop] Calling moveFuelWithinCampfire for campfire ${campfireIdNum} from slot ${sourceIndexNum} to ${targetIndexNum}`);
+                 connection.reducers.moveFuelWithinCampfire(campfireIdNum, sourceIndexNum, targetIndexNum);
+             } else {
+                 // Moving FROM inventory/hotbar TO a campfire slot
+                 console.log(`[App Drop] Calling addFuelToCampfire for item ${itemInstanceId} to campfire ${campfireIdNum} slot ${targetIndexNum}`);
+                 connection.reducers.addFuelToCampfire(campfireIdNum, targetIndexNum, itemInstanceId);
+             }
+        } else {
+            console.warn("Unhandled drop target type or index:", targetSlot);
+            setError("Cannot drop item here.");
+        }
+
+    } catch (error: any) {
+        console.error("[App Drop] Error calling reducer:", error);
+         setError(`Action failed: ${error?.message || error}`); // Show user feedback
+    }
+
+  }, [connection, interactingWith]); // Add interactingWith as dependency
+  
   // Effect to keep the ref synchronized with the state
   useEffect(() => {
       draggedItemRef.current = draggedItemInfo;
@@ -305,12 +540,17 @@ function App() {
     const handleCampfireInsert = (ctx: any, campfire: SpacetimeDB.Campfire) => {
       console.log('Campfire Inserted:', campfire.id);
       setCampfires(prev => new Map(prev).set(campfire.id.toString(), campfire));
-      // --- Use Refs Here --- 
-      if (isPlacingRef.current && connection?.identity && campfire.placedBy.isEqual(connection.identity)) {
-        console.log("[App handleCampfireInsert] Our campfire placed, calling cancel via ref...");
-        cancelPlacementRef.current(); // Call function via ref
-      }
-      // --- End Ref Use ---
+      // --- UPDATED Cancellation Logic (Use Refs) --- 
+      const currentPlacementInfo = placementInfoRef.current; // Read ref
+      if (currentPlacementInfo && 
+           currentPlacementInfo.itemName === 'Camp Fire' && 
+           connection?.identity && 
+           campfire.placedBy.isEqual(connection.identity)) 
+       {
+         console.log("[App handleCampfireInsert] Our campfire placed, calling cancelPlacement via ref...");
+         cancelPlacementActionRef.current(); // Call action via ref
+       }
+       // --- END UPDATED --- 
     };
 
     const handleCampfireUpdate = (ctx: any, oldFire: SpacetimeDB.Campfire, newFire: SpacetimeDB.Campfire) => {
@@ -357,7 +597,7 @@ function App() {
           newMap.set(instanceIdStr, invItem);
           // Log map update - check if it belongs to local player for info
           const isLocalPlayerItem = connection?.identity && invItem.playerIdentity.isEqual(connection.identity);
-          console.log(`[handleInventoryInsert] Updated inventoryItems map. Item belongs to local player? ${isLocalPlayerItem}. New size: ${newMap.size}. Contains key ${instanceIdStr}? ${newMap.has(instanceIdStr)}`); 
+          // console.log(`[handleInventoryInsert] Updated inventoryItems map. Item belongs to local player? ${isLocalPlayerItem}. New size: ${newMap.size}. Contains key ${instanceIdStr}? ${newMap.has(instanceIdStr)}`); 
           return newMap;
       });
     };
@@ -691,7 +931,7 @@ function App() {
       if (droppedItemSubscription) droppedItemSubscription.unsubscribe();
     };
     
-  }, [connection]); // Now only depends on connection!
+  }, [connection]); // ONLY depends on connection
   
   // Handle player registration
   const handleRegisterPlayer = () => {
@@ -710,274 +950,9 @@ function App() {
     }
   };
   
-  // --- Handle Enter key submission --- 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter' && !isLoading && username.trim()) {
-      handleRegisterPlayer();
-    }
-  };
-
-  // --- Autofocus on initial render --- 
-  useEffect(() => {
-    if (!isConnected && usernameInputRef.current) {
-      usernameInputRef.current.focus();
-    }
-  }, [isConnected]); // Re-run if connection status changes (e.g., disconnect)
-  
-  // --- Prevent global context menu --- 
-  useEffect(() => {
-    const handleGlobalContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener('contextmenu', handleGlobalContextMenu);
-
-    // Cleanup listener on component unmount
-    return () => {
-      window.removeEventListener('contextmenu', handleGlobalContextMenu);
-    };
-  }, []); // Empty dependency array ensures this runs only once on mount
-  
-  // --- Reducer Calls ---
-  // Function to call the updatePlayerPosition reducer
-  const updatePlayerPosition = (dx: number, dy: number, intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null) => {
-    if (!connection?.reducers) return;
-
-    // Log the direction being sent
-    // console.log(`Calling updatePlayerPosition with dx: ${dx}, dy: ${dy}, direction: ${intendedDirection}`);
-
-    try {
-      // Call the reducer, passing the optional direction
-      connection.reducers.updatePlayerPosition(dx, dy, intendedDirection ?? undefined);
-    } catch (error) {
-      console.error("Error calling updatePlayerPosition reducer:", error);
-    }
-  };
-  
-  // Function to call the setSprinting reducer
-  const callSetSprintingReducer = (isSprinting: boolean) => {
-    if (connection) {
-      try {
-        // Call the new SpacetimeDB reducer using camelCase
-        connection.reducers.setSprinting(isSprinting);
-      } catch (err) {
-        console.error('Failed to call setSprinting reducer:', err);
-      }
-    }
-  };
-  
-  // --- Jump Reducer Call ---
-  const callJumpReducer = () => {
-    if (connection) {
-      try {
-        // Call the actual SpacetimeDB reducer using camelCase
-        connection.reducers.jump();
-      } catch (err) {
-        console.error('Failed to call jump reducer:', err);
-        // Optionally set an error state here
-      }
-    }
-  };
-  
-  // --- LIFTED Drag/Drop Handlers --- 
-  const handleItemDragStart = useCallback((info: DraggedItemInfo) => {
-    console.log("[App] Drag Start:", info);
-    setDraggedItemInfo(info); // Set state, which will update the ref via useEffect
-    document.body.classList.add('item-dragging');
-  }, []); // No dependencies needed here
-
-  // Use useCallback to memoize the drop handler
-  const handleItemDrop = useCallback((targetSlot: DragSourceSlotInfo | null) => {
-    console.log("[App] Drop Target:", targetSlot);
-    document.body.classList.remove('item-dragging');
-    const sourceInfo = draggedItemRef.current;
-    // Always clear drag state, regardless of whether drop is valid
-    draggedItemRef.current = null;
-    setDraggedItemInfo(null);
-
-    if (!sourceInfo) { 
-      console.log("[App Drop] No source info found, ignoring drop.");
-      return; 
-    } // Early exit if no source
-    if (!connection?.reducers) { 
-        console.log("[App Drop] No reducers connection, ignoring drop.");
-        return; 
-    } // Early exit if no connection
-
-    const itemInstanceId = BigInt(sourceInfo.item.instance.instanceId);
-
-    // --- Handle Dropping Item into the World --- 
-    if (targetSlot === null) {
-      console.log(`[App Drop] Target is NULL. Dropping item ${itemInstanceId} into the world.`);
-      const quantityToDrop = sourceInfo.splitQuantity ?? sourceInfo.item.instance.quantity;
-      try {
-          connection.reducers.dropItem(itemInstanceId, quantityToDrop);
-      } catch (error) {
-          console.error("[App Drop] Error calling dropItem reducer:", error);
-          setError(`Failed to drop item: ${error}`); // Show user feedback
-      }
-      return; // Drop handled, exit
-    }
-
-    // --- Proceed with existing logic for dropping onto a slot --- 
-    console.log(`[App Drop] Processing drop onto slot: Item ${itemInstanceId} from ${sourceInfo.sourceSlot.type}:${sourceInfo.sourceSlot.index} to ${targetSlot.type}:${targetSlot.index}`);
-
-    try {
-        // --- Handle Stack Splitting First (if target is valid slot) --- 
-        if (sourceInfo.splitQuantity && sourceInfo.splitQuantity > 0) {
-            const quantityToSplit = sourceInfo.splitQuantity;
-            const sourceSlotType = sourceInfo.sourceSlot.type;
-            const targetSlotType = targetSlot.type;
-            const sourceInstanceId = BigInt(sourceInfo.item.instance.instanceId);
-
-            console.log(`[App Drop] Initiating SPLIT: Qty ${quantityToSplit} from ${sourceSlotType}:${sourceInfo.sourceSlot.index} to ${targetSlotType}:${targetSlot.index}`);
-
-            // --- Refactored Split Logic --- 
-
-            if (sourceSlotType === 'inventory' || sourceSlotType === 'hotbar') {
-                // Splitting FROM Inventory/Hotbar
-                let targetSlotIndexNum: number | null = null;
-                let targetCampfireIdNum: number | null = null;
-
-                if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
-                    // Target is Inv/Hotbar -> Parse Index
-                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
-                    if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum)) {
-                         console.error("[App Drop] Split failed: Invalid target index for inv/hotbar.");
-                         setError("Invalid target slot for split.");
-                         return;
-                    }
-                } else if (targetSlotType === 'campfire_fuel') {
-                    // Target is Campfire -> Parse Index & Get ID
-                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
-                    targetCampfireIdNum = targetSlot.parentId ? Number(targetSlot.parentId) : null;
-                     if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum) || targetCampfireIdNum === null || isNaN(targetCampfireIdNum)) {
-                         console.error("[App Drop] Split failed: Invalid target index or missing CampfireID for campfire target.");
-                         setError("Invalid target slot or context for campfire split.");
-                         return; 
-                     }
-                } else {
-                     // Invalid target for split from inv/hotbar (e.g., equipment)
-                    console.warn(`[App Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
-                    setError("Cannot split item to that location.");
-                    return;
-                }
-                
-                // Call splitAndMove (targetSlotIndexNum is guaranteed non-null here for valid targets)
-                console.log(`[App Drop] Calling splitAndMove for source ${sourceInstanceId}`);
-                 connection.reducers.splitAndMove(
-                    sourceInstanceId, 
-                    quantityToSplit, 
-                    targetSlotType, 
-                    targetSlotIndexNum!, // Assert non-null
-                    targetCampfireIdNum ?? undefined
-                );
-
-            } else if (sourceSlotType === 'campfire_fuel') {
-                // Splitting FROM Campfire
-                const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
-                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
-                
-                if (sourceCampfireId === null || isNaN(sourceIndexNum)) { 
-                   console.error("[App Drop] Missing CampfireID or SourceIndex for split FROM campfire"); 
-                   setError("Could not determine source campfire slot for split.");
-                   return; 
-                }
-                
-                // Parse target index generically (could be inv, hotbar, or campfire)
-                let targetSlotIndexNum: number | null = null; 
-                if (typeof targetSlot.index === 'number') {
-                    targetSlotIndexNum = targetSlot.index;
-                } else if (typeof targetSlot.index === 'string') { 
-                     targetSlotIndexNum = parseInt(targetSlot.index, 10);
-                     if (isNaN(targetSlotIndexNum)) targetSlotIndexNum = null;
-                }
-
-                // Target index must be valid for any split target
-                if (targetSlotIndexNum === null) { 
-                    console.error("[App Drop] Invalid target index number for split from campfire."); 
-                    setError("Invalid target slot for split.");
-                    return; 
-                }
-
-                // Call the new dedicated reducer
-                console.log(`[App Drop] Calling splitAndMoveFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum} -> ${targetSlotType}:${targetSlotIndexNum}`);
-                connection.reducers.splitAndMoveFromCampfire(
-                    sourceCampfireId, 
-                    sourceIndexNum, 
-                    quantityToSplit, 
-                    targetSlotType, 
-                    targetSlotIndexNum,
-                    // No target campfire ID needed as separate arg for this reducer
-                );
-            } else {
-                console.warn(`[App Drop] Split ignored: Cannot split from source type ${sourceSlotType}`);
-                setError("Cannot split from this item source.");
-            }
-            return; // Split attempt handled, exit
-        }
-
-        // --- Standard Item Move (Full Stack) ---
-        // Based on target slot type, call the appropriate reducer
-        if (targetSlot.type === 'inventory') {
-            // Ensure target index is a number
-            const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
-            if (isNaN(targetIndexNum)) { console.error("Invalid inventory index", targetSlot.index); return; }
-            connection.reducers.moveItemToInventory(itemInstanceId, targetIndexNum);
-        } else if (targetSlot.type === 'hotbar') {
-            const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
-            if (isNaN(targetIndexNum)) { console.error("Invalid hotbar index", targetSlot.index); return; }
-             connection.reducers.moveItemToHotbar(itemInstanceId, targetIndexNum);
-        } else if (targetSlot.type === 'equipment' && typeof targetSlot.index === 'string') {
-            // Equipment uses string index ('Head', 'Chest', etc.)
-            connection.reducers.equipArmorFromDrag(itemInstanceId, targetSlot.index);
-        } else if (targetSlot.type === 'campfire_fuel') {
-            const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
-            if (isNaN(targetIndexNum)) { console.error("Invalid campfire fuel index", targetSlot.index); return; }
-            
-            // Determine Campfire ID (using parentId if available, otherwise fallback to interactionTarget)
-            let campfireIdNum: number | null = null;
-            if (targetSlot.parentId) {
-                campfireIdNum = Number(targetSlot.parentId);
-            } else if (sourceInfo.sourceSlot.parentId) { // Check source slot if target doesn't have it
-                 campfireIdNum = Number(sourceInfo.sourceSlot.parentId);
-            } else if (interactingWith?.type === 'campfire') { // Fallback to interaction target
-                campfireIdNum = Number(interactingWith.id);
-            }
-
-            if (campfireIdNum === null || isNaN(campfireIdNum)) {
-                console.error("[App Drop] Cannot move to/within campfire slot: Campfire ID could not be determined.");
-                setError("Cannot move item: Campfire context lost.");
-                return;
-            }
-
-            // --- Differentiate between adding fuel and moving fuel --- 
-            if (sourceInfo.sourceSlot.type === 'campfire_fuel') {
-                 // Moving FROM a campfire slot TO another campfire slot
-                 const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
-                 if (isNaN(sourceIndexNum)) { console.error("Invalid source campfire fuel index", sourceInfo.sourceSlot.index); return; }
-                 
-                 console.log(`[App Drop] Calling moveFuelWithinCampfire for campfire ${campfireIdNum} from slot ${sourceIndexNum} to ${targetIndexNum}`);
-                 connection.reducers.moveFuelWithinCampfire(campfireIdNum, sourceIndexNum, targetIndexNum);
-             } else {
-                 // Moving FROM inventory/hotbar TO a campfire slot
-                 console.log(`[App Drop] Calling addFuelToCampfire for item ${itemInstanceId} to campfire ${campfireIdNum} slot ${targetIndexNum}`);
-                 connection.reducers.addFuelToCampfire(campfireIdNum, targetIndexNum, itemInstanceId);
-             }
-        } else {
-            console.warn("Unhandled drop target type or index:", targetSlot);
-            setError("Cannot drop item here.");
-        }
-
-    } catch (error: any) {
-        console.error("[App Drop] Error calling reducer:", error);
-         setError(`Action failed: ${error?.message || error}`); // Show user feedback
-    }
-
-  }, [connection, interactingWith]); // Add interactingWith as dependency
-  
   return (
     <div className="App" style={{ backgroundColor: '#111' }}>
-      {error && <div className="error-message">{error}</div>}
+      {(error || placementError) && <div className="error-message">{error || placementError}</div>}
       
       {!isConnected ? (
         <div style={{ /* Centering styles */
@@ -1064,9 +1039,8 @@ function App() {
             updatePlayerPosition={updatePlayerPosition}
             callJumpReducer={callJumpReducer}
             callSetSprintingReducer={callSetSprintingReducer}
-            isPlacingCampfire={isPlacingCampfire}
-            handlePlaceCampfire={handlePlaceCampfire}
-            cancelCampfirePlacement={cancelCampfirePlacement}
+            placementInfo={placementInfo}
+            placementActions={placementActions}
             placementError={placementError}
             onSetInteractingWith={setInteractingWith}
           />
@@ -1076,8 +1050,9 @@ function App() {
             inventoryItems={inventoryItems}
             itemDefinitions={itemDefinitions}
             connection={connection}
-            startCampfirePlacement={startCampfirePlacement}
-            cancelCampfirePlacement={cancelCampfirePlacement}
+            startPlacement={startPlacement}
+            cancelPlacement={cancelPlacement}
+            placementInfo={placementInfo}
             onItemDragStart={handleItemDragStart}
             onItemDrop={handleItemDrop}
             draggedItemInfo={draggedItemInfo}
@@ -1090,8 +1065,8 @@ function App() {
             playerIdentity={connection?.identity || null}
             itemDefinitions={itemDefinitions}
             inventoryItems={inventoryItems}
-            startCampfirePlacement={startCampfirePlacement}
-            cancelCampfirePlacement={cancelCampfirePlacement}
+            startPlacement={startPlacement}
+            cancelPlacement={cancelPlacement}
             connection={connection}
             onItemDragStart={handleItemDragStart}
             onItemDrop={handleItemDrop}

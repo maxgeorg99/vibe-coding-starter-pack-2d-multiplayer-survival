@@ -6,6 +6,8 @@ import Hotbar from './Hotbar';
 import { itemIcons } from '../utils/itemIconUtils';
 // Import drag/drop types from shared file
 import { DragSourceSlotInfo, DraggedItemInfo } from '../types/dragDropTypes';
+// NEW: Import placement types
+import { PlacementItemInfo, PlacementState, PlacementActions } from '../hooks/usePlacementManager';
 
 // Define the StatusBar component inline for simplicity
 interface StatusBarProps {
@@ -50,8 +52,6 @@ interface PlayerUIProps {
   inventoryItems: Map<string, InventoryItem>;
   itemDefinitions: Map<string, ItemDefinition>;
   connection: DbConnection | null;
-  startCampfirePlacement: () => void;
-  cancelCampfirePlacement: () => void;
   onItemDragStart: (info: DraggedItemInfo) => void;
   onItemDrop: (targetSlotInfo: DragSourceSlotInfo | null) => void;
   draggedItemInfo: DraggedItemInfo | null;
@@ -59,6 +59,9 @@ interface PlayerUIProps {
   campfires: Map<string, SpacetimeDBCampfire>;
   onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
   interactingWith: { type: string; id: number | bigint } | null;
+  startPlacement: (itemInfo: PlacementItemInfo) => void;
+  cancelPlacement: () => void;
+  placementInfo: PlacementItemInfo | null;
 }
 
 const PlayerUI: React.FC<PlayerUIProps> = ({
@@ -67,8 +70,6 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
     inventoryItems,
     itemDefinitions,
     connection,
-    startCampfirePlacement,
-    cancelCampfirePlacement,
     onItemDragStart,
     onItemDrop,
     draggedItemInfo,
@@ -76,6 +77,9 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
     campfires,
     onSetInteractingWith,
     interactingWith,
+    startPlacement,
+    cancelPlacement,
+    placementInfo
  }) => {
     const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
@@ -218,6 +222,9 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
                     draggedItemInfo={draggedItemInfo}
                     interactionTarget={interactingWith}
                     campfires={campfires}
+                    startPlacement={startPlacement}
+                    cancelPlacement={cancelPlacement}
+                    placementInfo={placementInfo}
                  />
              )}
 

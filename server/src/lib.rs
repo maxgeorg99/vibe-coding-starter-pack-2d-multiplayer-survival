@@ -40,13 +40,6 @@ use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTa
 use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
 use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED, PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED };
 
-// Remove commented-out schedule imports
-// use crate::campfire::{CampfireUpdateSchedule, CAMPFIRE_UPDATE_INTERVAL_SECS}; // Temporarily disabled
-// use spacetimedb::ScheduleAt; // Temporarily disabled
-
-// Import generated table traits with aliases to avoid name conflicts
-// use crate::campfire::campfire_update_schedule as CampfireUpdateScheduleTableTrait; // Temporarily disabled
-
 // --- World/Player Constants --- 
 pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
 pub(crate) const WORLD_HEIGHT_TILES: u32 = 100;
@@ -116,21 +109,6 @@ pub fn init_module(ctx: &ReducerContext) -> Result<(), String> {
     crate::dropped_item::init_dropped_item_schedule(ctx)?;
     // NEW: Initialize the campfire fuel check schedule
     crate::campfire::init_campfire_fuel_schedule(ctx)?;
-
-    // Remove commented-out schedule init logic
-    /*
-    let schedule_table = ctx.db.campfire_update_schedule();
-    if schedule_table.iter().count() == 0 {
-        log::info!("Starting campfire update schedule (every {}s).", CAMPFIRE_UPDATE_INTERVAL_SECS);
-        let interval = Duration::from_secs(CAMPFIRE_UPDATE_INTERVAL_SECS);
-        schedule_table.insert(CampfireUpdateSchedule {
-            id: 0, // Auto-incremented
-            schedule_info: ScheduleAt::Interval(interval.into()),
-        })?;
-    } else {
-        log::debug!("Campfire update schedule already exists.");
-    }
-    */
 
     log::info!("Module initialization complete.");
     Ok(())
@@ -886,46 +864,6 @@ pub fn update_player_position(
         }
     }
 
-    // Check Player-Campfire Collision
-    if !collision_handled {
-        for fire in campfires.iter() {
-            let fire_collision_y = fire.pos_y - CAMPFIRE_COLLISION_Y_OFFSET;
-            let dx = clamped_x - fire.pos_x;
-            let dy = clamped_y - fire_collision_y;
-            let dist_sq = dx * dx + dy * dy;
-
-            if dist_sq < PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
-                log::debug!("Player-Campfire collision detected between {:?} and fire {}. Calculating slide.", sender_id, fire.id);
-
-                let intended_dx = clamped_x - current_player.position_x;
-                let intended_dy = clamped_y - current_player.position_y;
-                let collision_normal_x = dx;
-                let collision_normal_y = dy;
-                let normal_mag_sq = dist_sq;
-
-                if normal_mag_sq > 0.0 {
-                    let normal_mag = normal_mag_sq.sqrt();
-                    let norm_x = collision_normal_x / normal_mag;
-                    let norm_y = collision_normal_y / normal_mag;
-                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-                    let projection_x = dot_product * norm_x;
-                    let projection_y = dot_product * norm_y;
-                    let slide_dx = intended_dx - projection_x;
-                    let slide_dy = intended_dy - projection_y;
-                    final_x = current_player.position_x + slide_dx;
-                    final_y = current_player.position_y + slide_dy;
-                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
-                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
-                } else {
-                    final_x = current_player.position_x;
-                    final_y = current_player.position_y;
-                }
-                // No need to set collision_handled=true here if it's the last check
-                break; // Handle first campfire collision
-            }
-        }
-    }
-
     // --- Iterative Collision Resolution (Push-out) ---
     let mut resolved_x = final_x;
     let mut resolved_y = final_y;
@@ -1003,27 +941,6 @@ pub fn update_player_position(
                 resolved_x += push_x;
                 resolved_y += push_y;
                 log::trace!("Resolving player-stone overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
-            }
-        }
-
-        // Check Player-Campfire Overlap
-        for fire in campfires.iter() {
-            let fire_collision_y = fire.pos_y - CAMPFIRE_COLLISION_Y_OFFSET;
-            let dx = resolved_x - fire.pos_x;
-            let dy = resolved_y - fire_collision_y;
-            let dist_sq = dx * dx + dy * dy;
-            let min_dist = PLAYER_RADIUS + CAMPFIRE_COLLISION_RADIUS; // Use campfire radius
-            let min_dist_sq = min_dist * min_dist;
-
-            if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                overlap_found_in_iter = true;
-                let distance = dist_sq.sqrt();
-                let overlap = (min_dist - distance) + epsilon;
-                let push_x = (dx / distance) * overlap;
-                let push_y = (dy / distance) * overlap;
-                resolved_x += push_x;
-                resolved_y += push_y;
-                log::trace!("Resolving player-campfire overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
             }
         }
 

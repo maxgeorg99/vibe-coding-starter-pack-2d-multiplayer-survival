@@ -18,6 +18,8 @@ import {
 } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import { itemIcons, getItemIcon } from '../utils/itemIconUtils';
+// NEW: Import placement types
+import { PlacementItemInfo, PlacementState, PlacementActions } from '../hooks/usePlacementManager';
 
 // --- Type Definitions ---
 // Define props for InventoryUI component
@@ -34,6 +36,10 @@ interface InventoryUIProps {
     // Add new props for interaction context
     interactionTarget: { type: string; id: number | bigint } | null;
     campfires: Map<string, SpacetimeDBCampfire>;
+    // NEW: Add Generic Placement Props
+    startPlacement: (itemInfo: PlacementItemInfo) => void;
+    cancelPlacement: () => void; // Assuming cancel might be needed (e.g., close button cancels placement)
+    placementInfo: PlacementItemInfo | null; // To potentially disable actions while placing
 }
 
 // Represents an item instance with its definition for rendering
@@ -77,8 +83,13 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
     draggedItemInfo,
     interactionTarget,
     campfires,
+    // NEW: Destructure placement props
+    startPlacement,
+    cancelPlacement,
+    placementInfo, // Read isPlacing state from this
 }) => {
     const NUM_FUEL_SLOTS = 5; // Define constant for UI
+    const isPlacingItem = placementInfo !== null; // Derive boolean from placementInfo
 
     // --- Determine Campfire Interaction Data --- 
     let currentCampfire: SpacetimeDBCampfire | undefined = undefined;
@@ -283,9 +294,18 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
     };
     const isToggleButtonDisabled = getIsToggleButtonDisabled(); // Call the function
 
+    // Update onClose to potentially cancel placement
+    const handleClose = () => {
+        if (isPlacingItem) {
+            console.log("[InventoryUI] Closing panel, cancelling placement mode.");
+            cancelPlacement();
+        }
+        onClose(); // Call original onClose prop
+    };
+
     return (
         <div className={styles.inventoryPanel}>
-            <button className={styles.closeButton} onClick={onClose}>X</button>
+            <button className={styles.closeButton} onClick={handleClose}>X</button>
 
             {/* Left Pane */}
             <div className={styles.leftPane}>
