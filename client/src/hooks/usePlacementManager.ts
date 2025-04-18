@@ -7,6 +7,7 @@ export interface PlacementItemInfo {
   itemDefId: bigint;
   itemName: string;
   iconAssetName: string;
+  instanceId: bigint;
 }
 
 // Type for the state managed by the hook
@@ -60,14 +61,14 @@ export const usePlacementManager = (connection: DbConnection | null): [Placement
       // This needs to be expanded as more placeable items are added
       switch (placementInfo.itemName) {
         case 'Camp Fire':
-          console.log(`[PlacementManager] Calling placeCampfire reducer.`);
-          connection.reducers.placeCampfire(worldX, worldY);
+          console.log(`[PlacementManager] Calling placeCampfire reducer with instance ID: ${placementInfo.instanceId}`);
+          connection.reducers.placeCampfire(placementInfo.instanceId, worldX, worldY);
           // Note: We don't call cancelPlacement here. 
           // App.tsx's handleCampfireInsert callback will call it upon success.
           break;
         case 'Wooden Storage Box':
-          console.log(`[PlacementManager] Calling placeWoodenStorageBox reducer.`);
-          connection.reducers.placeWoodenStorageBox(worldX, worldY);
+          console.log(`[PlacementManager] Calling placeWoodenStorageBox reducer with instance ID: ${placementInfo.instanceId}`);
+          connection.reducers.placeWoodenStorageBox(placementInfo.instanceId, worldX, worldY);
           // Assume App.tsx will have a handleWoodenStorageBoxInsert similar to campfire
           break;
         // case 'Storage Box':

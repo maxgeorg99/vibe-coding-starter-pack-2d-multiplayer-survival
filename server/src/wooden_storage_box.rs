@@ -122,7 +122,7 @@ fn validate_box_interaction(
 
 // Reducer is now uncommented
 #[spacetimedb::reducer]
-pub fn place_wooden_storage_box(ctx: &ReducerContext, world_x: f32, world_y: f32) -> Result<(), String> {
+pub fn place_wooden_storage_box(ctx: &ReducerContext, item_instance_id: u64, world_x: f32, world_y: f32) -> Result<(), String> {
     let sender_id = ctx.sender;
     // Use table traits via ctx.db
     let inventory_items = ctx.db.inventory_item();
@@ -131,8 +131,8 @@ pub fn place_wooden_storage_box(ctx: &ReducerContext, world_x: f32, world_y: f32
     let wooden_storage_boxes = ctx.db.wooden_storage_box(); // Use trait alias
 
     log::info!(
-        "[PlaceStorageBox] Player {:?} attempting placement at ({:.1}, {:.1})",
-        sender_id, world_x, world_y
+        "[PlaceStorageBox] Player {:?} attempting placement of item {} at ({:.1}, {:.1})",
+        sender_id, item_instance_id, world_x, world_y
     );
 
     // --- 1. Find the 'Wooden Storage Box' Item Definition ID ---
@@ -141,20 +141,26 @@ pub fn place_wooden_storage_box(ctx: &ReducerContext, world_x: f32, world_y: f32
         .map(|def| def.id)
         .ok_or_else(|| "Item definition 'Wooden Storage Box' not found.".to_string())?;
 
-    // --- 2. Find an instance of the item in the player's inventory/hotbar ---
-    // Prioritize finding it in the hotbar, then inventory
-    let item_instance_opt = inventory_items.iter()
-        .filter(|item| item.player_identity == sender_id && item.item_def_id == box_def_id)
-        .min_by_key(|item| match item.hotbar_slot {
-            Some(_) => 0, // Prefer hotbar (lower key)
-            None => 1,    // Then inventory
-        });
-
-    // This check might need refinement if the item isn't deleted immediately or if quantity > 1 becomes possible
-    let item_instance = item_instance_opt
-        .ok_or_else(|| "Player does not have a Wooden Storage Box item.".to_string())?;
-
-    let item_instance_id_to_delete = item_instance.instance_id; // Store ID before potential borrow issues
+    // --- 2. Find the specific item instance and validate --- 
+    let item_to_consume = inventory_items.instance_id().find(item_instance_id)
+        .ok_or_else(|| format!("Item instance {} not found.", item_instance_id))?;
+    
+    // Validate ownership
+    if item_to_consume.player_identity != sender_id {
+        return Err(format!("Item instance {} not owned by player {:?}.", item_instance_id, sender_id));
+    }
+    // Validate item type
+    if item_to_consume.item_def_id != box_def_id {
+        return Err(format!("Item instance {} is not a Wooden Storage Box (expected def {}, got {}).", 
+                        item_instance_id, box_def_id, item_to_consume.item_def_id));
+    }
+    // Validate location (must be in inv or hotbar)
+    if item_to_consume.inventory_slot.is_none() && item_to_consume.hotbar_slot.is_none() {
+        return Err(format!("Item instance {} must be in inventory or hotbar to be placed.", item_instance_id));
+    }
+    
+    // Use the validated item_instance_id directly
+    let item_instance_id_to_delete = item_instance_id; 
 
     // --- 3. Validate Placement (Simplified - basic distance check) ---
     if let Some(player) = players.identity().find(sender_id) {

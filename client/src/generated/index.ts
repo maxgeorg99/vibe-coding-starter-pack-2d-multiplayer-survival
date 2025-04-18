@@ -940,35 +940,35 @@ export class RemoteReducers {
     this.connection.offReducer("pickup_dropped_item", callback);
   }
 
-  placeCampfire(targetX: number, targetY: number) {
-    const __args = { targetX, targetY };
+  placeCampfire(itemInstanceId: bigint, worldX: number, worldY: number) {
+    const __args = { itemInstanceId, worldX, worldY };
     let __writer = new BinaryWriter(1024);
     PlaceCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("place_campfire", __argsBuffer, this.setCallReducerFlags.placeCampfireFlags);
   }
 
-  onPlaceCampfire(callback: (ctx: ReducerEventContext, targetX: number, targetY: number) => void) {
+  onPlaceCampfire(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, worldX: number, worldY: number) => void) {
     this.connection.onReducer("place_campfire", callback);
   }
 
-  removeOnPlaceCampfire(callback: (ctx: ReducerEventContext, targetX: number, targetY: number) => void) {
+  removeOnPlaceCampfire(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, worldX: number, worldY: number) => void) {
     this.connection.offReducer("place_campfire", callback);
   }
 
-  placeWoodenStorageBox(worldX: number, worldY: number) {
-    const __args = { worldX, worldY };
+  placeWoodenStorageBox(itemInstanceId: bigint, worldX: number, worldY: number) {
+    const __args = { itemInstanceId, worldX, worldY };
     let __writer = new BinaryWriter(1024);
     PlaceWoodenStorageBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("place_wooden_storage_box", __argsBuffer, this.setCallReducerFlags.placeWoodenStorageBoxFlags);
   }
 
-  onPlaceWoodenStorageBox(callback: (ctx: ReducerEventContext, worldX: number, worldY: number) => void) {
+  onPlaceWoodenStorageBox(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, worldX: number, worldY: number) => void) {
     this.connection.onReducer("place_wooden_storage_box", callback);
   }
 
-  removeOnPlaceWoodenStorageBox(callback: (ctx: ReducerEventContext, worldX: number, worldY: number) => void) {
+  removeOnPlaceWoodenStorageBox(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, worldX: number, worldY: number) => void) {
     this.connection.offReducer("place_wooden_storage_box", callback);
   }
 

@@ -113,7 +113,8 @@ const Hotbar: React.FC<HotbarProps> = ({
               const placementInfo: PlacementItemInfo = {
                   itemDefId: BigInt(itemInNewSlot.definition.id),
                   itemName: name,
-                  iconAssetName: itemInNewSlot.definition.iconAssetName
+                  iconAssetName: itemInNewSlot.definition.iconAssetName,
+                  instanceId: BigInt(itemInNewSlot.instance.instanceId)
               };
               startPlacement(placementInfo);
               try { connection.reducers.unequipItem(); } catch (err) { console.error("Error unequip:", err); }
@@ -183,7 +184,8 @@ const Hotbar: React.FC<HotbarProps> = ({
           const placementInfo: PlacementItemInfo = {
               itemDefId: BigInt(clickedItem.definition.id),
               itemName: name,
-              iconAssetName: clickedItem.definition.iconAssetName
+              iconAssetName: clickedItem.definition.iconAssetName,
+              instanceId: BigInt(clickedItem.instance.instanceId)
           };
           startPlacement(placementInfo);
           try { connection.reducers.unequipItem(); } catch (err) { console.error("Error unequip:", err); }

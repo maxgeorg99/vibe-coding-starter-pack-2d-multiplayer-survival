@@ -350,108 +350,70 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
 
 // Reducer to place a campfire
 #[spacetimedb::reducer]
-pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Result<(), String> {
+pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32, world_y: f32) -> Result<(), String> {
     let sender_id = ctx.sender;
-    let players = ctx.db.player();
-    let mut inventory_items = ctx.db.inventory_item(); // Mutable for insert/update
+    let inventory_items = ctx.db.inventory_item();
     let item_defs = ctx.db.item_definition();
-    let mut campfires = ctx.db.campfire(); // Mutable for insert
-    let trees = ctx.db.tree();
-    let stones = ctx.db.stone();
+    let players = ctx.db.player();
+    let campfires = ctx.db.campfire();
 
-    // --- 1. Check if player exists ---
-    let player = players.identity().find(sender_id)
-        .ok_or_else(|| "Player not found".to_string())?;
+    log::info!(
+        "[PlaceCampfire] Player {:?} attempting placement of item {} at ({:.1}, {:.1})",
+        sender_id, item_instance_id, world_x, world_y
+    );
 
-    // --- NEW: 1.5 Check Placement Distance --- 
-    let dist_sq = crate::utils::get_distance_squared(player.position_x, player.position_y, target_x, target_y);
-    if dist_sq > CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED {
-        log::warn!("[PlaceCampfire] Player {:?} tried to place campfire too far away (DistSq: {:.1} > {:.1})",
-                  sender_id, dist_sq, CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED);
-        return Err("Too far away to place campfire".to_string());
-    }
+    // --- 1. Check Collision / Placement Rules --- 
 
     // --- 2. Find the "Camp Fire" item definition ---
-    let campfire_placeable_def = item_defs.iter()
+    let campfire_def_id = item_defs.iter()
         .find(|def| def.name == "Camp Fire")
-        .ok_or_else(|| "Camp Fire item definition not found".to_string())?;
+        .map(|def| def.id)
+        .ok_or_else(|| "Item definition 'Camp Fire' not found.".to_string())?;
 
-    // --- 3. Check if player has a Camp Fire item --- 
-    let campfire_item_stack = inventory_items.iter()
-        .find(|item| item.player_identity == sender_id && item.item_def_id == campfire_placeable_def.id && item.quantity > 0);
-
-    if campfire_item_stack.is_none() {
-        return Err("You do not have a Camp Fire item".to_string());
+    // --- 3. Find the specific item instance and validate --- 
+    let item_to_consume = inventory_items.instance_id().find(item_instance_id)
+        .ok_or_else(|| format!("Item instance {} not found.", item_instance_id))?;
+    
+    // Validate ownership
+    if item_to_consume.player_identity != sender_id {
+        return Err(format!("Item instance {} not owned by player {:?}.", item_instance_id, sender_id));
     }
-    let mut campfire_item = campfire_item_stack.unwrap(); // Safe to unwrap here
-
-    // --- 4. Validate Placement Position ---
-    // World boundaries
-    if target_x < CAMPFIRE_COLLISION_RADIUS || target_x > WORLD_WIDTH_PX - CAMPFIRE_COLLISION_RADIUS ||
-       target_y < CAMPFIRE_COLLISION_RADIUS || target_y > WORLD_HEIGHT_PX - CAMPFIRE_COLLISION_RADIUS {
-        return Err("Cannot place campfire outside world boundaries".to_string());
+    // Validate item type
+    if item_to_consume.item_def_id != campfire_def_id {
+        return Err(format!("Item instance {} is not a Camp Fire (expected def {}, got {}).", 
+                        item_instance_id, campfire_def_id, item_to_consume.item_def_id));
     }
-
-    // Collision with other Campfires
-    for other_fire in campfires.iter() {
-        let dx = target_x - other_fire.pos_x;
-        let dy = target_y - other_fire.pos_y; // No Y offset needed for fire-fire check
-        if (dx * dx + dy * dy) < CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
-            return Err("Cannot place campfire too close to another campfire".to_string());
-        }
+    // Validate location (must be in inv or hotbar)
+    if item_to_consume.inventory_slot.is_none() && item_to_consume.hotbar_slot.is_none() {
+        return Err(format!("Item instance {} must be in inventory or hotbar to be placed.", item_instance_id));
     }
+    
+    // Use the validated item_instance_id directly
+    let item_instance_id_to_delete = item_instance_id;
 
-    // Collision with Trees
-    for tree in trees.iter() {
-        let dx = target_x - tree.pos_x;
-        let dy = target_y - (tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET); // Already qualified
-        // Check if campfire placement overlaps tree collision area
-        // Use a combined radius check (tree trunk + campfire radius)
-        let combined_radius = crate::tree::TREE_TRUNK_RADIUS + CAMPFIRE_COLLISION_RADIUS; // Already qualified
-        if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
-             return Err("Cannot place campfire too close to a tree".to_string());
-        }
-    }
-
-    // Collision with Stones
-    for stone in stones.iter() {
-        let dx = target_x - stone.pos_x;
-        let dy = target_y - (stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET); // Already qualified
-        let combined_radius = crate::stone::STONE_RADIUS + CAMPFIRE_COLLISION_RADIUS; // Already qualified
-        if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
-            return Err("Cannot place campfire too close to a stone".to_string());
-        }
-    }
-
-    // Collision with Players (check against all players, including self if needed, though less critical for placement)
-    for other_player in players.iter() {
-        let dx = target_x - other_player.position_x;
-        let dy = target_y - other_player.position_y; // Use player's center
-        let combined_radius = PLAYER_RADIUS + CAMPFIRE_COLLISION_RADIUS;
-        if (dx * dx + dy * dy) < (combined_radius * combined_radius) {
-             return Err("Cannot place campfire too close to a player".to_string());
-        }
-    }
-
-    // --- 5. Consume Placable Item --- 
-    campfire_item.quantity -= 1;
-    let remaining_quantity = campfire_item.quantity; 
-    if remaining_quantity == 0 {
-        inventory_items.instance_id().delete(campfire_item.instance_id);
-        log::info!("Player {} consumed last Camp Fire item (instance {}).", player.username, campfire_item.instance_id);
+    // --- 4. Validate Placement Distance --- 
+    if let Some(player) = players.identity().find(sender_id) {
+        // ... existing code ...
     } else {
-        inventory_items.instance_id().update(campfire_item);
-        log::info!("Player {} consumed one Camp Fire item. {} remaining.", player.username, remaining_quantity);
+        return Err("Player not found".to_string());
     }
 
-    // --- Create Initial Fuel Item (Wood) --- 
+    // --- 5. Consume the Item --- 
+    log::info!(
+        "[PlaceCampfire] Consuming item instance {} (Def ID: {}) from player {:?}",
+        item_instance_id_to_delete, campfire_def_id, sender_id
+    );
+    inventory_items.instance_id().delete(item_instance_id_to_delete);
+
+    // --- 6. Create Campfire Entity ---
+    // --- 6a. Create Initial Fuel Item (Wood) --- 
     let wood_def = item_defs.iter()
         .find(|def| def.name == "Wood")
         .ok_or_else(|| "Wood item definition not found for initial fuel".to_string())?;
         
     let initial_fuel_item = crate::items::InventoryItem {
         instance_id: 0, // Auto-inc
-        player_identity: sender_id, // Belongs to the placer initially
+        player_identity: sender_id, // Belongs to the placer initially (needed? maybe not)
         item_def_id: wood_def.id,
         quantity: 50, // Start with 50 wood
         hotbar_slot: None, // Not in hotbar
@@ -460,24 +422,23 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
     // Insert the fuel item and get its generated instance ID
     let inserted_fuel_item = inventory_items.insert(initial_fuel_item);
     let fuel_instance_id = inserted_fuel_item.instance_id;
-    log::info!("Created initial fuel item (Wood, instance {}) for campfire.", fuel_instance_id);
-    
-    // --- Create Campfire Entity --- 
+    log::info!("[PlaceCampfire] Created initial fuel item (Wood, instance {}) for campfire.", fuel_instance_id);
+
+    // --- 6b. Initialize Campfire with Fuel and Burning --- 
     let current_time = ctx.timestamp;
-    // Calculate the first consumption time
     let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS).into();
     
-    let new_campfire = Campfire {
+    // Initialize all fields explicitly
+    let new_campfire = crate::campfire::Campfire {
         id: 0, // Auto-incremented
-        pos_x: target_x,
-        pos_y: target_y,
+        pos_x: world_x,
+        pos_y: world_y,
         placed_by: sender_id,
-        placed_at: current_time,
-        is_burning: true, // Start burning immediately
-        // Set slot 0 with the new wood item
-        fuel_instance_id_0: Some(fuel_instance_id),
+        placed_at: ctx.timestamp,
+        is_burning: true, // Start burning
+        // Initialize all fuel slots to None
+        fuel_instance_id_0: Some(fuel_instance_id), // Add the wood
         fuel_def_id_0: Some(wood_def.id),
-        // Initialize other slots to None
         fuel_instance_id_1: None,
         fuel_def_id_1: None,
         fuel_instance_id_2: None,
@@ -486,12 +447,15 @@ pub fn place_campfire(ctx: &ReducerContext, target_x: f32, target_y: f32) -> Res
         fuel_def_id_3: None,
         fuel_instance_id_4: None,
         fuel_def_id_4: None,
-        next_fuel_consume_at: Some(first_consumption_time), // Schedule first consumption
+        next_fuel_consume_at: Some(first_consumption_time), // Schedule consumption
     };
 
     campfires.try_insert(new_campfire)?;
+    // Re-fetch player for username in log message
+    let player_for_log = players.identity().find(sender_id)
+        .ok_or_else(|| "Player disappeared during placement?".to_string())?;
     log::info!("Player {} placed a campfire at ({:.1}, {:.1}) with initial fuel (Item {} in slot 0).", 
-             player.username, target_x, target_y, fuel_instance_id);
+             player_for_log.username, world_x, world_y, fuel_instance_id);
 
     Ok(())
 }

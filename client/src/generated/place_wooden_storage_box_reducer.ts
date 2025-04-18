@@ -32,6 +32,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type PlaceWoodenStorageBox = {
+  itemInstanceId: bigint,
   worldX: number,
   worldY: number,
 };
@@ -46,6 +47,7 @@ export namespace PlaceWoodenStorageBox {
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
+      new ProductTypeElement("itemInstanceId", AlgebraicType.createU64Type()),
       new ProductTypeElement("worldX", AlgebraicType.createF32Type()),
       new ProductTypeElement("worldY", AlgebraicType.createF32Type()),
     ]);
