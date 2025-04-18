@@ -65,6 +65,11 @@ export const usePlacementManager = (connection: DbConnection | null): [Placement
           // Note: We don't call cancelPlacement here. 
           // App.tsx's handleCampfireInsert callback will call it upon success.
           break;
+        case 'Wooden Storage Box':
+          console.log(`[PlacementManager] Calling placeWoodenStorageBox reducer.`);
+          connection.reducers.placeWoodenStorageBox(worldX, worldY);
+          // Assume App.tsx will have a handleWoodenStorageBoxInsert similar to campfire
+          break;
         // case 'Storage Box':
         //   console.log(`[PlacementManager] Calling placeStorageBox reducer.`);
         //   connection.reducers.placeStorageBox(worldX, worldY);

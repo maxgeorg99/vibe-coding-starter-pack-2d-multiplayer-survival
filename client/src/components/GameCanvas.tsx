@@ -11,7 +11,8 @@ import {
   ActiveEquipment as SpacetimeDBActiveEquipment,
   InventoryItem as SpacetimeDBInventoryItem,
   ItemDefinition as SpacetimeDBItemDefinition,
-  DroppedItem as SpacetimeDBDroppedItem
+  DroppedItem as SpacetimeDBDroppedItem,
+  WoodenStorageBox as SpacetimeDBWoodenStorageBox // Added import
 } from '../generated';
 import heroSpriteSheet from '../assets/hero.png';
 import grassTexture from '../assets/tiles/grass.png';
@@ -29,6 +30,8 @@ import { renderStone, preloadStoneImage } from '../utils/stoneRenderingUtils';
 import { renderCampfire, preloadCampfireImage, CAMPFIRE_HEIGHT } from '../utils/campfireRenderingUtils';
 // Import Mushroom rendering utils
 import { renderMushroom, preloadMushroomImages } from '../utils/mushroomRenderingUtils';
+// Import Wooden Storage Box rendering utils
+import { renderWoodenStorageBox, preloadWoodenStorageBoxImage } from '../utils/woodenStorageBoxRenderingUtils';
 // Import DeathScreen component with extension
 import DeathScreen from './DeathScreen.tsx';
 // Import item icon mapping
@@ -73,6 +76,7 @@ interface GameCanvasProps {
   campfires: Map<string, SpacetimeDBCampfire>;
   mushrooms: Map<string, SpacetimeDBMushroom>; 
   droppedItems: Map<string, SpacetimeDBDroppedItem>;
+  woodenStorageBoxes: Map<string, SpacetimeDBWoodenStorageBox>; // Added prop
   inventoryItems: Map<string, SpacetimeDBInventoryItem>;
   itemDefinitions: Map<string, SpacetimeDBItemDefinition>;
   worldState: SpacetimeDBWorldState | null;
@@ -118,6 +122,15 @@ function isMushroom(entity: any): entity is SpacetimeDBMushroom {
     return entity && typeof entity.posX === 'number' && typeof entity.posY === 'number' &&
            typeof entity.identity === 'undefined' && typeof entity.treeType === 'undefined' &&
            typeof entity.health === 'undefined' && typeof entity.placedBy === 'undefined';
+}
+
+// --- NEW: Type guard for WoodenStorageBox --- 
+function isWoodenStorageBox(entity: any): entity is SpacetimeDBWoodenStorageBox {
+  // Check for properties specific to WoodenStorageBox
+  return entity && typeof entity.posX === 'number' && 
+         typeof entity.posY === 'number' && 
+         typeof entity.placedBy !== 'undefined' && // Check if placedBy exists
+         typeof entity.isBurning === 'undefined'; // Differentiate from Campfire
 }
 
 // --- Interpolation Data ---
@@ -212,6 +225,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   campfires,
   mushrooms,
   droppedItems,
+  woodenStorageBoxes,
   inventoryItems,
   itemDefinitions,
   worldState,
@@ -663,6 +677,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     preloadCampfireImage();
     // Preload Mushroom Images
     preloadMushroomImages();
+    // Preload Wooden Storage Box Image
+    preloadWoodenStorageBoxImage();
     // Also load the main campfire image for placement preview
     const fireImg = new Image();
     fireImg.src = campfireSprite;
@@ -836,8 +852,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     drawWorldBackground(ctx);
 
     // 1. Gather and Categorize Entities
-    const groundItems: (SpacetimeDBMushroom | SpacetimeDBDroppedItem | SpacetimeDBCampfire)[] = [];
-    const ySortableEntities: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone)[] = [];
+    const groundItems: (SpacetimeDBMushroom | SpacetimeDBDroppedItem | SpacetimeDBCampfire)[] = []; 
+    const ySortableEntities: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBWoodenStorageBox)[] = []; 
 
     // Add Mushrooms and Dropped Items to groundItems
     mushrooms.forEach(m => { if (m.respawnAt === null || m.respawnAt === undefined) groundItems.push(m); });
@@ -849,11 +865,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     players.forEach(p => ySortableEntities.push(p));
     trees.forEach(t => { if (t.health > 0) ySortableEntities.push(t); });
     stones.forEach(s => { if (s.health > 0) ySortableEntities.push(s); });
+    // ADD Wooden Storage Boxes to ySortableEntities
+    woodenStorageBoxes.forEach(b => ySortableEntities.push(b));
 
     // 2. Sort Y-Sortable Entities
     ySortableEntities.sort((a, b) => {
-        const yA = isPlayer(a) ? a.positionY : a.posY;
-        const yB = isPlayer(b) ? b.positionY : b.posY;
+        // Need to handle different position property names
+        const yA = isPlayer(a) ? a.positionY : (isWoodenStorageBox(a) ? a.posY : a.posY); // Use posY for Box, Tree, Stone
+        const yB = isPlayer(b) ? b.positionY : (isWoodenStorageBox(b) ? b.posY : b.posY); // Use posY for Box, Tree, Stone
         return yA - yB;
     });
 
@@ -1048,6 +1067,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
            renderTree(ctx, entity, now_ms);
        } else if (isStone(entity)) { 
            renderStone(ctx, entity, now_ms);
+       } else if (isWoodenStorageBox(entity)) {
+           // Use the dedicated rendering function
+            renderWoodenStorageBox(ctx, entity.posX, entity.posY);
        } 
     });
 
@@ -1262,7 +1284,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       activeEquipments,
       itemDefinitions,
       interactionProgress, // Still needed for campfire interaction indicator
-      droppedItems
+      droppedItems,
+      woodenStorageBoxes // Added dependency
     ]);
 
   const gameLoop = useCallback(() => {

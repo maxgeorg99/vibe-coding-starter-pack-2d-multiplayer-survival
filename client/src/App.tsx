@@ -9,6 +9,7 @@ import * as SpacetimeDB from './generated';
 import { Identity as SpacetimeDBIdentity } from '@clockworklabs/spacetimedb-sdk';
 import { DbConnection } from './generated'; // Correct import source
 import { usePlacementManager, PlacementItemInfo, PlacementState, PlacementActions } from './hooks/usePlacementManager';
+import { WoodenStorageBox as SpacetimeDBWoodenStorageBox } from './generated';
 
 // SpacetimeDB connection parameters
 const SPACETIME_DB_ADDRESS = 'ws://localhost:3000';
@@ -40,6 +41,8 @@ function App() {
   const [activeEquipments, setActiveEquipments] = useState<Map<string, SpacetimeDB.ActiveEquipment>>(new Map());
   // Add state for Dropped Items
   const [droppedItems, setDroppedItems] = useState<Map<string, SpacetimeDB.DroppedItem>>(new Map());
+  // Add state for Wooden Storage Boxes
+  const [woodenStorageBoxes, setWoodenStorageBoxes] = useState<Map<string, SpacetimeDBWoodenStorageBox>>(new Map());
   // State holds the generated connection type after successful connection
   const [connection, setConnection] = useState<SpacetimeDB.DbConnection | null>(null);
   const [username, setUsername] = useState<string>('');
@@ -417,10 +420,10 @@ function App() {
     let worldStateSubscription: any = null; // Subscription for WorldState
     let activeEquipmentSubscription: any = null; // Subscription for ActiveEquipment
     let mushroomSubscription: any = null; // Subscription for Mushroom
-    // NEW: Subscription variable for DroppedItem
     let droppedItemSubscription: any = null;
+    let woodenStorageBoxSubscription: any = null; // <<< ADDED
 
-    console.log('Setting up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem table subscriptions...');
+    console.log('Setting up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox table subscriptions...');
 
     // --- Player Callbacks --- 
     const handlePlayerInsert = (ctx: any, player: SpacetimeDB.Player) => {
@@ -730,6 +733,35 @@ function App() {
       });
     };
 
+    // --- NEW: WoodenStorageBox Callbacks <<< ADDED Block --- 
+    const handleWoodenStorageBoxInsert = (ctx: any, box: SpacetimeDBWoodenStorageBox) => {
+      console.log('WoodenStorageBox Inserted:', box.id);
+      setWoodenStorageBoxes(prev => new Map(prev).set(box.id.toString(), box));
+       // Cancel placement if this client just placed this box
+      const currentPlacementInfo = placementInfoRef.current;
+      if (currentPlacementInfo && 
+           currentPlacementInfo.itemName === 'Wooden Storage Box' && 
+           connection?.identity && 
+           box.placedBy.isEqual(connection.identity)) 
+       {
+         console.log("[App handleWoodenStorageBoxInsert] Our box placed, calling cancelPlacement via ref...");
+         cancelPlacementActionRef.current();
+       }
+    };
+    const handleWoodenStorageBoxUpdate = (ctx: any, oldBox: SpacetimeDBWoodenStorageBox, newBox: SpacetimeDBWoodenStorageBox) => {
+      // Likely no updates needed yet unless content changes later
+      console.log('WoodenStorageBox Updated:', newBox.id);
+      setWoodenStorageBoxes(prev => new Map(prev).set(newBox.id.toString(), newBox));
+    };
+    const handleWoodenStorageBoxDelete = (ctx: any, box: SpacetimeDBWoodenStorageBox) => {
+      console.log('WoodenStorageBox Deleted:', box.id);
+      setWoodenStorageBoxes(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(box.id.toString());
+          return newMap;
+      });
+    };
+
     // Register the callbacks for Player
     connection.db.player.onInsert(handlePlayerInsert);
     connection.db.player.onUpdate(handlePlayerUpdate);
@@ -775,13 +807,18 @@ function App() {
     connection.db.mushroom.onUpdate(handleMushroomUpdate);
     connection.db.mushroom.onDelete(handleMushroomDelete);
 
-    // NEW: Register DroppedItem callbacks
+    // Register DroppedItem callbacks
     connection.db.droppedItem.onInsert(handleDroppedItemInsert);
     connection.db.droppedItem.onUpdate(handleDroppedItemUpdate);
     connection.db.droppedItem.onDelete(handleDroppedItemDelete);
 
+    // Register WoodenStorageBox callbacks <<< ADDED
+    connection.db.woodenStorageBox.onInsert(handleWoodenStorageBoxInsert);
+    connection.db.woodenStorageBox.onUpdate(handleWoodenStorageBoxUpdate);
+    connection.db.woodenStorageBox.onDelete(handleWoodenStorageBoxDelete);
+
     // --- Subscriptions --- 
-    console.log('Subscribing to Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem tables...');
+    console.log('Subscribing to Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox tables...');
     playerSubscription = connection.subscriptionBuilder()
       .onApplied(() => console.log('Subscription to Player table APPLIED.'))
       .onError((ctx: SpacetimeDB.ErrorContext) => {
@@ -868,9 +905,18 @@ function App() {
       })
       .subscribe('SELECT * FROM dropped_item');
 
+    // Subscribe to WoodenStorageBox <<< ADDED
+    woodenStorageBoxSubscription = connection.subscriptionBuilder()
+      .onApplied(() => console.log('Subscription to WoodenStorageBox table APPLIED.'))
+      .onError((ctx: SpacetimeDB.ErrorContext) => {
+        console.error('Subscription to WoodenStorageBox table FAILED. Context:', ctx);
+        setError(`WoodenStorageBox subscription failed. Check console.`);
+      })
+      .subscribe('SELECT * FROM wooden_storage_box');
+
     // Cleanup function for this effect
     return () => {
-      console.log('Cleaning up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem table subscriptions...');
+      console.log('Cleaning up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox table subscriptions...');
       // Remove Player listeners
       connection.db.player.removeOnInsert(handlePlayerInsert);
       connection.db.player.removeOnUpdate(handlePlayerUpdate);
@@ -917,6 +963,11 @@ function App() {
       connection.db.droppedItem.removeOnUpdate(handleDroppedItemUpdate);
       connection.db.droppedItem.removeOnDelete(handleDroppedItemDelete);
       
+      // Remove WoodenStorageBox listeners <<< ADDED
+      connection.db.woodenStorageBox.removeOnInsert(handleWoodenStorageBoxInsert);
+      connection.db.woodenStorageBox.removeOnUpdate(handleWoodenStorageBoxUpdate);
+      connection.db.woodenStorageBox.removeOnDelete(handleWoodenStorageBoxDelete);
+      
       // Unsubscribe from queries
       if (playerSubscription) playerSubscription.unsubscribe();
       if (treeSubscription) treeSubscription.unsubscribe();
@@ -927,8 +978,8 @@ function App() {
       if (worldStateSubscription) worldStateSubscription.unsubscribe();
       if (activeEquipmentSubscription) activeEquipmentSubscription.unsubscribe();
       if (mushroomSubscription) mushroomSubscription.unsubscribe(); // Unsubscribe mushroom
-      // NEW: Unsubscribe droppedItem
       if (droppedItemSubscription) droppedItemSubscription.unsubscribe();
+      if (woodenStorageBoxSubscription) woodenStorageBoxSubscription.unsubscribe(); // <<< ADDED
     };
     
   }, [connection]); // ONLY depends on connection
@@ -1030,6 +1081,7 @@ function App() {
             campfires={campfires}
             mushrooms={mushrooms}
             droppedItems={droppedItems}
+            woodenStorageBoxes={woodenStorageBoxes}
             inventoryItems={inventoryItems}
             itemDefinitions={itemDefinitions}
             worldState={worldState}

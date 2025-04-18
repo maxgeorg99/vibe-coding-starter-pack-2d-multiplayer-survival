@@ -244,6 +244,19 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
             is_equippable: false,
             equipment_slot: None,
         },
+        // --- NEW Item: Wooden Storage Box ---
+        ItemDefinition {
+            id: 0, // Auto-incremented by SpacetimeDB
+            name: "Wooden Storage Box".to_string(),
+            description: "A simple container for storing items.".to_string(),
+            category: ItemCategory::Placeable,
+            icon_asset_name: "wooden_storage_box.png".to_string(), // Assume this asset exists client-side
+            damage: None,
+            is_stackable: false, // Placeables are usually not stackable in inventory
+            stack_size: 1,
+            is_equippable: false,
+            equipment_slot: None,
+        },
     ];
 
     let mut seeded_count = 0;

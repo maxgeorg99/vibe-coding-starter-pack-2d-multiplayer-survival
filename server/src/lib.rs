@@ -20,6 +20,8 @@ mod mushroom;
 mod consumables;
 mod utils; // Declare utils module
 mod dropped_item; // Declare dropped_item module
+mod wooden_storage_box; // Add the new module
+mod starting_items; // <<< ADDED module declaration
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait; 
@@ -34,6 +36,7 @@ use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
 // NEW: Import the campfire fuel check schedule table trait
 use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTableTrait;
+use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
 
 // Use specific items needed globally (or use qualified paths)
 // use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
@@ -174,6 +177,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
     let campfires = ctx.db.campfire(); // Get campfire table
+    let wooden_storage_boxes = ctx.db.wooden_storage_box(); // <<< ADDED: Get box table
     
     // Check if username is already taken by *any* player
     let username_taken = players.iter().any(|p| p.username == username);
@@ -250,6 +254,21 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
             }
         }
 
+        // 2.8 Check Player-WoodenStorageBox Collision <<< ADDED Check
+        if !collision {
+            for box_instance in wooden_storage_boxes.iter() {
+                // Use constants from wooden_storage_box module
+                let dx = spawn_x - box_instance.pos_x;
+                let dy = spawn_y - (box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET); 
+                let dist_sq = dx * dx + dy * dy;
+                // Use specific player-box collision check distance
+                if dist_sq < crate::wooden_storage_box::PLAYER_BOX_COLLISION_DISTANCE_SQUARED {
+                    collision = true;
+                    break;
+                }
+            }
+        }
+
         // 3. Decide if position is valid or max attempts reached
         if !collision || attempt >= max_attempts {
             if attempt >= max_attempts && collision { 
@@ -308,62 +327,14 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
             log::info!("Player registered: {}. Granting starting items...", username);
 
             // --- Grant Starting Items --- 
-            let item_defs = ctx.db.item_definition();
-            let inventory = ctx.db.inventory_item();
-
-            // Define the full starting items array explicitly
-            let starting_items = [
-                // Tools/Resources on Hotbar
-                ("Stone Hatchet", 1, Some(0u8), None), 
-                ("Stone Pickaxe", 1, Some(1u8), None),
-                // ("Wood", 500, Some(2u8), None), // REMOVED
-                // ("Stone", 500, Some(3u8), None), // REMOVED
-                ("Camp Fire", 1, Some(4u8), None),
-                ("Camp Fire", 1, Some(5u8), None),
-                ("Rock", 1, Some(6u8), None), 
-                
-                // Armor in Inventory 
-                ("Cloth Shirt", 1, None, Some(0u16)), 
-                ("Cloth Shirt", 1, None, Some(1u16)), 
-                ("Cloth Pants", 1, None, Some(2u16)),
-                ("Cloth Pants", 1, None, Some(3u16)),
-                ("Cloth Hood", 1, None, Some(4u16)),
-                ("Cloth Hood", 1, None, Some(5u16)),
-                ("Cloth Boots", 1, None, Some(6u16)),
-                ("Cloth Boots", 1, None, Some(7u16)),
-                ("Cloth Gloves", 1, None, Some(8u16)),
-                ("Cloth Gloves", 1, None, Some(9u16)),
-                ("Burlap Backpack", 1, None, Some(10u16)),
-                ("Burlap Backpack", 1, None, Some(11u16)),
-
-                // NEW: Add starting materials to inventory
-                // ("Wood", 600, None, Some(12u16)), // Add 600 Wood to inv slot 12
-                // ("Wood", 500, None, Some(13u16)), // Add 500 Wood to inv slot 13
-                // ("Stone", 500, None, Some(14u16)), // Add 500 Stone to inv slot 14
-            ];
-
-            log::info!("[Register Player] Defined {} starting item entries.", starting_items.len());
-
-            for (item_name, quantity, hotbar_slot_opt, inventory_slot_opt) in starting_items.iter() {
-                 log::debug!("[Register Player] Processing entry: {}", item_name);
-                if let Some(item_def) = item_defs.iter().find(|def| def.name == *item_name) {
-                    let item_to_insert = crate::items::InventoryItem { // Qualify struct path
-                        instance_id: 0,
-                        player_identity: sender_id,
-                        item_def_id: item_def.id,
-                        quantity: *quantity,
-                        hotbar_slot: *hotbar_slot_opt,
-                        inventory_slot: *inventory_slot_opt,
-                    };
-                    match inventory.try_insert(item_to_insert) {
-                        Ok(_) => {
-                             log::info!("[Register Player] Granted: {} (Qty: {}, H: {:?}, I: {:?})", 
-                                         item_name, quantity, hotbar_slot_opt, inventory_slot_opt);
-                        },
-                        Err(e) => log::error!("[Register Player] FAILED insert for {}: {}", item_name, e),
-                    }
-                } else {
-                    log::error!("[Register Player] Definition NOT FOUND for: {}", item_name);
+            // Call the dedicated function from the starting_items module
+            match crate::starting_items::grant_starting_items(ctx, sender_id, &username) {
+                Ok(_) => { /* Items granted (or individual errors logged) */ },
+                Err(e) => {
+                    // This function currently always returns Ok, but handle error just in case
+                    log::error!("Unexpected error during grant_starting_items for player {}: {}", username, e);
+                    // Potentially return the error from register_player if item grant failure is critical
+                    // return Err(format!("Failed to grant starting items: {}", e)); 
                 }
             }
             // --- End Grant Starting Items ---
@@ -557,6 +528,7 @@ pub fn update_player_position(
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
     let campfires = ctx.db.campfire(); // Get campfire table
+    let wooden_storage_boxes = ctx.db.wooden_storage_box(); // <<< ADDED
     let world_states = ctx.db.world_state();
 
     let current_player = players.identity()
@@ -858,11 +830,53 @@ pub fn update_player_position(
                     final_y = current_player.position_y;
                 }
                 collision_handled = true;
-                // No need to set collision_handled=true here if it's the last check
                 break; // Handle first stone collision
             }
         }
     }
+
+    // <<< ADDED: Check Wooden Storage Boxes >>>
+    // Only check boxes if no player, tree, or stone collision was handled
+    if !collision_handled {
+        for box_instance in wooden_storage_boxes.iter() {
+            // Similar logic to trees/stones
+            let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
+            let dx = clamped_x - box_instance.pos_x;
+            let dy = clamped_y - box_collision_y;
+            let dist_sq = dx * dx + dy * dy;
+
+            if dist_sq < crate::wooden_storage_box::PLAYER_BOX_COLLISION_DISTANCE_SQUARED {
+                log::debug!("Player-Box collision detected between {:?} and box {}. Calculating slide.", sender_id, box_instance.id);
+
+                let intended_dx = clamped_x - current_player.position_x;
+                let intended_dy = clamped_y - current_player.position_y;
+                let collision_normal_x = dx;
+                let collision_normal_y = dy;
+                let normal_mag_sq = dist_sq;
+
+                if normal_mag_sq > 0.0 {
+                    let normal_mag = normal_mag_sq.sqrt();
+                    let norm_x = collision_normal_x / normal_mag;
+                    let norm_y = collision_normal_y / normal_mag;
+                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                    let projection_x = dot_product * norm_x;
+                    let projection_y = dot_product * norm_y;
+                    let slide_dx = intended_dx - projection_x;
+                    let slide_dy = intended_dy - projection_y;
+                    final_x = current_player.position_x + slide_dx;
+                    final_y = current_player.position_y + slide_dy;
+                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                } else {
+                    final_x = current_player.position_x;
+                    final_y = current_player.position_y;
+                }
+                // No need to set collision_handled=true here as it's the last check in this sequence
+                break; // Handle first box collision
+            }
+        }
+    }
+    // <<< END ADDED BOX CHECK >>>
 
     // --- Iterative Collision Resolution (Push-out) ---
     let mut resolved_x = final_x;
@@ -943,6 +957,28 @@ pub fn update_player_position(
                 log::trace!("Resolving player-stone overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
             }
         }
+
+        // <<< ADDED: Check Player-Box Overlap >>>
+        for box_instance in wooden_storage_boxes.iter() {
+            let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
+            let dx = resolved_x - box_instance.pos_x;
+            let dy = resolved_y - box_collision_y;
+            let dist_sq = dx * dx + dy * dy;
+            let min_dist = PLAYER_RADIUS + crate::wooden_storage_box::BOX_COLLISION_RADIUS;
+            let min_dist_sq = min_dist * min_dist;
+
+            if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                overlap_found_in_iter = true;
+                let distance = dist_sq.sqrt();
+                let overlap = (min_dist - distance) + epsilon;
+                let push_x = (dx / distance) * overlap;
+                let push_y = (dy / distance) * overlap;
+                resolved_x += push_x;
+                resolved_y += push_y;
+                log::trace!("Resolving player-box overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+            }
+        }
+        // <<< END ADDED BOX CHECK >>>
 
         // Re-clamp final resolved position to world boundaries after each iteration
         resolved_x = resolved_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);

@@ -78,6 +78,8 @@ import { PickupDroppedItem } from "./pickup_dropped_item_reducer.ts";
 export { PickupDroppedItem };
 import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
+import { PlaceWoodenStorageBox } from "./place_wooden_storage_box_reducer.ts";
+export { PlaceWoodenStorageBox };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
 import { RequestRespawn } from "./request_respawn_reducer.ts";
@@ -136,6 +138,8 @@ import { StoneTableHandle } from "./stone_table.ts";
 export { StoneTableHandle };
 import { TreeTableHandle } from "./tree_table.ts";
 export { TreeTableHandle };
+import { WoodenStorageBoxTableHandle } from "./wooden_storage_box_table.ts";
+export { WoodenStorageBoxTableHandle };
 import { WorldStateTableHandle } from "./world_state_table.ts";
 export { WorldStateTableHandle };
 
@@ -170,6 +174,8 @@ import { Tree } from "./tree_type.ts";
 export { Tree };
 import { TreeType } from "./tree_type_type.ts";
 export { TreeType };
+import { WoodenStorageBox } from "./wooden_storage_box_type.ts";
+export { WoodenStorageBox };
 import { WorldState } from "./world_state_type.ts";
 export { WorldState };
 
@@ -228,6 +234,11 @@ const REMOTE_MODULE = {
     tree: {
       tableName: "tree",
       rowType: Tree.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    wooden_storage_box: {
+      tableName: "wooden_storage_box",
+      rowType: WoodenStorageBox.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     world_state: {
@@ -328,6 +339,10 @@ const REMOTE_MODULE = {
     place_campfire: {
       reducerName: "place_campfire",
       argsType: PlaceCampfire.getTypeScriptAlgebraicType(),
+    },
+    place_wooden_storage_box: {
+      reducerName: "place_wooden_storage_box",
+      argsType: PlaceWoodenStorageBox.getTypeScriptAlgebraicType(),
     },
     register_player: {
       reducerName: "register_player",
@@ -447,6 +462,7 @@ export type Reducer = never
 | { name: "MoveToFirstAvailableHotbarSlot", args: MoveToFirstAvailableHotbarSlot }
 | { name: "PickupDroppedItem", args: PickupDroppedItem }
 | { name: "PlaceCampfire", args: PlaceCampfire }
+| { name: "PlaceWoodenStorageBox", args: PlaceWoodenStorageBox }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RequestRespawn", args: RequestRespawn }
 | { name: "SeedEnvironment", args: SeedEnvironment }
@@ -813,6 +829,22 @@ export class RemoteReducers {
     this.connection.offReducer("place_campfire", callback);
   }
 
+  placeWoodenStorageBox(worldX: number, worldY: number) {
+    const __args = { worldX, worldY };
+    let __writer = new BinaryWriter(1024);
+    PlaceWoodenStorageBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("place_wooden_storage_box", __argsBuffer, this.setCallReducerFlags.placeWoodenStorageBoxFlags);
+  }
+
+  onPlaceWoodenStorageBox(callback: (ctx: ReducerEventContext, worldX: number, worldY: number) => void) {
+    this.connection.onReducer("place_wooden_storage_box", callback);
+  }
+
+  removeOnPlaceWoodenStorageBox(callback: (ctx: ReducerEventContext, worldX: number, worldY: number) => void) {
+    this.connection.offReducer("place_wooden_storage_box", callback);
+  }
+
   registerPlayer(username: string) {
     const __args = { username };
     let __writer = new BinaryWriter(1024);
@@ -1169,6 +1201,11 @@ export class SetReducerFlags {
     this.placeCampfireFlags = flags;
   }
 
+  placeWoodenStorageBoxFlags: CallReducerFlags = 'FullUpdate';
+  placeWoodenStorageBox(flags: CallReducerFlags) {
+    this.placeWoodenStorageBoxFlags = flags;
+  }
+
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
   registerPlayer(flags: CallReducerFlags) {
     this.registerPlayerFlags = flags;
@@ -1301,6 +1338,10 @@ export class RemoteTables {
 
   get tree(): TreeTableHandle {
     return new TreeTableHandle(this.connection.clientCache.getOrCreateTable<Tree>(REMOTE_MODULE.tables.tree));
+  }
+
+  get woodenStorageBox(): WoodenStorageBoxTableHandle {
+    return new WoodenStorageBoxTableHandle(this.connection.clientCache.getOrCreateTable<WoodenStorageBox>(REMOTE_MODULE.tables.wooden_storage_box));
   }
 
   get worldState(): WorldStateTableHandle {

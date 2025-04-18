@@ -108,7 +108,7 @@ const Hotbar: React.FC<HotbarProps> = ({
               console.log(`Hotbar Key ${keyNum}: Equipping ARMOR instance ${instanceId} (${name})`);
               cancelPlacement();
               try { connection.reducers.equipArmor(instanceId); } catch (err) { console.error("Error equipArmor:", err); }
-          } else if (categoryTag === 'Placeable' && name === 'Camp Fire') {
+          } else if (categoryTag === 'Placeable') {
               console.log(`Hotbar Key ${keyNum}: Starting placement for ${name}.`);
               const placementInfo: PlacementItemInfo = {
                   itemDefId: BigInt(itemInNewSlot.definition.id),
@@ -178,7 +178,7 @@ const Hotbar: React.FC<HotbarProps> = ({
           console.log(`Hotbar Click: Equipping ARMOR instance ${instanceId} (${name}) in slot ${index + 1}`);
           cancelPlacement();
           try { connection.reducers.equipArmor(instanceId); } catch (err) { console.error("Error equipArmor:", err); }
-      } else if (categoryTag === 'Placeable' && name === 'Camp Fire') {
+      } else if (categoryTag === 'Placeable') {
           console.log(`Hotbar Click: Starting placement for ${name} (Slot ${index + 1}).`);
           const placementInfo: PlacementItemInfo = {
               itemDefId: BigInt(clickedItem.definition.id),
