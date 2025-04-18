@@ -1,5 +1,5 @@
 ---
-description: resources: guide outlining the steps to add new consumable resources or gatherable nodes.
+description: Guide outlining the steps to add new consumable resources or gatherable nodes.
 globs: 
 alwaysApply: false
 ---

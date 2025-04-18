@@ -22,6 +22,7 @@ mod utils; // Declare utils module
 mod dropped_item; // Declare dropped_item module
 mod wooden_storage_box; // Add the new module
 mod starting_items; // <<< ADDED module declaration
+mod inventory_management; // <<< ADDED new module
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait; 

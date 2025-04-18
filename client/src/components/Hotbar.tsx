@@ -218,7 +218,18 @@ const Hotbar: React.FC<HotbarProps> = ({
               console.error("[Hotbar ContextMenu] Error calling add_wood... reducer:", error);
           }
       } 
-      // --- NEW: Check if the item is Armor --- 
+      // <<< ADDED: Check if interacting with a storage box >>>
+      else if (interactingWith?.type === 'wooden_storage_box') {
+          const boxIdNum = Number(interactingWith.id); // Box ID is u32, safe to Number
+          console.log(`[Hotbar ContextMenu] Right-clicked while Box ${boxIdNum} open. Calling quick_move_to_box for item ${itemInstanceId}`);
+          try {
+              connection.reducers.quickMoveToBox(boxIdNum, itemInstanceId);
+          } catch (error: any) {
+              console.error("[Hotbar ContextMenu] Failed to call quickMoveToBox reducer:", error);
+              // TODO: Show user feedback? (e.g., "Box full")
+          }
+      }
+      // Check if the item is Armor (original logic)
       else if (itemInfo.definition.category.tag === 'Armor') {
            console.log(`[Hotbar ContextMenu] Item is Armor. Calling equip_armor for item ${itemInstanceId}`);
            try {
@@ -227,8 +238,9 @@ const Hotbar: React.FC<HotbarProps> = ({
                console.error("[Hotbar ContextMenu] Failed to call equipArmor reducer:", error);
           }
       } else {
-          // Default behavior for right-clicking other items in hotbar (if any desired later)
-          console.log("[Hotbar ContextMenu] No specific action for this item/context (Not Wood in Campfire context, Not Armor).");
+          // Default behavior (no specific interaction context or incompatible item)
+          console.log("[Hotbar ContextMenu] No specific interaction context. Default action (if any) or ignore.");
+          // Currently no default right-click action needed when not interacting
       }
   };
 

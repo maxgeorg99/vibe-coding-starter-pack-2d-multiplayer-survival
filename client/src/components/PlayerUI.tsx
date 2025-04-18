@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment, Campfire as SpacetimeDBCampfire } from '../generated';
+import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment, Campfire as SpacetimeDBCampfire, WoodenStorageBox as SpacetimeDBWoodenStorageBox } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import InventoryUI, { PopulatedItem } from './InventoryUI';
 import Hotbar from './Hotbar';
@@ -62,6 +62,7 @@ interface PlayerUIProps {
   startPlacement: (itemInfo: PlacementItemInfo) => void;
   cancelPlacement: () => void;
   placementInfo: PlacementItemInfo | null;
+  currentStorageBox?: SpacetimeDBWoodenStorageBox | null;
 }
 
 const PlayerUI: React.FC<PlayerUIProps> = ({
@@ -79,7 +80,8 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
     interactingWith,
     startPlacement,
     cancelPlacement,
-    placementInfo
+    placementInfo,
+    currentStorageBox
  }) => {
     const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
@@ -225,6 +227,7 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
                     startPlacement={startPlacement}
                     cancelPlacement={cancelPlacement}
                     placementInfo={placementInfo}
+                    currentStorageBox={currentStorageBox}
                  />
              )}
 

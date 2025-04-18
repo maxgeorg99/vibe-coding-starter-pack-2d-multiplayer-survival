@@ -189,30 +189,26 @@ function App() {
     console.log(`[App Drop] Processing drop onto slot: Item ${itemInstanceId} from ${sourceInfo.sourceSlot.type}:${sourceInfo.sourceSlot.index} to ${targetSlot.type}:${targetSlot.index}`);
 
     try {
-        // --- Handle Stack Splitting First (if target is valid slot) --- 
+        // --- Handle Stack Splitting First --- 
         if (sourceInfo.splitQuantity && sourceInfo.splitQuantity > 0) {
             const quantityToSplit = sourceInfo.splitQuantity;
             const sourceSlotType = sourceInfo.sourceSlot.type;
             const targetSlotType = targetSlot.type;
             const sourceInstanceId = BigInt(sourceInfo.item.instance.instanceId);
-
+            
             console.log(`[App Drop] Initiating SPLIT: Qty ${quantityToSplit} from ${sourceSlotType}:${sourceInfo.sourceSlot.index} to ${targetSlotType}:${targetSlot.index}`);
 
-            // --- Refactored Split Logic --- 
-
+            // --- Split Logic --- 
             if (sourceSlotType === 'inventory' || sourceSlotType === 'hotbar') {
-                // Splitting FROM Inventory/Hotbar
+                // Splitting FROM Inventory/Hotbar TO...?
                 let targetSlotIndexNum: number | null = null;
                 let targetCampfireIdNum: number | null = null;
-
+                
                 if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
-                    // Target is Inv/Hotbar -> Parse Index
                     targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
-                    if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum)) {
-                         console.error("[App Drop] Split failed: Invalid target index for inv/hotbar.");
-                         setError("Invalid target slot for split.");
-                         return;
-                    }
+                    if (isNaN(targetSlotIndexNum)) { /* error */ return; }
+                    console.log(`[App Drop Split] Calling split_stack (Inv/Hotbar -> Inv/Hotbar)`);
+                    connection.reducers.splitStack(sourceInstanceId, quantityToSplit, targetSlotType, targetSlotIndexNum);
                 } else if (targetSlotType === 'campfire_fuel') {
                     // Target is Campfire -> Parse Index & Get ID
                     targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
@@ -222,6 +218,16 @@ function App() {
                          setError("Invalid target slot or context for campfire split.");
                          return; 
                      }
+                } else if (targetSlotType === 'wooden_storage_box') { // <<< ADDED: Target is Box
+                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                    const boxIdNum = targetSlot.parentId ? Number(targetSlot.parentId) : null;
+                    if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum) || boxIdNum === null || isNaN(boxIdNum)) {
+                        console.error("[App Drop] Split failed: Invalid target index or missing BoxID.");
+                        setError("Invalid target slot or context for box split.");
+                        return; 
+                    }
+                    console.log(`[App Drop Split] Calling split_stack_into_box`);
+                    connection.reducers.splitStackIntoBox(boxIdNum, targetSlotIndexNum, sourceInstanceId, quantityToSplit);
                 } else {
                      // Invalid target for split from inv/hotbar (e.g., equipment)
                     console.warn(`[App Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
@@ -276,11 +282,45 @@ function App() {
                     targetSlotIndexNum,
                     // No target campfire ID needed as separate arg for this reducer
                 );
+            } else if (sourceSlotType === 'wooden_storage_box') { // <<< ADDED: Split FROM Box
+                const sourceBoxId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                if (sourceBoxId === null || isNaN(sourceIndexNum)) {
+                    console.error("[App Drop] Missing BoxID or SourceIndex for split FROM box");
+                    setError("Could not determine source box slot for split.");
+                    return;
+                }
+                // Determine target slot type and index (must be inv or hotbar for now)
+                 let targetSlotIndexNum: number | null = null;
+                if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
+                    targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                    if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum)) {
+                         console.error("[App Drop] Invalid target index for split from box.");
+                         setError("Invalid target slot for split.");
+                         return;
+                    }
+                    console.log(`[App Drop] Calling split_stack_from_box`);
+                    connection.reducers.splitStackFromBox(sourceBoxId, sourceIndexNum, quantityToSplit, targetSlotType, targetSlotIndexNum);
+                } else if (targetSlotType === 'wooden_storage_box') { // <<< ADDED: Target is also Box (Split within)
+                     targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                     const targetBoxIdNum = targetSlot.parentId ? Number(targetSlot.parentId) : null;
+                     if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum) || targetBoxIdNum === null || isNaN(targetBoxIdNum)) { /* error */ return; }
+                     // Ensure splitting within the SAME box for now
+                     if (sourceBoxId !== targetBoxIdNum) {
+                         setError("Cannot split between different boxes yet.");
+                         return;
+                     }
+                     console.log(`[App Drop Split] Calling split_stack_within_box`);
+                     connection.reducers.splitStackWithinBox(sourceBoxId, sourceIndexNum, targetSlotIndexNum, quantityToSplit);
+                 } else {
+                    console.warn(`[App Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
+                    setError("Cannot split item to that location.");
+                }
             } else {
                 console.warn(`[App Drop] Split ignored: Cannot split from source type ${sourceSlotType}`);
                 setError("Cannot split from this item source.");
             }
-            return; // Split attempt handled, exit
+            return; // Split attempt handled
         }
 
         // --- Standard Item Move (Full Stack) ---
@@ -330,6 +370,31 @@ function App() {
                  console.log(`[App Drop] Calling addFuelToCampfire for item ${itemInstanceId} to campfire ${campfireIdNum} slot ${targetIndexNum}`);
                  connection.reducers.addFuelToCampfire(campfireIdNum, targetIndexNum, itemInstanceId);
              }
+        } else if (targetSlot.type === 'wooden_storage_box') { // <<< ADDED: Handle drop onto box
+            const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+            if (isNaN(targetIndexNum)) { console.error("Invalid box index", targetSlot.index); return; }
+            const boxIdNum = targetSlot.parentId ? Number(targetSlot.parentId) : null;
+            if (boxIdNum === null || isNaN(boxIdNum)) {
+                 console.error("[App Drop] Cannot move to box slot: Box ID missing.");
+                 setError("Cannot move item: Box context lost.");
+                 return;
+            }
+
+            // Differentiate based on source
+            if (sourceInfo.sourceSlot.type === 'inventory' || sourceInfo.sourceSlot.type === 'hotbar') {
+                console.log(`[App Drop] Calling move_item_to_box for item ${itemInstanceId} to box ${boxIdNum} slot ${targetIndexNum}`);
+                connection.reducers.moveItemToBox(boxIdNum, targetIndexNum, itemInstanceId);
+            } else if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
+                // Moving within the same box (or different, if parentId differs - handle later?)
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                 if (isNaN(sourceIndexNum)) { console.error("Invalid source box index", sourceInfo.sourceSlot.index); return; }
+                 // Assuming same box for now, parentId check could allow inter-box transfer later
+                console.log(`[App Drop] Calling move_item_within_box for box ${boxIdNum} from slot ${sourceIndexNum} to ${targetIndexNum}`);
+                connection.reducers.moveItemWithinBox(boxIdNum, sourceIndexNum, targetIndexNum);
+            } else {
+                console.warn(`[App Drop] Unhandled move from ${sourceInfo.sourceSlot.type} to wooden_storage_box`);
+                setError("Cannot move item from this location to a box.");
+            }
         } else {
             console.warn("Unhandled drop target type or index:", targetSlot);
             setError("Cannot drop item here.");
@@ -1112,6 +1177,11 @@ function App() {
             campfires={campfires}
             interactingWith={interactingWith}
             onSetInteractingWith={setInteractingWith}
+            currentStorageBox={
+                interactingWith?.type === 'wooden_storage_box' 
+                ? woodenStorageBoxes.get(interactingWith.id.toString()) || null 
+                : null
+            }
           />
           <Hotbar 
             playerIdentity={connection?.identity || null}

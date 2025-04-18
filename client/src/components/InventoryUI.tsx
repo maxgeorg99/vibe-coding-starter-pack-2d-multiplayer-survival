@@ -14,7 +14,8 @@ import {
     DbConnection,
     EquipmentSlot as BackendEquipmentSlot, // Keep alias if used
     ActiveEquipment,
-    Campfire as SpacetimeDBCampfire // Import Campfire type
+    Campfire as SpacetimeDBCampfire, // Import Campfire type
+    WoodenStorageBox as SpacetimeDBWoodenStorageBox // <<< Import Box type
 } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import { itemIcons, getItemIcon } from '../utils/itemIconUtils';
@@ -36,6 +37,7 @@ interface InventoryUIProps {
     // Add new props for interaction context
     interactionTarget: { type: string; id: number | bigint } | null;
     campfires: Map<string, SpacetimeDBCampfire>;
+    currentStorageBox?: SpacetimeDBWoodenStorageBox | null; // <<< ADDED Prop Definition
     // NEW: Add Generic Placement Props
     startPlacement: (itemInfo: PlacementItemInfo) => void;
     cancelPlacement: () => void; // Assuming cancel might be needed (e.g., close button cancels placement)
@@ -83,12 +85,15 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
     draggedItemInfo,
     interactionTarget,
     campfires,
+    currentStorageBox,
     // NEW: Destructure placement props
     startPlacement,
     cancelPlacement,
     placementInfo, // Read isPlacing state from this
 }) => {
-    const NUM_FUEL_SLOTS = 5; // Define constant for UI
+    const NUM_FUEL_SLOTS = 5; // For Campfire
+    const NUM_BOX_SLOTS = 18; // For Wooden Storage Box
+    const BOX_COLS = 6;
     const isPlacingItem = placementInfo !== null; // Derive boolean from placementInfo
 
     // --- Determine Campfire Interaction Data --- 
@@ -143,6 +148,49 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
         }
     }
 
+    // --- NEW: Determine Box Interaction Data --- 
+    const boxItems: (PopulatedItem | null)[] = Array(NUM_BOX_SLOTS).fill(null);
+    let boxIdNum: number | null = null;
+    const isBoxInteraction = interactionTarget?.type === 'wooden_storage_box';
+
+    if (isBoxInteraction && currentStorageBox) {
+        boxIdNum = Number(currentStorageBox.id); // Already a u32/number
+        // Get instance IDs from individual fields (0-17)
+        const instanceIds = [
+            currentStorageBox.slotInstanceId0, currentStorageBox.slotInstanceId1,
+            currentStorageBox.slotInstanceId2, currentStorageBox.slotInstanceId3,
+            currentStorageBox.slotInstanceId4, currentStorageBox.slotInstanceId5,
+            currentStorageBox.slotInstanceId6, currentStorageBox.slotInstanceId7,
+            currentStorageBox.slotInstanceId8, currentStorageBox.slotInstanceId9,
+            currentStorageBox.slotInstanceId10, currentStorageBox.slotInstanceId11,
+            currentStorageBox.slotInstanceId12, currentStorageBox.slotInstanceId13,
+            currentStorageBox.slotInstanceId14, currentStorageBox.slotInstanceId15,
+            currentStorageBox.slotInstanceId16, currentStorageBox.slotInstanceId17,
+        ];
+
+        // Populate boxItems array
+        instanceIds.forEach((instanceIdOpt, index) => {
+            if (instanceIdOpt) {
+                const instanceIdStr = instanceIdOpt.toString();
+                const foundInvItem = inventoryItems.get(instanceIdStr); // Direct map lookup
+                if (foundInvItem) {
+                    const definition = itemDefinitions.get(foundInvItem.itemDefId.toString());
+                    if (definition) {
+                        boxItems[index] = { instance: foundInvItem, definition };
+                    } else {
+                        console.warn(`[InventoryUI Box] Definition NOT FOUND for itemDefId: ${foundInvItem.itemDefId.toString()} in slot ${index}`);
+                    }
+                } else {
+                     console.warn(`[InventoryUI Box] InventoryItem instance NOT FOUND for ID: ${instanceIdStr} in slot ${index}`);
+                }
+            }
+        });
+    }
+    if (isBoxInteraction && !currentStorageBox) {
+        console.warn(`Box data not found for ID: ${interactionTarget?.id}`);
+    }
+    // --- END NEW Box Data --- 
+
     // --- Right Click Handler (Inventory) ---
     const handleInventoryItemContextMenu = (event: React.MouseEvent<HTMLDivElement>, itemInfo: PopulatedItem) => {
         event.preventDefault(); // Keep preventing default browser menu
@@ -152,8 +200,16 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
 
         const itemInstanceId = BigInt(itemInfo.instance.instanceId);
 
-        // --- NEW: Check for Campfire interaction + Wood --- 
-        if (isCampfireInteraction && campfireIdNum !== null && itemInfo.definition.name === 'Wood') {
+        // Check if interacting with a box
+        if (isBoxInteraction && boxIdNum !== null) {
+            console.log(`[InventoryUI ContextMenu Inv->Box] Box ${boxIdNum} open. Calling quick_move_to_box for item ${itemInstanceId}`);
+            try {
+                connection.reducers.quickMoveToBox(boxIdNum, itemInstanceId);
+            } catch (error: any) {
+                 console.error("[InventoryUI ContextMenu Inv->Box] Failed to call quickMoveToBox reducer:", error);
+                 // TODO: Show user feedback?
+            }
+        } else if (isCampfireInteraction && campfireIdNum !== null && itemInfo.definition.name === 'Wood') {
              console.log(`[InventoryUI ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling auto_add_wood_to_campfire...`);
             try {
                 connection.reducers.autoAddWoodToCampfire(campfireIdNum, itemInstanceId);
@@ -162,25 +218,31 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                 // TODO: Show user feedback? (e.g., "Campfire full")
             }
             return; // Stop processing this context menu event
-        }
-        // --- END NEW Check --- 
-
-        // --- Existing Armor/Hotbar Logic --- 
-        if (itemInfo.definition.category.tag === 'Armor') {
-            console.log(`[InventoryUI ContextMenu] Item is Armor. Calling equip_armor for item ${itemInstanceId}`);
-            try {
-                connection.reducers.equipArmor(itemInstanceId);
-            } catch (error: any) {
-                console.error("[InventoryUI ContextMenu] Failed to call equipArmor reducer:", error);
-            }
         } else {
-            console.log(`[InventoryUI ContextMenu] Item is not Armor/Wood-in-Campfire-Context. Calling move_to_first_available_hotbar_slot for item ${itemInstanceId}`);
-            try {
-                connection.reducers.moveToFirstAvailableHotbarSlot(itemInstanceId);
-            } catch (error: any) {
-                console.error("[InventoryUI ContextMenu] Failed to call moveToFirstAvailableHotbarSlot reducer:", error);
-            }
+            // Default: Move to hotbar (if not interacting with a compatible container)
+            console.log(`[InventoryUI ContextMenu Inv->Hotbar] Not interacting with box/campfire or item incompatible. Calling move_to_first_available_hotbar_slot for item ${itemInstanceId}`);
+             try {
+                 connection.reducers.moveToFirstAvailableHotbarSlot(itemInstanceId);
+             } catch (error: any) {
+                 console.error("[InventoryUI ContextMenu Inv->Hotbar] Failed to call moveToFirstAvailableHotbarSlot reducer:", error);
+             }
         }
+    };
+
+    // --- NEW: Right Click Handler (Box -> Inventory) --- 
+    const handleBoxItemContextMenu = (event: React.MouseEvent<HTMLDivElement>, itemInfo: PopulatedItem, slotIndex: number) => {
+         event.preventDefault();
+         console.log(`[InventoryUI ContextMenu Box->Inv] Triggered on slot ${slotIndex}, item:`, itemInfo?.definition?.name);
+         if (!connection?.reducers || !itemInfo || boxIdNum === null) return;
+         const itemInstanceId = BigInt(itemInfo.instance.instanceId);
+
+         console.log(`[InventoryUI ContextMenu Box->Inv] Box ${boxIdNum} open. Calling quick_move_from_box for slot ${slotIndex}`);
+         try {
+             connection.reducers.quickMoveFromBox(boxIdNum, slotIndex);
+         } catch (error: any) {
+             console.error("[InventoryUI ContextMenu Box->Inv] Failed to call quickMoveFromBox reducer:", error);
+             // TODO: Show user feedback?
+         }
     };
 
     // Ensure props are defined
@@ -427,6 +489,46 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                         </div>
                     )}
                     {/* --- End Campfire Section --- */}
+
+                    {/* --- NEW: Conditional Box Interaction Section --- */}
+                    {isBoxInteraction && currentStorageBox && boxIdNum !== null && (
+                        <div className={styles.externalInventorySection}>
+                            <h3 className={styles.sectionTitle} style={{ marginTop: '20px' }}>WOODEN BOX</h3>
+                             {/* Grid for Box Slots */}
+                            <div className={styles.inventoryGrid} style={{ gridTemplateColumns: `repeat(${BOX_COLS}, ${styles.slotSize || '60px'})` }}> 
+                                {Array.from({ length: NUM_BOX_SLOTS }).map((_, index) => {
+                                    const itemInSlot = boxItems[index];
+                                    const currentBoxSlotInfo: DragSourceSlotInfo = { type: 'wooden_storage_box', index: index, parentId: boxIdNum };
+                                    return (
+                                        <DroppableSlot
+                                            key={`box-${boxIdNum}-${index}`}
+                                            slotInfo={currentBoxSlotInfo}
+                                            onItemDrop={onItemDrop}
+                                            className={styles.slot}
+                                            isDraggingOver={false} // Add hover state later if needed
+                                        >
+                                            {itemInSlot && (
+                                                <DraggableItem
+                                                    item={itemInSlot}
+                                                    sourceSlot={currentBoxSlotInfo}
+                                                    onItemDragStart={onItemDragStart}
+                                                    onItemDrop={onItemDrop}
+                                                    onContextMenu={(event) => handleBoxItemContextMenu(event, itemInSlot, index)}
+                                                />
+                                            )}
+                                        </DroppableSlot>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    {isBoxInteraction && !currentStorageBox && (
+                         <div className={styles.externalInventorySection}>
+                            <h3 className={styles.sectionTitle}>WOODEN BOX</h3>
+                            <div>Error: Box data missing.</div>
+                        </div>
+                    )}
+                    {/* --- End Box Section --- */}
                  </> {/* End fragment wrapper */}
              </div>
  

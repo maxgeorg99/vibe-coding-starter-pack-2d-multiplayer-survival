@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { DragSourceSlotInfo } from './PlayerUI'; // Import type from PlayerUI
+import { DragSourceSlotInfo } from '../types/dragDropTypes'; // Corrected import path
 import styles from './DroppableSlot.module.css'; // We'll create this CSS file
 
 interface DroppableSlotProps {
@@ -27,6 +27,9 @@ const DroppableSlot: React.FC<DroppableSlotProps> = ({
   // Basic class construction
   const combinedClassName = `${styles.droppableSlot} ${className}`;
 
+  // Prepare parentId attribute conditionally
+  const parentIdAttr = slotInfo.parentId ? { 'data-slot-parent-id': slotInfo.parentId.toString() } : {};
+
   return (
     <div
       ref={slotRef}
@@ -34,6 +37,7 @@ const DroppableSlot: React.FC<DroppableSlotProps> = ({
       style={style}
       data-slot-type={slotInfo.type}
       data-slot-index={slotInfo.index}
+      {...parentIdAttr} // Spread the parentId attribute if it exists
       onClick={onClick} // <-- Pass onClick to the div
     >
       {children}

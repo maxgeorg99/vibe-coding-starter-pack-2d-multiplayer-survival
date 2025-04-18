@@ -1,5 +1,5 @@
 ---
-description: schedulers: Guide for implementing recurring scheduled tasks using SpacetimeDB reducers and timer tables.
+description: Guide for implementing recurring scheduled tasks using SpacetimeDB reducers and timer tables.
 globs: 
 alwaysApply: false
 ---

@@ -31,7 +31,7 @@ import { renderCampfire, preloadCampfireImage, CAMPFIRE_HEIGHT } from '../utils/
 // Import Mushroom rendering utils
 import { renderMushroom, preloadMushroomImages } from '../utils/mushroomRenderingUtils';
 // Import Wooden Storage Box rendering utils
-import { renderWoodenStorageBox, preloadWoodenStorageBoxImage } from '../utils/woodenStorageBoxRenderingUtils';
+import { renderWoodenStorageBox, preloadWoodenStorageBoxImage, BOX_HEIGHT } from '../utils/woodenStorageBoxRenderingUtils';
 // Import DeathScreen component with extension
 import DeathScreen from './DeathScreen.tsx';
 // Import item icon mapping
@@ -66,6 +66,7 @@ const CAMPFIRE_HEIGHT_PREVIEW = 64;
 // --- Interaction Constants ---
 const PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
 const PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
+const PLAYER_BOX_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // <<< ADDED: Matches server constant
 
 const HOLD_INTERACTION_DURATION_MS = 250; // Time to hold E for inventory (halved)
 
@@ -259,6 +260,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const closestInteractableMushroomIdRef = useRef<bigint | null>(null); // Ref for nearby mushroom ID
   const closestInteractableCampfireIdRef = useRef<number | null>(null); // Ref for nearby campfire ID (u32 maps to number)
   const closestInteractableDroppedItemIdRef = useRef<bigint | null>(null); // Ref for closest interactable dropped item ID
+  const closestInteractableBoxIdRef = useRef<number | null>(null); // <<< ADDED: Ref for nearby box ID (u32)
   const isEHeldDownRef = useRef<boolean>(false);
   const isMouseDownRef = useRef<boolean>(false);
   const lastClientSwingAttemptRef = useRef<number>(0); // Store timestamp of last attempt
@@ -430,8 +432,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const closestCampfireId = closestInteractableCampfireIdRef.current;
         const closestMushroomId = closestInteractableMushroomIdRef.current;
         const closestDroppedItemId = closestInteractableDroppedItemIdRef.current;
+        const closestBoxId = closestInteractableBoxIdRef.current;
         
-        // Prioritize interaction: DroppedItem > Campfire > Mushroom
+        // Prioritize interaction: DroppedItem > Box > Campfire > Mushroom
         if (closestDroppedItemId !== null && connection?.reducers) {
              try {
                  connection.reducers.pickupDroppedItem(closestDroppedItemId);
@@ -440,6 +443,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                  // TODO: Display error feedback to the user?
              }
              return; // Handled dropped item, prevent other interactions
+        } else if (closestBoxId !== null && connection?.reducers) {
+            console.log(`[GameCanvas KeyDown] Interacting with Box ID: ${closestBoxId}`);
+            try {
+                // Call reducer to validate interaction server-side
+                connection.reducers.interactWithStorageBox(closestBoxId);
+                // If no error, proceed to open UI via App state
+                onSetInteractingWith({ type: 'wooden_storage_box', id: closestBoxId });
+            } catch (err) {
+                console.error("[GameCanvas KeyDown] Error calling interactWithStorageBox reducer:", err);
+                // TODO: Show error to user? (e.g., too far away)
+            }
+            return; // Interaction handled
         } else if (closestCampfireId !== null) {
           isEHeldDownRef.current = true;
           eKeyDownTimestampRef.current = Date.now();
@@ -876,7 +891,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         return yA - yB;
     });
 
-    // 3. Find Closest Interactables (Mushrooms, Campfires, DroppedItems)
+    // 3. Find Closest Interactables (Mushrooms, Campfires, DroppedItems, Boxes)
     let closestDistSq = PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED;
     closestInteractableMushroomIdRef.current = null; // Reset each frame
     if (localPlayerData) {
@@ -934,6 +949,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       });
     }
     // --- End Finding Closest DroppedItem ---
+
+    // --- Find Closest Interactable WoodenStorageBox <<< ADDED Block ---
+    let closestBoxDistSq = PLAYER_BOX_INTERACTION_DISTANCE_SQUARED;
+    closestInteractableBoxIdRef.current = null; // Reset each frame
+    if (localPlayerData) {
+      woodenStorageBoxes.forEach((box) => {
+        const dx = localPlayerData.positionX - box.posX;
+        const dy = localPlayerData.positionY - box.posY;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < closestBoxDistSq) {
+          closestBoxDistSq = distSq;
+          closestInteractableBoxIdRef.current = box.id; // Store the number ID
+        }
+      });
+    }
+    // --- End Finding Closest Box ---
 
     // --- UPDATED Placement Preview Rendering --- 
     let isPlacementTooFar = false;
@@ -1110,6 +1142,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             const text = "Press E to Use";
             const textX = fire.posX;
             const textY = fire.posY - (CAMPFIRE_HEIGHT / 2) - 10; // 10px above the sprite top
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 2;
+            ctx.font = '14px "Press Start 2P", cursive';
+            ctx.textAlign = "center";
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+         }
+    });
+
+    // <<< ADDED: Render Wooden Storage Box Interaction Label >>>
+    woodenStorageBoxes.forEach(box => {
+         if (closestInteractableBoxIdRef.current === box.id) {
+            const text = "Press E to Open";
+            const textX = box.posX;
+            const textY = box.posY - (BOX_HEIGHT / 2) - 10; // Adjust Y offset as needed
             ctx.fillStyle = "white";
             ctx.strokeStyle = "black";
             ctx.lineWidth = 2;

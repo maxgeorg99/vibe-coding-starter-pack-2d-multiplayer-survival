@@ -64,14 +64,22 @@ import { InteractWithCampfire } from "./interact_with_campfire_reducer.ts";
 export { InteractWithCampfire };
 import { InteractWithMushroom } from "./interact_with_mushroom_reducer.ts";
 export { InteractWithMushroom };
+import { InteractWithStorageBox } from "./interact_with_storage_box_reducer.ts";
+export { InteractWithStorageBox };
 import { Jump } from "./jump_reducer.ts";
 export { Jump };
 import { MoveFuelWithinCampfire } from "./move_fuel_within_campfire_reducer.ts";
 export { MoveFuelWithinCampfire };
+import { MoveItemFromBox } from "./move_item_from_box_reducer.ts";
+export { MoveItemFromBox };
+import { MoveItemToBox } from "./move_item_to_box_reducer.ts";
+export { MoveItemToBox };
 import { MoveItemToHotbar } from "./move_item_to_hotbar_reducer.ts";
 export { MoveItemToHotbar };
 import { MoveItemToInventory } from "./move_item_to_inventory_reducer.ts";
 export { MoveItemToInventory };
+import { MoveItemWithinBox } from "./move_item_within_box_reducer.ts";
+export { MoveItemWithinBox };
 import { MoveToFirstAvailableHotbarSlot } from "./move_to_first_available_hotbar_slot_reducer.ts";
 export { MoveToFirstAvailableHotbarSlot };
 import { PickupDroppedItem } from "./pickup_dropped_item_reducer.ts";
@@ -80,6 +88,10 @@ import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
 import { PlaceWoodenStorageBox } from "./place_wooden_storage_box_reducer.ts";
 export { PlaceWoodenStorageBox };
+import { QuickMoveFromBox } from "./quick_move_from_box_reducer.ts";
+export { QuickMoveFromBox };
+import { QuickMoveToBox } from "./quick_move_to_box_reducer.ts";
+export { QuickMoveToBox };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
 import { RequestRespawn } from "./request_respawn_reducer.ts";
@@ -98,10 +110,16 @@ import { SplitAndMoveFromCampfire } from "./split_and_move_from_campfire_reducer
 export { SplitAndMoveFromCampfire };
 import { SplitStack } from "./split_stack_reducer.ts";
 export { SplitStack };
+import { SplitStackFromBox } from "./split_stack_from_box_reducer.ts";
+export { SplitStackFromBox };
 import { SplitStackFromCampfire } from "./split_stack_from_campfire_reducer.ts";
 export { SplitStackFromCampfire };
+import { SplitStackIntoBox } from "./split_stack_into_box_reducer.ts";
+export { SplitStackIntoBox };
 import { SplitStackIntoCampfire } from "./split_stack_into_campfire_reducer.ts";
 export { SplitStackIntoCampfire };
+import { SplitStackWithinBox } from "./split_stack_within_box_reducer.ts";
+export { SplitStackWithinBox };
 import { SplitStackWithinCampfire } from "./split_stack_within_campfire_reducer.ts";
 export { SplitStackWithinCampfire };
 import { TickWorldState } from "./tick_world_state_reducer.ts";
@@ -312,6 +330,10 @@ const REMOTE_MODULE = {
       reducerName: "interact_with_mushroom",
       argsType: InteractWithMushroom.getTypeScriptAlgebraicType(),
     },
+    interact_with_storage_box: {
+      reducerName: "interact_with_storage_box",
+      argsType: InteractWithStorageBox.getTypeScriptAlgebraicType(),
+    },
     jump: {
       reducerName: "jump",
       argsType: Jump.getTypeScriptAlgebraicType(),
@@ -320,6 +342,14 @@ const REMOTE_MODULE = {
       reducerName: "move_fuel_within_campfire",
       argsType: MoveFuelWithinCampfire.getTypeScriptAlgebraicType(),
     },
+    move_item_from_box: {
+      reducerName: "move_item_from_box",
+      argsType: MoveItemFromBox.getTypeScriptAlgebraicType(),
+    },
+    move_item_to_box: {
+      reducerName: "move_item_to_box",
+      argsType: MoveItemToBox.getTypeScriptAlgebraicType(),
+    },
     move_item_to_hotbar: {
       reducerName: "move_item_to_hotbar",
       argsType: MoveItemToHotbar.getTypeScriptAlgebraicType(),
@@ -327,6 +357,10 @@ const REMOTE_MODULE = {
     move_item_to_inventory: {
       reducerName: "move_item_to_inventory",
       argsType: MoveItemToInventory.getTypeScriptAlgebraicType(),
+    },
+    move_item_within_box: {
+      reducerName: "move_item_within_box",
+      argsType: MoveItemWithinBox.getTypeScriptAlgebraicType(),
     },
     move_to_first_available_hotbar_slot: {
       reducerName: "move_to_first_available_hotbar_slot",
@@ -343,6 +377,14 @@ const REMOTE_MODULE = {
     place_wooden_storage_box: {
       reducerName: "place_wooden_storage_box",
       argsType: PlaceWoodenStorageBox.getTypeScriptAlgebraicType(),
+    },
+    quick_move_from_box: {
+      reducerName: "quick_move_from_box",
+      argsType: QuickMoveFromBox.getTypeScriptAlgebraicType(),
+    },
+    quick_move_to_box: {
+      reducerName: "quick_move_to_box",
+      argsType: QuickMoveToBox.getTypeScriptAlgebraicType(),
     },
     register_player: {
       reducerName: "register_player",
@@ -380,13 +422,25 @@ const REMOTE_MODULE = {
       reducerName: "split_stack",
       argsType: SplitStack.getTypeScriptAlgebraicType(),
     },
+    split_stack_from_box: {
+      reducerName: "split_stack_from_box",
+      argsType: SplitStackFromBox.getTypeScriptAlgebraicType(),
+    },
     split_stack_from_campfire: {
       reducerName: "split_stack_from_campfire",
       argsType: SplitStackFromCampfire.getTypeScriptAlgebraicType(),
     },
+    split_stack_into_box: {
+      reducerName: "split_stack_into_box",
+      argsType: SplitStackIntoBox.getTypeScriptAlgebraicType(),
+    },
     split_stack_into_campfire: {
       reducerName: "split_stack_into_campfire",
       argsType: SplitStackIntoCampfire.getTypeScriptAlgebraicType(),
+    },
+    split_stack_within_box: {
+      reducerName: "split_stack_within_box",
+      argsType: SplitStackWithinBox.getTypeScriptAlgebraicType(),
     },
     split_stack_within_campfire: {
       reducerName: "split_stack_within_campfire",
@@ -455,14 +509,20 @@ export type Reducer = never
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
 | { name: "InteractWithCampfire", args: InteractWithCampfire }
 | { name: "InteractWithMushroom", args: InteractWithMushroom }
+| { name: "InteractWithStorageBox", args: InteractWithStorageBox }
 | { name: "Jump", args: Jump }
 | { name: "MoveFuelWithinCampfire", args: MoveFuelWithinCampfire }
+| { name: "MoveItemFromBox", args: MoveItemFromBox }
+| { name: "MoveItemToBox", args: MoveItemToBox }
 | { name: "MoveItemToHotbar", args: MoveItemToHotbar }
 | { name: "MoveItemToInventory", args: MoveItemToInventory }
+| { name: "MoveItemWithinBox", args: MoveItemWithinBox }
 | { name: "MoveToFirstAvailableHotbarSlot", args: MoveToFirstAvailableHotbarSlot }
 | { name: "PickupDroppedItem", args: PickupDroppedItem }
 | { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "PlaceWoodenStorageBox", args: PlaceWoodenStorageBox }
+| { name: "QuickMoveFromBox", args: QuickMoveFromBox }
+| { name: "QuickMoveToBox", args: QuickMoveToBox }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RequestRespawn", args: RequestRespawn }
 | { name: "SeedEnvironment", args: SeedEnvironment }
@@ -472,8 +532,11 @@ export type Reducer = never
 | { name: "SplitAndMove", args: SplitAndMove }
 | { name: "SplitAndMoveFromCampfire", args: SplitAndMoveFromCampfire }
 | { name: "SplitStack", args: SplitStack }
+| { name: "SplitStackFromBox", args: SplitStackFromBox }
 | { name: "SplitStackFromCampfire", args: SplitStackFromCampfire }
+| { name: "SplitStackIntoBox", args: SplitStackIntoBox }
 | { name: "SplitStackIntoCampfire", args: SplitStackIntoCampfire }
+| { name: "SplitStackWithinBox", args: SplitStackWithinBox }
 | { name: "SplitStackWithinCampfire", args: SplitStackWithinCampfire }
 | { name: "TickWorldState", args: TickWorldState }
 | { name: "ToggleCampfireBurning", args: ToggleCampfireBurning }
@@ -721,6 +784,22 @@ export class RemoteReducers {
     this.connection.offReducer("interact_with_mushroom", callback);
   }
 
+  interactWithStorageBox(boxId: number) {
+    const __args = { boxId };
+    let __writer = new BinaryWriter(1024);
+    InteractWithStorageBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("interact_with_storage_box", __argsBuffer, this.setCallReducerFlags.interactWithStorageBoxFlags);
+  }
+
+  onInteractWithStorageBox(callback: (ctx: ReducerEventContext, boxId: number) => void) {
+    this.connection.onReducer("interact_with_storage_box", callback);
+  }
+
+  removeOnInteractWithStorageBox(callback: (ctx: ReducerEventContext, boxId: number) => void) {
+    this.connection.offReducer("interact_with_storage_box", callback);
+  }
+
   jump() {
     this.connection.callReducer("jump", new Uint8Array(0), this.setCallReducerFlags.jumpFlags);
   }
@@ -747,6 +826,38 @@ export class RemoteReducers {
 
   removeOnMoveFuelWithinCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number, targetSlotIndex: number) => void) {
     this.connection.offReducer("move_fuel_within_campfire", callback);
+  }
+
+  moveItemFromBox(boxId: number, sourceSlotIndex: number) {
+    const __args = { boxId, sourceSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    MoveItemFromBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_item_from_box", __argsBuffer, this.setCallReducerFlags.moveItemFromBoxFlags);
+  }
+
+  onMoveItemFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number) => void) {
+    this.connection.onReducer("move_item_from_box", callback);
+  }
+
+  removeOnMoveItemFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number) => void) {
+    this.connection.offReducer("move_item_from_box", callback);
+  }
+
+  moveItemToBox(boxId: number, targetSlotIndex: number, itemInstanceId: bigint) {
+    const __args = { boxId, targetSlotIndex, itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    MoveItemToBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_item_to_box", __argsBuffer, this.setCallReducerFlags.moveItemToBoxFlags);
+  }
+
+  onMoveItemToBox(callback: (ctx: ReducerEventContext, boxId: number, targetSlotIndex: number, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("move_item_to_box", callback);
+  }
+
+  removeOnMoveItemToBox(callback: (ctx: ReducerEventContext, boxId: number, targetSlotIndex: number, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("move_item_to_box", callback);
   }
 
   moveItemToHotbar(itemInstanceId: bigint, targetHotbarSlot: number) {
@@ -779,6 +890,22 @@ export class RemoteReducers {
 
   removeOnMoveItemToInventory(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetInventorySlot: number) => void) {
     this.connection.offReducer("move_item_to_inventory", callback);
+  }
+
+  moveItemWithinBox(boxId: number, sourceSlotIndex: number, targetSlotIndex: number) {
+    const __args = { boxId, sourceSlotIndex, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    MoveItemWithinBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("move_item_within_box", __argsBuffer, this.setCallReducerFlags.moveItemWithinBoxFlags);
+  }
+
+  onMoveItemWithinBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, targetSlotIndex: number) => void) {
+    this.connection.onReducer("move_item_within_box", callback);
+  }
+
+  removeOnMoveItemWithinBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, targetSlotIndex: number) => void) {
+    this.connection.offReducer("move_item_within_box", callback);
   }
 
   moveToFirstAvailableHotbarSlot(itemInstanceId: bigint) {
@@ -843,6 +970,38 @@ export class RemoteReducers {
 
   removeOnPlaceWoodenStorageBox(callback: (ctx: ReducerEventContext, worldX: number, worldY: number) => void) {
     this.connection.offReducer("place_wooden_storage_box", callback);
+  }
+
+  quickMoveFromBox(boxId: number, sourceSlotIndex: number) {
+    const __args = { boxId, sourceSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    QuickMoveFromBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("quick_move_from_box", __argsBuffer, this.setCallReducerFlags.quickMoveFromBoxFlags);
+  }
+
+  onQuickMoveFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number) => void) {
+    this.connection.onReducer("quick_move_from_box", callback);
+  }
+
+  removeOnQuickMoveFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number) => void) {
+    this.connection.offReducer("quick_move_from_box", callback);
+  }
+
+  quickMoveToBox(boxId: number, itemInstanceId: bigint) {
+    const __args = { boxId, itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    QuickMoveToBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("quick_move_to_box", __argsBuffer, this.setCallReducerFlags.quickMoveToBoxFlags);
+  }
+
+  onQuickMoveToBox(callback: (ctx: ReducerEventContext, boxId: number, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("quick_move_to_box", callback);
+  }
+
+  removeOnQuickMoveToBox(callback: (ctx: ReducerEventContext, boxId: number, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("quick_move_to_box", callback);
   }
 
   registerPlayer(username: string) {
@@ -973,6 +1132,22 @@ export class RemoteReducers {
     this.connection.offReducer("split_stack", callback);
   }
 
+  splitStackFromBox(boxId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) {
+    const __args = { boxId, sourceSlotIndex, quantityToSplit, targetSlotType, targetSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    SplitStackFromBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_stack_from_box", __argsBuffer, this.setCallReducerFlags.splitStackFromBoxFlags);
+  }
+
+  onSplitStackFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.onReducer("split_stack_from_box", callback);
+  }
+
+  removeOnSplitStackFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) => void) {
+    this.connection.offReducer("split_stack_from_box", callback);
+  }
+
   splitStackFromCampfire(sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) {
     const __args = { sourceCampfireId, sourceSlotIndex, quantityToSplit, targetSlotType, targetSlotIndex };
     let __writer = new BinaryWriter(1024);
@@ -989,6 +1164,22 @@ export class RemoteReducers {
     this.connection.offReducer("split_stack_from_campfire", callback);
   }
 
+  splitStackIntoBox(boxId: number, targetSlotIndex: number, sourceItemInstanceId: bigint, quantityToSplit: number) {
+    const __args = { boxId, targetSlotIndex, sourceItemInstanceId, quantityToSplit };
+    let __writer = new BinaryWriter(1024);
+    SplitStackIntoBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_stack_into_box", __argsBuffer, this.setCallReducerFlags.splitStackIntoBoxFlags);
+  }
+
+  onSplitStackIntoBox(callback: (ctx: ReducerEventContext, boxId: number, targetSlotIndex: number, sourceItemInstanceId: bigint, quantityToSplit: number) => void) {
+    this.connection.onReducer("split_stack_into_box", callback);
+  }
+
+  removeOnSplitStackIntoBox(callback: (ctx: ReducerEventContext, boxId: number, targetSlotIndex: number, sourceItemInstanceId: bigint, quantityToSplit: number) => void) {
+    this.connection.offReducer("split_stack_into_box", callback);
+  }
+
   splitStackIntoCampfire(sourceItemInstanceId: bigint, quantityToSplit: number, targetCampfireId: number, targetSlotIndex: number) {
     const __args = { sourceItemInstanceId, quantityToSplit, targetCampfireId, targetSlotIndex };
     let __writer = new BinaryWriter(1024);
@@ -1003,6 +1194,22 @@ export class RemoteReducers {
 
   removeOnSplitStackIntoCampfire(callback: (ctx: ReducerEventContext, sourceItemInstanceId: bigint, quantityToSplit: number, targetCampfireId: number, targetSlotIndex: number) => void) {
     this.connection.offReducer("split_stack_into_campfire", callback);
+  }
+
+  splitStackWithinBox(boxId: number, sourceSlotIndex: number, targetSlotIndex: number, quantityToSplit: number) {
+    const __args = { boxId, sourceSlotIndex, targetSlotIndex, quantityToSplit };
+    let __writer = new BinaryWriter(1024);
+    SplitStackWithinBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("split_stack_within_box", __argsBuffer, this.setCallReducerFlags.splitStackWithinBoxFlags);
+  }
+
+  onSplitStackWithinBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, targetSlotIndex: number, quantityToSplit: number) => void) {
+    this.connection.onReducer("split_stack_within_box", callback);
+  }
+
+  removeOnSplitStackWithinBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, targetSlotIndex: number, quantityToSplit: number) => void) {
+    this.connection.offReducer("split_stack_within_box", callback);
   }
 
   splitStackWithinCampfire(campfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotIndex: number) {
@@ -1166,6 +1373,11 @@ export class SetReducerFlags {
     this.interactWithMushroomFlags = flags;
   }
 
+  interactWithStorageBoxFlags: CallReducerFlags = 'FullUpdate';
+  interactWithStorageBox(flags: CallReducerFlags) {
+    this.interactWithStorageBoxFlags = flags;
+  }
+
   jumpFlags: CallReducerFlags = 'FullUpdate';
   jump(flags: CallReducerFlags) {
     this.jumpFlags = flags;
@@ -1176,6 +1388,16 @@ export class SetReducerFlags {
     this.moveFuelWithinCampfireFlags = flags;
   }
 
+  moveItemFromBoxFlags: CallReducerFlags = 'FullUpdate';
+  moveItemFromBox(flags: CallReducerFlags) {
+    this.moveItemFromBoxFlags = flags;
+  }
+
+  moveItemToBoxFlags: CallReducerFlags = 'FullUpdate';
+  moveItemToBox(flags: CallReducerFlags) {
+    this.moveItemToBoxFlags = flags;
+  }
+
   moveItemToHotbarFlags: CallReducerFlags = 'FullUpdate';
   moveItemToHotbar(flags: CallReducerFlags) {
     this.moveItemToHotbarFlags = flags;
@@ -1184,6 +1406,11 @@ export class SetReducerFlags {
   moveItemToInventoryFlags: CallReducerFlags = 'FullUpdate';
   moveItemToInventory(flags: CallReducerFlags) {
     this.moveItemToInventoryFlags = flags;
+  }
+
+  moveItemWithinBoxFlags: CallReducerFlags = 'FullUpdate';
+  moveItemWithinBox(flags: CallReducerFlags) {
+    this.moveItemWithinBoxFlags = flags;
   }
 
   moveToFirstAvailableHotbarSlotFlags: CallReducerFlags = 'FullUpdate';
@@ -1204,6 +1431,16 @@ export class SetReducerFlags {
   placeWoodenStorageBoxFlags: CallReducerFlags = 'FullUpdate';
   placeWoodenStorageBox(flags: CallReducerFlags) {
     this.placeWoodenStorageBoxFlags = flags;
+  }
+
+  quickMoveFromBoxFlags: CallReducerFlags = 'FullUpdate';
+  quickMoveFromBox(flags: CallReducerFlags) {
+    this.quickMoveFromBoxFlags = flags;
+  }
+
+  quickMoveToBoxFlags: CallReducerFlags = 'FullUpdate';
+  quickMoveToBox(flags: CallReducerFlags) {
+    this.quickMoveToBoxFlags = flags;
   }
 
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
@@ -1251,14 +1488,29 @@ export class SetReducerFlags {
     this.splitStackFlags = flags;
   }
 
+  splitStackFromBoxFlags: CallReducerFlags = 'FullUpdate';
+  splitStackFromBox(flags: CallReducerFlags) {
+    this.splitStackFromBoxFlags = flags;
+  }
+
   splitStackFromCampfireFlags: CallReducerFlags = 'FullUpdate';
   splitStackFromCampfire(flags: CallReducerFlags) {
     this.splitStackFromCampfireFlags = flags;
   }
 
+  splitStackIntoBoxFlags: CallReducerFlags = 'FullUpdate';
+  splitStackIntoBox(flags: CallReducerFlags) {
+    this.splitStackIntoBoxFlags = flags;
+  }
+
   splitStackIntoCampfireFlags: CallReducerFlags = 'FullUpdate';
   splitStackIntoCampfire(flags: CallReducerFlags) {
     this.splitStackIntoCampfireFlags = flags;
+  }
+
+  splitStackWithinBoxFlags: CallReducerFlags = 'FullUpdate';
+  splitStackWithinBox(flags: CallReducerFlags) {
+    this.splitStackWithinBoxFlags = flags;
   }
 
   splitStackWithinCampfireFlags: CallReducerFlags = 'FullUpdate';

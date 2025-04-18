@@ -114,19 +114,51 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
           if (droppableSlot) {
               const targetType = droppableSlot.getAttribute('data-slot-type') as DragSourceSlotInfo['type'];
               const targetIndexAttr = droppableSlot.getAttribute('data-slot-index');
+              const targetParentIdAttr = droppableSlot.getAttribute('data-slot-parent-id'); 
+
               if (targetType && targetIndexAttr !== null) {
-                   const targetIndex: number | string = (targetType === 'inventory' || targetType === 'hotbar' || targetType === 'campfire_fuel') 
+                   const targetIndex: number | string = (targetType === 'inventory' || targetType === 'hotbar' || targetType === 'campfire_fuel' || targetType === 'wooden_storage_box') 
                                                       ? parseInt(targetIndexAttr, 10) 
                                                       : targetIndexAttr; 
+                  
+                  // Parse parentId: Attempt BigInt conversion, handle potential errors/NaN
+                  let parentId: number | bigint | undefined = undefined;
+                  if (targetParentIdAttr) {
+                      try {
+                          // Attempt BigInt conversion first (common case)
+                          parentId = BigInt(targetParentIdAttr);
+                      } catch (bigIntError) {
+                          // If BigInt fails, try Number (maybe it was a regular number string?)
+                          const numVal = Number(targetParentIdAttr);
+                          if (!isNaN(numVal)) {
+                               parentId = numVal;
+                          } else {
+                              console.warn(`Could not parse parentId attribute: ${targetParentIdAttr}`);
+                          }
+                      }
+                  }
+                  
                   if (!isNaN(targetIndex as number) || typeof targetIndex === 'string') { 
-                      targetSlotInfo = { type: targetType, index: targetIndex };
-                      if (!(sourceSlot.type === targetSlotInfo.type && sourceSlot.index === targetSlotInfo.index)) { 
+                      // Construct targetSlotInfo only if index is valid
+                      const currentTargetSlotInfo: DragSourceSlotInfo = { 
+                          type: targetType, 
+                          index: targetIndex, 
+                          parentId: parentId 
+                      };
+                      targetSlotInfo = currentTargetSlotInfo; // Assign to outer scope variable
+
+                      // Check if dropping onto the same source slot (including parent)
+                      const isSameSlot = sourceSlot.type === currentTargetSlotInfo.type && 
+                                       sourceSlot.index === currentTargetSlotInfo.index && 
+                                       sourceSlot.parentId?.toString() === currentTargetSlotInfo.parentId?.toString();
+
+                      if (!isSameSlot) { 
                            dropHandledInternal = true;
-                       } else {
-                           console.log("[DraggableItem] Drop on source slot ignored (no action needed).");
-                           dropHandledInternal = true; 
-                           targetSlotInfo = null; 
-                       }
+                      } else {
+                          console.log("[DraggableItem] Drop on source slot ignored (no action needed).");
+                          dropHandledInternal = true; 
+                          targetSlotInfo = null; // Reset target if it was the source
+                      }
                   }
               }
           } 
