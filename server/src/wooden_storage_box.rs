@@ -248,31 +248,24 @@ pub fn move_item_to_box(
     ctx: &ReducerContext, 
     box_id: u32, 
     target_slot_index: u8, 
-    item_instance_id: u64
+    item_instance_id: u64 // Pass ID directly
 ) -> Result<(), String> {
-    // Get tables
-    let inventory_items = ctx.db.inventory_item();
-    let item_defs = ctx.db.item_definition();
-    let mut boxes = ctx.db.wooden_storage_box(); 
+    // Get mutable box table handle
+    let mut boxes = ctx.db.wooden_storage_box();
+    // NOTE: Other tables (inventory, item_defs) are accessed within the handler via ctx
 
-    // --- Validations --- 
+    // --- Basic Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
-    let mut item_to_move = inventory_items.instance_id().find(item_instance_id).ok_or("Item instance not found")?;
-    let item_def_to_move = item_defs.id().find(item_to_move.item_def_id).ok_or("Item definition not found")?;
-    if target_slot_index >= NUM_BOX_SLOTS as u8 { return Err(format!("Invalid target box slot index: {}", target_slot_index)); }
-    if item_to_move.player_identity != ctx.sender { return Err("Item does not belong to player".to_string()); }
-    if item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none() { return Err("Item to move must be in player inventory or hotbar".to_string()); }
-    let dx = _player.position_x - storage_box.pos_x;
-    let dy = _player.position_y - storage_box.pos_y;
-    if (dx * dx + dy * dy) > BOX_INTERACTION_DISTANCE_SQUARED { return Err("Too far away from storage box".to_string()); }
+    // REMOVED: Item fetching/validation moved to handler
+    // REMOVED: Target slot index validation moved to handler (using container.num_slots())
 
     // --- Call GENERIC Handler --- 
     inventory_management::handle_move_to_container_slot(
         ctx, 
         &mut storage_box, 
         target_slot_index, 
-        &mut item_to_move, 
-        &item_def_to_move
+        item_instance_id // Pass the ID
+        // REMOVED item references
     )?;
 
     // --- Commit Box Update --- 
@@ -285,27 +278,30 @@ pub fn move_item_to_box(
 pub fn move_item_from_box(
     ctx: &ReducerContext, 
     box_id: u32, 
-    source_slot_index: u8
+    source_slot_index: u8,
+    target_slot_type: String, // NEW: "inventory" or "hotbar"
+    target_slot_index: u32    // NEW: Index within inventory or hotbar
 ) -> Result<(), String> {
-    // Get tables
+    // Get mutable box table handle
     let mut boxes = ctx.db.wooden_storage_box();
-    // inventory_items is accessed within handler via ctx
 
     // --- Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
-    if source_slot_index >= NUM_BOX_SLOTS as u8 { return Err(format!("Invalid source box slot index: {}", source_slot_index)); }
-    if inventory_management::get_box_slot_instance_id(&storage_box, source_slot_index).is_none() {
-        return Err(format!("Source slot {} in box is empty", source_slot_index));
-    }
+    // NOTE: Basic distance/existence checked by validate_box_interaction
+    // NOTE: Item details, slot checks, target validation now handled by inventory_management handler
 
-    // --- Call GENERIC Handler --- 
+    // --- Call Handler to attempt move to player inventory FIRST --- 
     inventory_management::handle_move_from_container_slot(
         ctx, 
-        &mut storage_box, 
-        source_slot_index
+        &mut storage_box, // Pass mutably, handler will clear slot on success
+        source_slot_index,
+        target_slot_type, // Pass through
+        target_slot_index // Pass through
     )?;
+    // ^ If this returns Ok, it means the move/merge/swap into the player slot succeeded.
 
     // --- Commit Box Update --- 
+    // The handler modified storage_box (cleared the slot) if the move was successful.
     boxes.id().update(storage_box);
     Ok(())
 }
@@ -318,18 +314,14 @@ pub fn move_item_within_box(
     source_slot_index: u8,
     target_slot_index: u8,
 ) -> Result<(), String> {
-    // Get tables
+    // Get mutable box table handle
     let mut boxes = ctx.db.wooden_storage_box();
-    // inventory_items and item_defs accessed in handler via ctx
+    // NOTE: Other tables accessed in handler via ctx
 
-    // --- Validations --- 
+    // --- Basic Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
-    if source_slot_index >= NUM_BOX_SLOTS as u8 || target_slot_index >= NUM_BOX_SLOTS as u8 || source_slot_index == target_slot_index {
-        return Err("Invalid source or target slot index".to_string());
-    }
-    if inventory_management::get_box_slot_instance_id(&storage_box, source_slot_index).is_none() {
-        return Err(format!("Source slot {} is empty", source_slot_index));
-    }
+    // REMOVED: Item fetching/validation moved to handler
+    // NOTE: Slot index validation moved to handler
 
     // --- Call GENERIC Handler --- 
     inventory_management::handle_move_within_container(
@@ -337,6 +329,7 @@ pub fn move_item_within_box(
         &mut storage_box, 
         source_slot_index, 
         target_slot_index
+        // Removed table args
     )?;
 
     // --- Commit Box Update --- 
@@ -360,17 +353,18 @@ pub fn split_stack_into_box(
 
     // --- Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
+    // Fetch item here because handler needs mutable ref
     let mut source_item = inventory_items.instance_id().find(source_item_instance_id).ok_or("Source item not found")?;
-    if quantity_to_split == 0 { return Err("Quantity to split must be greater than 0".to_string()); }
-    if source_item.quantity < quantity_to_split { return Err(format!("Not enough items in source item instance: {} < {}", source_item.quantity, quantity_to_split)); }
-
+    // REMOVED: Further validations moved to handler
+    
     // --- Call GENERIC Handler --- 
     inventory_management::handle_split_into_container(
         ctx, 
         &mut storage_box, 
         target_slot_index, 
-        &mut source_item, 
+        &mut source_item, // Pass mutable source item ref
         quantity_to_split
+        // Removed inventory_table arg
     )?;
 
     // --- Commit Box Update --- 
@@ -390,23 +384,17 @@ pub fn split_stack_from_box(
 ) -> Result<(), String> {
     // Get tables
     let mut boxes = ctx.db.wooden_storage_box();
-    let inventory_items = ctx.db.inventory_item(); // Need this to find source_item
-    let item_defs = ctx.db.item_definition(); // Need this for validation
+    // NOTE: Other tables accessed in handler via ctx
 
     // --- Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
-    let source_instance_id = inventory_management::get_box_slot_instance_id(&storage_box, source_slot_index)
-        .ok_or(format!("Source slot {} is empty", source_slot_index))?;
-    let mut source_item = inventory_items.instance_id().find(source_instance_id).ok_or("Source item instance not found")?;
-    if quantity_to_split == 0 { return Err("Quantity to split must be greater than 0".to_string()); }
-    if source_item.quantity < quantity_to_split { return Err(format!("Not enough items in source item instance: {} < {}", source_item.quantity, quantity_to_split)); }
+    // REMOVED: Item fetching/validation moved to handler
 
     // --- Call GENERIC Handler --- 
     inventory_management::handle_split_from_container(
         ctx, 
         &mut storage_box, 
         source_slot_index, 
-        &mut source_item, 
         quantity_to_split,
         target_slot_type, 
         target_slot_index
@@ -428,16 +416,12 @@ pub fn split_stack_within_box(
 ) -> Result<(), String> {
     // Get tables
     let mut boxes = ctx.db.wooden_storage_box();
-    let inventory_items = ctx.db.inventory_item(); // Need this to find source_item
-    let item_defs = ctx.db.item_definition(); // Need this for validation
+    // NOTE: Other tables accessed in handler
 
     // --- Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
-    let source_instance_id = inventory_management::get_box_slot_instance_id(&storage_box, source_slot_index)
-        .ok_or(format!("Source slot {} is empty", source_slot_index))?;
-    let mut source_item = inventory_items.instance_id().find(source_instance_id).ok_or("Source item instance not found")?;
-    if quantity_to_split == 0 { return Err("Quantity to split must be greater than 0".to_string()); }
-    if source_item.quantity < quantity_to_split { return Err(format!("Not enough items in source item instance: {} < {}", source_item.quantity, quantity_to_split)); }
+    // REMOVED: Item fetching/validation moved to handler
+    // NOTE: Slot index/target empty validation moved to handler
 
     // --- Call GENERIC Handler ---
     inventory_management::handle_split_within_container(
@@ -445,7 +429,6 @@ pub fn split_stack_within_box(
         &mut storage_box,
         source_slot_index,
         target_slot_index,
-        &mut source_item, 
         quantity_to_split
     )?;
 
@@ -461,16 +444,12 @@ pub fn quick_move_from_box(
     box_id: u32, 
     source_slot_index: u8
 ) -> Result<(), String> {
-    // Get tables
+    // Get mutable box table handle
     let mut boxes = ctx.db.wooden_storage_box();
-    let inventory_items = ctx.db.inventory_item(); 
 
-    // --- Validations --- 
+    // --- Basic Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
-    if source_slot_index >= NUM_BOX_SLOTS as u8 { return Err(format!("Invalid source box slot index: {}", source_slot_index)); }
-    if inventory_management::get_box_slot_instance_id(&storage_box, source_slot_index).is_none() {
-        return Err(format!("Source slot {} in box is empty", source_slot_index));
-    }
+    // REMOVED: Item fetching/slot empty validation moved to handler
 
     // --- Call Handler --- 
     inventory_management::handle_quick_move_from_container(
@@ -489,27 +468,22 @@ pub fn quick_move_from_box(
 pub fn quick_move_to_box(
     ctx: &ReducerContext, 
     box_id: u32, 
-    item_instance_id: u64
+    item_instance_id: u64 // Pass ID directly
 ) -> Result<(), String> {
-    let sender_id = ctx.sender;
     // Get tables
     let mut boxes = ctx.db.wooden_storage_box();
-    let inventory_items = ctx.db.inventory_item(); 
-    let item_defs = ctx.db.item_definition();
+    // NOTE: Other tables accessed in handler via ctx
 
     // --- Validations --- 
     let (_player, mut storage_box) = validate_box_interaction(ctx, box_id)?;
-    let mut item_to_move = inventory_items.instance_id().find(item_instance_id).ok_or("Item instance not found")?;
-    let item_def_to_move = item_defs.id().find(item_to_move.item_def_id).ok_or("Item definition not found")?;
-    if item_to_move.player_identity != sender_id { return Err("Item does not belong to player".to_string()); }
-    if item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none() { return Err("Item must be in player inventory or hotbar".to_string()); }
+    // REMOVED: Item fetching/validation moved to handler
 
     // --- Call Handler --- 
     inventory_management::handle_quick_move_to_container(
         ctx, 
         &mut storage_box, 
-        &mut item_to_move, 
-        &item_def_to_move
+        item_instance_id // Pass the ID
+        // REMOVED item references
     )?;
 
     // --- Commit Box Update --- 

@@ -326,14 +326,47 @@ function App() {
         // --- Standard Item Move (Full Stack) ---
         // Based on target slot type, call the appropriate reducer
         if (targetSlot.type === 'inventory') {
-            // Ensure target index is a number
             const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
             if (isNaN(targetIndexNum)) { console.error("Invalid inventory index", targetSlot.index); return; }
-            connection.reducers.moveItemToInventory(itemInstanceId, targetIndexNum);
+            
+            // <<< NEW: Check source type >>>
+            if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
+                const sourceBoxId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                 if (sourceBoxId === null || isNaN(sourceIndexNum)) { 
+                    console.error("[App Drop] Missing BoxID or SourceIndex for move FROM box"); 
+                    setError("Could not determine source box slot for move.");
+                    return; 
+                 }
+                console.log(`[App Drop] Calling move_item_from_box (to inventory) for box ${sourceBoxId} slot ${sourceIndexNum}`);
+                // Note: We don't need the target slot index for move_item_from_box
+                connection.reducers.moveItemFromBox(sourceBoxId, sourceIndexNum, targetSlot.type, targetIndexNum);
+            } else {
+                // Original logic for moves from inv/hotbar/equip to inventory
+                console.log(`[App Drop] Calling moveItemToInventory for item ${itemInstanceId} to slot ${targetIndexNum}`);
+                connection.reducers.moveItemToInventory(itemInstanceId, targetIndexNum);
+            }
         } else if (targetSlot.type === 'hotbar') {
             const targetIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
             if (isNaN(targetIndexNum)) { console.error("Invalid hotbar index", targetSlot.index); return; }
-             connection.reducers.moveItemToHotbar(itemInstanceId, targetIndexNum);
+
+            // <<< NEW: Check source type >>>
+            if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
+                const sourceBoxId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
+                const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
+                 if (sourceBoxId === null || isNaN(sourceIndexNum)) { 
+                    console.error("[App Drop] Missing BoxID or SourceIndex for move FROM box"); 
+                    setError("Could not determine source box slot for move.");
+                    return; 
+                 }
+                console.log(`[App Drop] Calling move_item_from_box (to hotbar) for box ${sourceBoxId} slot ${sourceIndexNum}`);
+                // Note: We don't need the target slot index for move_item_from_box
+                connection.reducers.moveItemFromBox(sourceBoxId, sourceIndexNum, targetSlot.type, targetIndexNum);
+            } else {
+                // Original logic for moves from inv/hotbar/equip to hotbar
+                 console.log(`[App Drop] Calling moveItemToHotbar for item ${itemInstanceId} to slot ${targetIndexNum}`);
+                 connection.reducers.moveItemToHotbar(itemInstanceId, targetIndexNum);
+            }
         } else if (targetSlot.type === 'equipment' && typeof targetSlot.index === 'string') {
             // Equipment uses string index ('Head', 'Chest', etc.)
             connection.reducers.equipArmorFromDrag(itemInstanceId, targetSlot.index);

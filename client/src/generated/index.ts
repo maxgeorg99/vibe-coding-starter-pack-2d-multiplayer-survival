@@ -828,19 +828,19 @@ export class RemoteReducers {
     this.connection.offReducer("move_fuel_within_campfire", callback);
   }
 
-  moveItemFromBox(boxId: number, sourceSlotIndex: number) {
-    const __args = { boxId, sourceSlotIndex };
+  moveItemFromBox(boxId: number, sourceSlotIndex: number, targetSlotType: string, targetSlotIndex: number) {
+    const __args = { boxId, sourceSlotIndex, targetSlotType, targetSlotIndex };
     let __writer = new BinaryWriter(1024);
     MoveItemFromBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("move_item_from_box", __argsBuffer, this.setCallReducerFlags.moveItemFromBoxFlags);
   }
 
-  onMoveItemFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number) => void) {
+  onMoveItemFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, targetSlotType: string, targetSlotIndex: number) => void) {
     this.connection.onReducer("move_item_from_box", callback);
   }
 
-  removeOnMoveItemFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number) => void) {
+  removeOnMoveItemFromBox(callback: (ctx: ReducerEventContext, boxId: number, sourceSlotIndex: number, targetSlotType: string, targetSlotIndex: number) => void) {
     this.connection.offReducer("move_item_from_box", callback);
   }
 

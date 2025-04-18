@@ -507,7 +507,7 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                                             className={styles.slot}
                                             isDraggingOver={false} // Add hover state later if needed
                                         >
-                                            {itemInSlot && (
+                                            {itemInSlot ? ( 
                                                 <DraggableItem
                                                     item={itemInSlot}
                                                     sourceSlot={currentBoxSlotInfo}
@@ -515,7 +515,7 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                                                     onItemDrop={onItemDrop}
                                                     onContextMenu={(event) => handleBoxItemContextMenu(event, itemInSlot, index)}
                                                 />
-                                            )}
+                                            ) : null}
                                         </DroppableSlot>
                                     );
                                 })}

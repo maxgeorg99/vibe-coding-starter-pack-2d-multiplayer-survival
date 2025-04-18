@@ -34,6 +34,8 @@ import {
 export type MoveItemFromBox = {
   boxId: number,
   sourceSlotIndex: number,
+  targetSlotType: string,
+  targetSlotIndex: number,
 };
 
 /**
@@ -48,6 +50,8 @@ export namespace MoveItemFromBox {
     return AlgebraicType.createProductType([
       new ProductTypeElement("boxId", AlgebraicType.createU32Type()),
       new ProductTypeElement("sourceSlotIndex", AlgebraicType.createU8Type()),
+      new ProductTypeElement("targetSlotType", AlgebraicType.createStringType()),
+      new ProductTypeElement("targetSlotIndex", AlgebraicType.createU32Type()),
     ]);
   }
 
