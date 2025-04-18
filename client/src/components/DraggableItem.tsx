@@ -161,11 +161,26 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
             }
         }
     } else { // Left or Middle Button Release
-        console.log("[DraggableItem MouseUp] Left/Middle drag release. Calling onItemDrop.");
-        if (dropHandledInternal) {
-            onItemDrop(targetSlotInfo); 
+        console.log("[DraggableItem MouseUp] Left/Middle mouse button released.");
+        if (dropHandledInternal && targetSlotInfo) {
+            // Valid drop onto different slot
+            console.log("[DraggableItem MouseUp] Valid L/M drop. Calling onItemDrop with target:", targetSlotInfo);
+            onItemDrop(targetSlotInfo);
+        } else if (wasDragging) {
+            // Dragged, but ended outside or on source slot
+            // Only call drop(null) if it ended outside a valid target altogether
+            if (!targetSlotInfo) { // If targetSlotInfo is null (meaning not over a valid slot)
+                 console.log("[DraggableItem MouseUp] L/M Dragged outside. Calling onItemDrop(null).");
+                 onItemDrop(null);
+            } else {
+                 // Dragged, but ended on source slot or invalid target. No action needed.
+                 console.log("[DraggableItem MouseUp] L/M Dragged to source/invalid. No drop action.");
+                 // App state is cleared by App.handleItemDrop unconditionally.
+            }
         } else {
-            onItemDrop(null);
+            // Simple click without drag. No action needed.
+            console.log("[DraggableItem MouseUp] Simple left/middle click. No drop action.");
+            // App state is cleared by App.handleItemDrop unconditionally.
         }
     }
     // --- End Decision Logic ---

@@ -143,12 +143,11 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
 
         // --- NEW: Check for Campfire interaction + Wood --- 
         if (isCampfireInteraction && campfireIdNum !== null && itemInfo.definition.name === 'Wood') {
-             console.log(`[InventoryUI ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling add_wood_to_first_available_campfire_slot...`);
+             console.log(`[InventoryUI ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling auto_add_wood_to_campfire...`);
             try {
-                connection.reducers.addWoodToFirstAvailableCampfireSlot(campfireIdNum, itemInstanceId);
-                // No further action needed here, backend handles moving the item
+                connection.reducers.autoAddWoodToCampfire(campfireIdNum, itemInstanceId);
             } catch (error: any) {
-                console.error("[InventoryUI ContextMenu] Failed to call add_wood_to_first_available_campfire_slot reducer:", error);
+                console.error("[InventoryUI ContextMenu] Failed to call autoAddWoodToCampfire reducer:", error);
                 // TODO: Show user feedback? (e.g., "Campfire full")
             }
             return; // Stop processing this context menu event
@@ -251,10 +250,9 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
         if (!connection?.reducers || campfireIdNum === null) return;
         console.log(`Attempting to remove fuel from campfire ${campfireIdNum}, slot ${slotIndex}`);
         try {
-            // Call reducer with campfireId and slotIndex
-            connection.reducers.removeFuelFromCampfire(campfireIdNum, slotIndex);
+            connection.reducers.autoRemoveFuelFromCampfire(campfireIdNum, slotIndex);
         } catch (error) {
-            console.error("Error calling removeFuelFromCampfire reducer:", error);
+            console.error("Error calling autoRemoveFuelFromCampfire reducer:", error);
         }
     };
 

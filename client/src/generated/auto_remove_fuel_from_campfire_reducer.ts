@@ -31,7 +31,7 @@ import {
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export type RemoveFuelFromCampfire = {
+export type AutoRemoveFuelFromCampfire = {
   campfireId: number,
   sourceSlotIndex: number,
 };
@@ -39,7 +39,7 @@ export type RemoveFuelFromCampfire = {
 /**
  * A namespace for generated helper functions.
  */
-export namespace RemoveFuelFromCampfire {
+export namespace AutoRemoveFuelFromCampfire {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
@@ -51,12 +51,12 @@ export namespace RemoveFuelFromCampfire {
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: RemoveFuelFromCampfire): void {
-    RemoveFuelFromCampfire.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: AutoRemoveFuelFromCampfire): void {
+    AutoRemoveFuelFromCampfire.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): RemoveFuelFromCampfire {
-    return RemoveFuelFromCampfire.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): AutoRemoveFuelFromCampfire {
+    return AutoRemoveFuelFromCampfire.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }

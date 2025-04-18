@@ -50,13 +50,59 @@ function App() {
   // --- Campfire Placement State ---
   const [isPlacingCampfire, setIsPlacingCampfire] = useState<boolean>(false);
   const [placementError, setPlacementError] = useState<string | null>(null); // Error message for placement
-  // Re-add state for tracking current interaction target
   const [interactingWith, setInteractingWith] = useState<{ type: string; id: number | bigint } | null>(null);
-  
-  // LIFTED STATE: Custom Drag/Drop State
   const [draggedItemInfo, setDraggedItemInfo] = useState<DraggedItemInfo | null>(null);
-  // Ref to hold the latest dragged info for callbacks
   const draggedItemRef = useRef<DraggedItemInfo | null>(null);
+
+  // --- Define Placement Handlers EARLIER --- 
+  const cancelCampfirePlacement = useCallback(() => {
+    console.log("[App] cancelCampfirePlacement called. Setting isPlacingCampfire=false");
+    setIsPlacingCampfire(false);
+    setPlacementError(null);
+  }, [setIsPlacingCampfire, setPlacementError]);
+
+  const startCampfirePlacement = useCallback(() => {
+    console.log("[App] startCampfirePlacement called. Setting isPlacingCampfire=true");
+    setIsPlacingCampfire(true);
+    setPlacementError(null);
+  }, [setIsPlacingCampfire, setPlacementError]);
+
+  const handlePlaceCampfire = useCallback((worldX: number, worldY: number) => {
+    // Check connection *inside* the handler now
+    if (!connection) {
+        console.error("Cannot place campfire: No connection.");
+        setError("Not connected.");
+        return;
+    }
+    // Check isPlacingCampfire inside
+    if (!isPlacingCampfire) return;
+
+    console.log(`Attempting to place campfire at (${worldX}, ${worldY})`);
+    setPlacementError(null); // Clear previous error before attempting
+    try {
+      connection.reducers.placeCampfire(worldX, worldY);
+    } catch (err: any) {
+      console.error('Failed to call place campfire reducer (client-side error):', err);
+      const errorMessage = err?.message || "Failed to place campfire. Check logs.";
+      setError(`Placement failed: ${errorMessage}`); 
+      setPlacementError(errorMessage); 
+    }
+  }, [connection, isPlacingCampfire, setError, setPlacementError]); 
+
+  // --- NEW: Refs for callbacks/state used in subscriptions --- 
+  const isPlacingRef = useRef(isPlacingCampfire);
+  const cancelPlacementRef = useRef(cancelCampfirePlacement);
+
+  // Update refs when state/callbacks change
+  useEffect(() => {
+    isPlacingRef.current = isPlacingCampfire;
+  }, [isPlacingCampfire]);
+
+  useEffect(() => {
+    // Re-wrap cancelCampfirePlacement in useCallback before assigning to ref
+    // This ensures the ref always holds the latest *stable* function reference
+    cancelPlacementRef.current = cancelCampfirePlacement;
+  }, [cancelCampfirePlacement]);
 
   // Effect to keep the ref synchronized with the state
   useEffect(() => {
@@ -259,6 +305,12 @@ function App() {
     const handleCampfireInsert = (ctx: any, campfire: SpacetimeDB.Campfire) => {
       console.log('Campfire Inserted:', campfire.id);
       setCampfires(prev => new Map(prev).set(campfire.id.toString(), campfire));
+      // --- Use Refs Here --- 
+      if (isPlacingRef.current && connection?.identity && campfire.placedBy.isEqual(connection.identity)) {
+        console.log("[App handleCampfireInsert] Our campfire placed, calling cancel via ref...");
+        cancelPlacementRef.current(); // Call function via ref
+      }
+      // --- End Ref Use ---
     };
 
     const handleCampfireUpdate = (ctx: any, oldFire: SpacetimeDB.Campfire, newFire: SpacetimeDB.Campfire) => {
@@ -639,7 +691,7 @@ function App() {
       if (droppedItemSubscription) droppedItemSubscription.unsubscribe();
     };
     
-  }, [connection]); // Re-run this effect if the connection object changes
+  }, [connection]); // Now only depends on connection!
   
   // Handle player registration
   const handleRegisterPlayer = () => {
@@ -724,37 +776,6 @@ function App() {
         // Optionally set an error state here
       }
     }
-  };
-  
-  // --- Campfire Placement Handlers ---
-  const startCampfirePlacement = () => {
-    console.log("Starting campfire placement mode.");
-    setIsPlacingCampfire(true);
-    setPlacementError(null); // Clear previous errors
-  };
-
-  const handlePlaceCampfire = (worldX: number, worldY: number) => {
-    if (!connection || !isPlacingCampfire) return;
-
-    console.log(`Attempting to place campfire at (${worldX}, ${worldY})`);
-    setPlacementError(null); // Clear previous error before attempting
-    try {
-      // Call the SpacetimeDB reducer using camelCase
-      connection.reducers.placeCampfire(worldX, worldY);
-    } catch (err: any) {
-      console.error('Failed to call place campfire reducer (client-side error):', err);
-      // Display the error message 
-      const errorMessage = err?.message || "Failed to place campfire. Check logs.";
-      setError(`Placement failed: ${errorMessage}`); // Show general error
-      setPlacementError(errorMessage); // Keep specific error for potential placement UI
-      // Do NOT exit placement mode on error
-    }
-  };
-
-  const cancelCampfirePlacement = () => {
-    console.log("Cancelling campfire placement mode.");
-    setIsPlacingCampfire(false);
-    setPlacementError(null); // Clear error on cancel
   };
   
   // --- LIFTED Drag/Drop Handlers --- 

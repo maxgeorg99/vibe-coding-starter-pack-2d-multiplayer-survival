@@ -511,24 +511,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       // --- End 'E' Key Up Logic ---
     };
 
-    // --- REMOVE Swing Logic from Click Listener --- 
     const handleCanvasClick = (event: MouseEvent) => {
         if (isInputDisabled.current) return;
 
-        // Only handle placement clicks now
         if (isPlacingCampfire && worldMousePosRef.current.x !== null && worldMousePosRef.current.y !== null) {
-            if (event.button === 0) {
-                handlePlaceCampfire(worldMousePosRef.current.x, worldMousePosRef.current.y);
-                return; 
-            }
+             if (event.button === 0) {
+                 handlePlaceCampfire(worldMousePosRef.current.x, worldMousePosRef.current.y);
+                 return; 
+             }
         }
-
-        // --- REMOVED Item usage logic --- 
-        /*
-        if (event.button === 0 && !isPlacingCampfire) { 
-           // ... removed swing logic ...
-        }
-        */
     };
 
     // --- Placement Right-Click/Context Menu Listener ---
@@ -545,8 +536,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         if (isPlacingCampfire) {
             console.log("Mouse wheel scrolled, cancelling placement.");
             cancelCampfirePlacement();
-            // Optionally prevent default scroll behavior if needed
-            // event.preventDefault();
         }
     };
 
@@ -597,7 +586,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         canvas.removeEventListener('contextmenu', handleContextMenu);
       }
     };
-  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, inventoryItems, localPlayerId, connection, onSetInteractingWith, attemptSwing]);
+  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, isPlacingCampfire, handlePlaceCampfire, cancelCampfirePlacement, attemptSwing]);
 
   const updatePlayerBasedOnInput = useCallback(() => {
     if (isInputDisabled.current) return; // Skip input processing if dead
@@ -944,11 +933,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             const itemDef = itemDefinitions.get(entity.itemDefId.toString());
             let itemImg: HTMLImageElement | null = null;
             let iconAssetName: string | null = null;
-            // console.log(`[Debug DroppedItem ${entity.id}] Processing itemDefId: ${entity.itemDefId}`); // Log ID
             if (itemDef) {
                 iconAssetName = itemDef.iconAssetName;
                 itemImg = itemImagesRef.current.get(iconAssetName) ?? null;
-                // console.log(`[Debug DroppedItem ${entity.id}] Found itemDef: ${itemDef.name}, iconAssetName: ${iconAssetName}, image found in cache: ${!!itemImg}`); // Log def details
             } else {
                  console.warn(`[Render DroppedItem] Definition not found for ID: ${entity.itemDefId}`);
             }

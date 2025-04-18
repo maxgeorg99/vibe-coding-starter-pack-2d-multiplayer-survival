@@ -36,6 +36,10 @@ import { AddFuelToCampfire } from "./add_fuel_to_campfire_reducer.ts";
 export { AddFuelToCampfire };
 import { AddWoodToFirstAvailableCampfireSlot } from "./add_wood_to_first_available_campfire_slot_reducer.ts";
 export { AddWoodToFirstAvailableCampfireSlot };
+import { AutoAddWoodToCampfire } from "./auto_add_wood_to_campfire_reducer.ts";
+export { AutoAddWoodToCampfire };
+import { AutoRemoveFuelFromCampfire } from "./auto_remove_fuel_from_campfire_reducer.ts";
+export { AutoRemoveFuelFromCampfire };
 import { CheckCampfireFuelConsumption } from "./check_campfire_fuel_consumption_reducer.ts";
 export { CheckCampfireFuelConsumption };
 import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
@@ -76,8 +80,6 @@ import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
-import { RemoveFuelFromCampfire } from "./remove_fuel_from_campfire_reducer.ts";
-export { RemoveFuelFromCampfire };
 import { RequestRespawn } from "./request_respawn_reducer.ts";
 export { RequestRespawn };
 import { SeedEnvironment } from "./seed_environment_reducer.ts";
@@ -243,6 +245,14 @@ const REMOTE_MODULE = {
       reducerName: "add_wood_to_first_available_campfire_slot",
       argsType: AddWoodToFirstAvailableCampfireSlot.getTypeScriptAlgebraicType(),
     },
+    auto_add_wood_to_campfire: {
+      reducerName: "auto_add_wood_to_campfire",
+      argsType: AutoAddWoodToCampfire.getTypeScriptAlgebraicType(),
+    },
+    auto_remove_fuel_from_campfire: {
+      reducerName: "auto_remove_fuel_from_campfire",
+      argsType: AutoRemoveFuelFromCampfire.getTypeScriptAlgebraicType(),
+    },
     check_campfire_fuel_consumption: {
       reducerName: "check_campfire_fuel_consumption",
       argsType: CheckCampfireFuelConsumption.getTypeScriptAlgebraicType(),
@@ -322,10 +332,6 @@ const REMOTE_MODULE = {
     register_player: {
       reducerName: "register_player",
       argsType: RegisterPlayer.getTypeScriptAlgebraicType(),
-    },
-    remove_fuel_from_campfire: {
-      reducerName: "remove_fuel_from_campfire",
-      argsType: RemoveFuelFromCampfire.getTypeScriptAlgebraicType(),
     },
     request_respawn: {
       reducerName: "request_respawn",
@@ -420,6 +426,8 @@ const REMOTE_MODULE = {
 export type Reducer = never
 | { name: "AddFuelToCampfire", args: AddFuelToCampfire }
 | { name: "AddWoodToFirstAvailableCampfireSlot", args: AddWoodToFirstAvailableCampfireSlot }
+| { name: "AutoAddWoodToCampfire", args: AutoAddWoodToCampfire }
+| { name: "AutoRemoveFuelFromCampfire", args: AutoRemoveFuelFromCampfire }
 | { name: "CheckCampfireFuelConsumption", args: CheckCampfireFuelConsumption }
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
 | { name: "ConsumeItem", args: ConsumeItem }
@@ -440,7 +448,6 @@ export type Reducer = never
 | { name: "PickupDroppedItem", args: PickupDroppedItem }
 | { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "RegisterPlayer", args: RegisterPlayer }
-| { name: "RemoveFuelFromCampfire", args: RemoveFuelFromCampfire }
 | { name: "RequestRespawn", args: RequestRespawn }
 | { name: "SeedEnvironment", args: SeedEnvironment }
 | { name: "SeedItems", args: SeedItems }
@@ -492,6 +499,38 @@ export class RemoteReducers {
 
   removeOnAddWoodToFirstAvailableCampfireSlot(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
     this.connection.offReducer("add_wood_to_first_available_campfire_slot", callback);
+  }
+
+  autoAddWoodToCampfire(campfireId: number, itemInstanceId: bigint) {
+    const __args = { campfireId, itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    AutoAddWoodToCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("auto_add_wood_to_campfire", __argsBuffer, this.setCallReducerFlags.autoAddWoodToCampfireFlags);
+  }
+
+  onAutoAddWoodToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("auto_add_wood_to_campfire", callback);
+  }
+
+  removeOnAutoAddWoodToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("auto_add_wood_to_campfire", callback);
+  }
+
+  autoRemoveFuelFromCampfire(campfireId: number, sourceSlotIndex: number) {
+    const __args = { campfireId, sourceSlotIndex };
+    let __writer = new BinaryWriter(1024);
+    AutoRemoveFuelFromCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("auto_remove_fuel_from_campfire", __argsBuffer, this.setCallReducerFlags.autoRemoveFuelFromCampfireFlags);
+  }
+
+  onAutoRemoveFuelFromCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number) => void) {
+    this.connection.onReducer("auto_remove_fuel_from_campfire", callback);
+  }
+
+  removeOnAutoRemoveFuelFromCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number) => void) {
+    this.connection.offReducer("auto_remove_fuel_from_campfire", callback);
   }
 
   checkCampfireFuelConsumption(schedule: CampfireFuelCheckSchedule) {
@@ -790,22 +829,6 @@ export class RemoteReducers {
     this.connection.offReducer("register_player", callback);
   }
 
-  removeFuelFromCampfire(campfireId: number, sourceSlotIndex: number) {
-    const __args = { campfireId, sourceSlotIndex };
-    let __writer = new BinaryWriter(1024);
-    RemoveFuelFromCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
-    let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("remove_fuel_from_campfire", __argsBuffer, this.setCallReducerFlags.removeFuelFromCampfireFlags);
-  }
-
-  onRemoveFuelFromCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number) => void) {
-    this.connection.onReducer("remove_fuel_from_campfire", callback);
-  }
-
-  removeOnRemoveFuelFromCampfire(callback: (ctx: ReducerEventContext, campfireId: number, sourceSlotIndex: number) => void) {
-    this.connection.offReducer("remove_fuel_from_campfire", callback);
-  }
-
   requestRespawn() {
     this.connection.callReducer("request_respawn", new Uint8Array(0), this.setCallReducerFlags.requestRespawnFlags);
   }
@@ -1051,6 +1074,16 @@ export class SetReducerFlags {
     this.addWoodToFirstAvailableCampfireSlotFlags = flags;
   }
 
+  autoAddWoodToCampfireFlags: CallReducerFlags = 'FullUpdate';
+  autoAddWoodToCampfire(flags: CallReducerFlags) {
+    this.autoAddWoodToCampfireFlags = flags;
+  }
+
+  autoRemoveFuelFromCampfireFlags: CallReducerFlags = 'FullUpdate';
+  autoRemoveFuelFromCampfire(flags: CallReducerFlags) {
+    this.autoRemoveFuelFromCampfireFlags = flags;
+  }
+
   checkCampfireFuelConsumptionFlags: CallReducerFlags = 'FullUpdate';
   checkCampfireFuelConsumption(flags: CallReducerFlags) {
     this.checkCampfireFuelConsumptionFlags = flags;
@@ -1139,11 +1172,6 @@ export class SetReducerFlags {
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';
   registerPlayer(flags: CallReducerFlags) {
     this.registerPlayerFlags = flags;
-  }
-
-  removeFuelFromCampfireFlags: CallReducerFlags = 'FullUpdate';
-  removeFuelFromCampfire(flags: CallReducerFlags) {
-    this.removeFuelFromCampfireFlags = flags;
   }
 
   requestRespawnFlags: CallReducerFlags = 'FullUpdate';
