@@ -496,3 +496,43 @@ pub fn quick_move_to_box(
     boxes.id().update(storage_box);
     Ok(())
 }
+
+// NEW: Reducer to pick up an empty storage box
+#[spacetimedb::reducer]
+pub fn pickup_storage_box(ctx: &ReducerContext, box_id: u32) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let mut boxes = ctx.db.wooden_storage_box();
+    let item_defs = ctx.db.item_definition();
+
+    log::info!("[PickupBox] Player {:?} attempting pickup of box {}", sender_id, box_id);
+
+    // 1. Validate Interaction & Get Entities
+    let (_player, storage_box) = validate_box_interaction(ctx, box_id)?;
+
+    // 2. Check if Box is Empty
+    let is_empty = inventory_management::is_container_empty(&storage_box);
+    if !is_empty {
+        log::warn!("[PickupBox] Failed: Box {} is not empty.", box_id);
+        return Err("Cannot pick up a storage box that contains items.".to_string());
+    }
+
+    // 3. Find the "Wooden Storage Box" Item Definition
+    let box_item_def = item_defs.iter()
+        .find(|def| def.name == "Wooden Storage Box")
+        .ok_or_else(|| "Item definition 'Wooden Storage Box' not found.".to_string())?;
+
+    // 4. Add the item to the player's inventory
+    match add_item_to_player_inventory(ctx, sender_id, box_item_def.id, 1) {
+        Ok(_) => {
+            // 5. If item added successfully, delete the box entity
+            log::info!("[PickupBox] Box item added to player {:?} inventory. Deleting box entity {}.", sender_id, box_id);
+            boxes.id().delete(box_id);
+            Ok(())
+        }
+        Err(e) => {
+            // 6. If adding item failed (e.g., inventory full), return the error
+            log::error!("[PickupBox] Failed to add box item to inventory for player {:?}: {}. Box {} not deleted.", sender_id, e, box_id);
+            Err(format!("Failed to pick up box: {}", e))
+        }
+    }
+}

@@ -114,6 +114,18 @@ pub(crate) fn set_box_slot(
 }
 
 
+// --- NEW Helper: Check if Container is Empty --- 
+
+/// Checks if all slots in an ItemContainer are empty.
+pub(crate) fn is_container_empty<C: ItemContainer>(container: &C) -> bool {
+    for i in 0..container.num_slots() as u8 {
+        if container.get_slot_instance_id(i).is_some() {
+            return false; // Found an item, not empty
+        }
+    }
+    true // Went through all slots, all were empty
+}
+
 // --- Core Logic Handlers (Refactored to handle more validation) --- 
 
 /// Handles moving an item from player inventory/hotbar INTO a container slot.
@@ -134,8 +146,10 @@ pub(crate) fn handle_move_to_container_slot<C: ItemContainer>(
     let item_def_to_move = item_def_table.id().find(item_to_move.item_def_id)
         .ok_or(format!("Definition missing for item {}", item_to_move.item_def_id))?;
     if item_to_move.player_identity != sender_id { return Err("Item does not belong to player".to_string()); }
-    if item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none() { 
-        return Err("Item to move must be in player inventory or hotbar".to_string()); 
+    // --- Determine Original Location --- 
+    let original_location_was_equipment = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
+    if original_location_was_equipment {
+        log::debug!("[MoveToContainer] Item {} is potentially coming from an equipment slot.", item_instance_id);
     }
 
     // --- Validate Target Slot --- 
@@ -196,6 +210,14 @@ pub(crate) fn handle_move_to_container_slot<C: ItemContainer>(
         // Update container state using trait method
         container.set_slot(target_slot_index, Some(item_instance_id), Some(item_def_to_move.id));
     }
+
+    // --- Clear Original Equipment Slot if Necessary --- 
+    if original_location_was_equipment {
+        log::info!("[MoveToContainer] Clearing original equipment slot for item {}.", item_instance_id);
+        // Call helper using crate path
+        crate::items::clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
+    }
+
     Ok(())
 }
 
@@ -592,10 +614,12 @@ pub(crate) fn handle_quick_move_to_container<C: ItemContainer>(
     let item_def_to_move = item_def_table.id().find(item_to_move.item_def_id)
         .ok_or(format!("Definition missing for item {}", item_to_move.item_def_id))?;
     if item_to_move.player_identity != sender_id { return Err("Item does not belong to player".to_string()); }
-    if item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none() { 
-        return Err("Item must be in player inventory or hotbar".to_string()); 
+    // --- Determine Original Location --- 
+    let original_location_was_equipment = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
+    if original_location_was_equipment {
+        log::debug!("[MoveToContainer] Item {} is potentially coming from an equipment slot.", item_instance_id);
     }
-    
+
     let mut operation_occured = false; 
 
     // 1. Attempt to merge with existing stacks
@@ -666,6 +690,13 @@ pub(crate) fn handle_quick_move_to_container<C: ItemContainer>(
                  // Item remains partially in player inventory, that's intended outcome.
             }
         }
+    }
+
+    // --- Clear Original Equipment Slot if Necessary --- 
+    if original_location_was_equipment {
+        log::info!("[MoveToContainer] Clearing original equipment slot for item {}.", item_instance_id);
+        // Call helper using crate path
+        crate::items::clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
     }
 
     Ok(())

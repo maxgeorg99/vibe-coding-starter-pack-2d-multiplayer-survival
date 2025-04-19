@@ -12,6 +12,7 @@ use crate::player as PlayerTableTrait;
 use crate::dropped_item::{calculate_drop_position, create_dropped_item_entity};
 // REMOVE unused concrete table type imports
 // use crate::items::{InventoryItemTable, ItemDefinitionTable};
+use crate::items_database; // ADD import for new module
 use std::cmp::min;
 use spacetimedb::Identity; // ADDED for add_item_to_player_inventory
 
@@ -87,177 +88,7 @@ pub fn seed_items(ctx: &ReducerContext) -> Result<(), String> {
 
     log::info!("Seeding initial item definitions...");
 
-    let initial_items = vec![
-        ItemDefinition {
-            id: 0,
-            name: "Wood".to_string(),
-            description: "A sturdy piece of wood.".to_string(),
-            category: ItemCategory::Material,
-            icon_asset_name: "wood.png".to_string(),
-            damage: None,
-            is_stackable: true,
-            stack_size: 1000,
-            is_equippable: false,
-            equipment_slot: None,
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Stone".to_string(),
-            description: "A chunk of rock.".to_string(),
-            category: ItemCategory::Material,
-            icon_asset_name: "stone.png".to_string(),
-            damage: None,
-            is_stackable: true,
-            stack_size: 1000,
-            is_equippable: false,
-            equipment_slot: None,
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Stone Hatchet".to_string(),
-            description: "A simple hatchet for chopping wood.".to_string(),
-            category: ItemCategory::Tool,
-            icon_asset_name: "wood_hatchet.png".to_string(),
-            damage: Some(5),
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: None,
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Stone Pickaxe".to_string(),
-            description: "A simple pickaxe for breaking rocks.".to_string(),
-            category: ItemCategory::Tool,
-            icon_asset_name: "pick_axe.png".to_string(),
-            damage: Some(5),
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: None,
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Rock".to_string(),
-            description: "A basic tool for gathering.".to_string(),
-            category: ItemCategory::Tool,
-            icon_asset_name: "rock_item.png".to_string(),
-            damage: Some(1),
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: None,
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Camp Fire".to_string(),
-            description: "Provides warmth and light. Requires fuel.".to_string(),
-            category: ItemCategory::Placeable,
-            icon_asset_name: "campfire.png".to_string(),
-            damage: None,
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: false,
-            equipment_slot: None,
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Cloth Shirt".to_string(),
-            description: "Simple protection for the torso.".to_string(),
-            category: ItemCategory::Armor,
-            icon_asset_name: "cloth_shirt.png".to_string(),
-            damage: None,
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: Some(EquipmentSlot::Chest),
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Cloth Pants".to_string(),
-            description: "Simple protection for the legs.".to_string(),
-            category: ItemCategory::Armor,
-            icon_asset_name: "cloth_pants.png".to_string(),
-            damage: None,
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: Some(EquipmentSlot::Legs),
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Cloth Hood".to_string(),
-            description: "Basic head covering.".to_string(),
-            category: ItemCategory::Armor,
-            icon_asset_name: "cloth_hood.png".to_string(),
-            damage: None,
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: Some(EquipmentSlot::Head),
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Cloth Boots".to_string(),
-            description: "Simple footwear.".to_string(),
-            category: ItemCategory::Armor,
-            icon_asset_name: "cloth_boots.png".to_string(),
-            damage: None,
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: Some(EquipmentSlot::Feet),
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Cloth Gloves".to_string(),
-            description: "Basic hand coverings.".to_string(),
-            category: ItemCategory::Armor,
-            icon_asset_name: "cloth_gloves.png".to_string(),
-            damage: None,
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: Some(EquipmentSlot::Hands),
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Burlap Backpack".to_string(),
-            description: "A rough sack for carrying things.".to_string(),
-            category: ItemCategory::Armor,
-            icon_asset_name: "burlap_backpack.png".to_string(),
-            damage: None,
-            is_stackable: false,
-            stack_size: 1,
-            is_equippable: true,
-            equipment_slot: Some(EquipmentSlot::Back),
-        },
-        ItemDefinition {
-            id: 0,
-            name: "Mushroom".to_string(),
-            description: "A common edible fungus.".to_string(),
-            category: ItemCategory::Consumable,
-            icon_asset_name: "mushroom.png".to_string(),
-            damage: None,
-            is_stackable: true,
-            stack_size: 50,
-            is_equippable: false,
-            equipment_slot: None,
-        },
-        // --- NEW Item: Wooden Storage Box ---
-        ItemDefinition {
-            id: 0, // Auto-incremented by SpacetimeDB
-            name: "Wooden Storage Box".to_string(),
-            description: "A simple container for storing items.".to_string(),
-            category: ItemCategory::Placeable,
-            icon_asset_name: "wooden_storage_box.png".to_string(), // Assume this asset exists client-side
-            damage: None,
-            is_stackable: false, // Placeables are usually not stackable in inventory
-            stack_size: 1,
-            is_equippable: false,
-            equipment_slot: None,
-        },
-    ];
+    let initial_items = items_database::get_initial_item_definitions(); // REPLACE vector literal with function call
 
     let mut seeded_count = 0;
     for item_def in initial_items {
@@ -423,7 +254,7 @@ pub(crate) fn add_item_to_player_inventory(ctx: &ReducerContext, player_id: Iden
 }
 
 // Helper to clear a specific item instance from any equipment slot it might occupy
-fn clear_specific_item_from_equipment_slots(ctx: &ReducerContext, player_id: spacetimedb::Identity, item_instance_id_to_clear: u64) {
+pub(crate) fn clear_specific_item_from_equipment_slots(ctx: &ReducerContext, player_id: spacetimedb::Identity, item_instance_id_to_clear: u64) {
     let active_equip_table = ctx.db.active_equipment();
     // Use try_find to avoid panic if player has no equipment entry yet
     if let Some(mut equip) = active_equip_table.player_identity().find(player_id) {
@@ -583,9 +414,13 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
     let item_def_to_move = item_defs.id().find(item_to_move.item_def_id)
         .ok_or("Item definition not found")?;
 
-    // --- 2. Clear Source Location (Equipment/Campfire ONLY) --- 
-    // REMOVED: Clearing source container is handled externally now.
-    // clear_item_from_source_location(ctx, item_instance_id)?;
+    // --- 2. Determine Original Location --- 
+    let original_location_was_equipment = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
+    // We assume if it's not in inv/hotbar, it *must* be equipped for this move to be initiated.
+    // A move from a container (box/campfire) would use a different reducer.
+    if original_location_was_equipment {
+        log::debug!("[MoveInv] Item {} is potentially coming from an equipment slot.", item_instance_id);
+    }
     
     // --- 3. Check Target Slot --- 
     if target_inventory_slot >= 24 { // Assuming 0-23 are valid slots
@@ -675,6 +510,12 @@ pub fn move_item_to_inventory(ctx: &ReducerContext, item_instance_id: u64, targe
         inventory_items.instance_id().update(item_to_move);
     }
 
+    // --- 5. Clear Original Equipment Slot if Necessary --- 
+    if original_location_was_equipment {
+        log::info!("[MoveInv] Clearing original equipment slot for item {}.", item_instance_id);
+        clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
+    }
+
     Ok(())
 }
 
@@ -694,10 +535,14 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
     let item_def_to_move = item_defs.id().find(item_to_move.item_def_id)
         .ok_or("Item definition not found")?;
 
-    // --- 2. Clear Source Location (Equipment/Campfire ONLY) --- 
-    // REMOVED: Clearing source container is handled externally now.
-    // clear_item_from_source_location(ctx, item_instance_id)?;
-
+    // --- 2. Determine Original Location --- 
+    let original_location_was_equipment = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
+    // We assume if it's not in inv/hotbar, it *must* be equipped for this move to be initiated.
+    // A move from a container (box/campfire) would use a different reducer.
+    if original_location_was_equipment {
+        log::debug!("[MoveHotbar] Item {} is potentially coming from an equipment slot.", item_instance_id);
+    }
+    
     // --- 3. Check Target Slot --- 
     if target_hotbar_slot >= 6 { // Assuming 0-5 are valid slots
         return Err("Invalid target hotbar slot index".to_string());
@@ -775,6 +620,12 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
         item_to_move.inventory_slot = None;
         item_to_move.player_identity = sender_id; // Assign ownership
         inventory_items.instance_id().update(item_to_move);
+    }
+
+    // --- 5. Clear Original Equipment Slot if Necessary --- 
+    if original_location_was_equipment {
+        log::info!("[MoveHotbar] Clearing original equipment slot for item {}.", item_instance_id);
+        clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
     }
 
     Ok(())
@@ -1594,6 +1445,93 @@ pub fn auto_add_wood_to_campfire(
             return Err("Campfire fuel slots are full (no space to merge or place)".to_string());
         }
     }
+
+    Ok(())
+}
+
+// --- NEW: Reducer to equip armor directly from inventory/hotbar ---
+#[spacetimedb::reducer]
+pub fn equip_armor_from_inventory(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    log::info!("[EquipArmorInv] Player {:?} attempting to equip item {} from inventory/hotbar.", sender_id, item_instance_id);
+
+    // 1. Get Item and Definition
+    let mut item_to_equip = get_player_item(ctx, item_instance_id)?;
+    let item_def = ctx.db.item_definition().id().find(item_to_equip.item_def_id)
+        .ok_or_else(|| format!("Definition not found for item ID {}", item_to_equip.item_def_id))?;
+
+    // 2. Validate Item Type and Location
+    if item_def.category != ItemCategory::Armor {
+        return Err(format!("Item '{}' is not armor.", item_def.name));
+    }
+    let target_slot_enum = item_def.equipment_slot
+        .ok_or_else(|| format!("Armor '{}' has no defined equipment slot.", item_def.name))?;
+    if item_to_equip.inventory_slot.is_none() && item_to_equip.hotbar_slot.is_none() {
+        return Err("Item must be in inventory or hotbar to be equipped this way.".to_string());
+    }
+
+    // 3. Get ActiveEquipment and Handle Unequipping Existing Item
+    let active_equip_table = ctx.db.active_equipment();
+    let mut equip = active_equip_table.player_identity().find(sender_id)
+                     .ok_or_else(|| "ActiveEquipment entry not found for player.".to_string())?;
+
+    let current_item_in_slot_id: Option<u64> = match target_slot_enum {
+        EquipmentSlot::Head => equip.head_item_instance_id,
+        EquipmentSlot::Chest => equip.chest_item_instance_id,
+        EquipmentSlot::Legs => equip.legs_item_instance_id,
+        EquipmentSlot::Feet => equip.feet_item_instance_id,
+        EquipmentSlot::Hands => equip.hands_item_instance_id,
+        EquipmentSlot::Back => equip.back_item_instance_id,
+    };
+
+    if let Some(currently_equipped_id) = current_item_in_slot_id {
+        if currently_equipped_id == item_instance_id { return Ok(()); } // Already equipped in the correct slot
+
+        log::info!("[EquipArmorInv] Unequipping item {} from slot {:?}.", currently_equipped_id, target_slot_enum);
+        match find_first_empty_inventory_slot(ctx, sender_id) {
+            Some(empty_slot) => {
+                if let Ok(mut currently_equipped_item) = get_player_item(ctx, currently_equipped_id) {
+                    currently_equipped_item.inventory_slot = Some(empty_slot);
+                    currently_equipped_item.hotbar_slot = None;
+                    ctx.db.inventory_item().instance_id().update(currently_equipped_item);
+                    log::info!("[EquipArmorInv] Moved previously equipped item {} to inventory slot {}.", currently_equipped_id, empty_slot);
+                    // Clear the slot in ActiveEquipment *after* successfully moving the old item
+                    match target_slot_enum {
+                        EquipmentSlot::Head => equip.head_item_instance_id = None,
+                        EquipmentSlot::Chest => equip.chest_item_instance_id = None,
+                        EquipmentSlot::Legs => equip.legs_item_instance_id = None,
+                        EquipmentSlot::Feet => equip.feet_item_instance_id = None,
+                        EquipmentSlot::Hands => equip.hands_item_instance_id = None,
+                        EquipmentSlot::Back => equip.back_item_instance_id = None,
+                    };
+                } else {
+                    log::error!("[EquipArmorInv] Failed to find InventoryItem for previously equipped item {}! Aborting equip.", currently_equipped_id);
+                    return Err("Failed to process currently equipped item.".to_string());
+                }
+            }
+            None => {
+                log::error!("[EquipArmorInv] Inventory full! Cannot unequip item {} from slot {:?}. Aborting equip.", currently_equipped_id, target_slot_enum);
+                return Err("Inventory full, cannot unequip existing item.".to_string());
+            }
+        }
+    } // End handling currently equipped item
+
+    // 4. Equip the New Item
+    log::info!("[EquipArmorInv] Equipping item {} to slot {:?}.", item_instance_id, target_slot_enum);
+    match target_slot_enum {
+        EquipmentSlot::Head => equip.head_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Chest => equip.chest_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Legs => equip.legs_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Feet => equip.feet_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Hands => equip.hands_item_instance_id = Some(item_instance_id),
+        EquipmentSlot::Back => equip.back_item_instance_id = Some(item_instance_id),
+    };
+    active_equip_table.player_identity().update(equip);
+
+    // 5. Clear the Inventory/Hotbar Slot of the Newly Equipped Item
+    item_to_equip.inventory_slot = None;
+    item_to_equip.hotbar_slot = None;
+    ctx.db.inventory_item().instance_id().update(item_to_equip);
 
     Ok(())
 } 
