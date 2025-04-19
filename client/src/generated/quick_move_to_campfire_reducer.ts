@@ -31,7 +31,7 @@ import {
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export type AddWoodToFirstAvailableCampfireSlot = {
+export type QuickMoveToCampfire = {
   campfireId: number,
   itemInstanceId: bigint,
 };
@@ -39,7 +39,7 @@ export type AddWoodToFirstAvailableCampfireSlot = {
 /**
  * A namespace for generated helper functions.
  */
-export namespace AddWoodToFirstAvailableCampfireSlot {
+export namespace QuickMoveToCampfire {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
@@ -51,12 +51,12 @@ export namespace AddWoodToFirstAvailableCampfireSlot {
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: AddWoodToFirstAvailableCampfireSlot): void {
-    AddWoodToFirstAvailableCampfireSlot.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: QuickMoveToCampfire): void {
+    QuickMoveToCampfire.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): AddWoodToFirstAvailableCampfireSlot {
-    return AddWoodToFirstAvailableCampfireSlot.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): QuickMoveToCampfire {
+    return QuickMoveToCampfire.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }

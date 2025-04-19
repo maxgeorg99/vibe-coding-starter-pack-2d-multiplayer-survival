@@ -34,8 +34,6 @@ import {
 // Import and reexport all reducer arg types
 import { AddFuelToCampfire } from "./add_fuel_to_campfire_reducer.ts";
 export { AddFuelToCampfire };
-import { AddWoodToFirstAvailableCampfireSlot } from "./add_wood_to_first_available_campfire_slot_reducer.ts";
-export { AddWoodToFirstAvailableCampfireSlot };
 import { AutoAddWoodToCampfire } from "./auto_add_wood_to_campfire_reducer.ts";
 export { AutoAddWoodToCampfire };
 import { AutoRemoveFuelFromCampfire } from "./auto_remove_fuel_from_campfire_reducer.ts";
@@ -54,6 +52,8 @@ import { EquipArmor } from "./equip_armor_reducer.ts";
 export { EquipArmor };
 import { EquipArmorFromDrag } from "./equip_armor_from_drag_reducer.ts";
 export { EquipArmorFromDrag };
+import { EquipArmorFromInventory } from "./equip_armor_from_inventory_reducer.ts";
+export { EquipArmorFromInventory };
 import { EquipItem } from "./equip_item_reducer.ts";
 export { EquipItem };
 import { IdentityConnected } from "./identity_connected_reducer.ts";
@@ -86,6 +86,8 @@ import { MoveToFirstAvailableHotbarSlot } from "./move_to_first_available_hotbar
 export { MoveToFirstAvailableHotbarSlot };
 import { PickupDroppedItem } from "./pickup_dropped_item_reducer.ts";
 export { PickupDroppedItem };
+import { PickupStorageBox } from "./pickup_storage_box_reducer.ts";
+export { PickupStorageBox };
 import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
 import { PlaceWoodenStorageBox } from "./place_wooden_storage_box_reducer.ts";
@@ -94,6 +96,8 @@ import { QuickMoveFromBox } from "./quick_move_from_box_reducer.ts";
 export { QuickMoveFromBox };
 import { QuickMoveToBox } from "./quick_move_to_box_reducer.ts";
 export { QuickMoveToBox };
+import { QuickMoveToCampfire } from "./quick_move_to_campfire_reducer.ts";
+export { QuickMoveToCampfire };
 import { RegisterPlayer } from "./register_player_reducer.ts";
 export { RegisterPlayer };
 import { RequestRespawn } from "./request_respawn_reducer.ts";
@@ -272,10 +276,6 @@ const REMOTE_MODULE = {
       reducerName: "add_fuel_to_campfire",
       argsType: AddFuelToCampfire.getTypeScriptAlgebraicType(),
     },
-    add_wood_to_first_available_campfire_slot: {
-      reducerName: "add_wood_to_first_available_campfire_slot",
-      argsType: AddWoodToFirstAvailableCampfireSlot.getTypeScriptAlgebraicType(),
-    },
     auto_add_wood_to_campfire: {
       reducerName: "auto_add_wood_to_campfire",
       argsType: AutoAddWoodToCampfire.getTypeScriptAlgebraicType(),
@@ -311,6 +311,10 @@ const REMOTE_MODULE = {
     equip_armor_from_drag: {
       reducerName: "equip_armor_from_drag",
       argsType: EquipArmorFromDrag.getTypeScriptAlgebraicType(),
+    },
+    equip_armor_from_inventory: {
+      reducerName: "equip_armor_from_inventory",
+      argsType: EquipArmorFromInventory.getTypeScriptAlgebraicType(),
     },
     equip_item: {
       reducerName: "equip_item",
@@ -376,6 +380,10 @@ const REMOTE_MODULE = {
       reducerName: "pickup_dropped_item",
       argsType: PickupDroppedItem.getTypeScriptAlgebraicType(),
     },
+    pickup_storage_box: {
+      reducerName: "pickup_storage_box",
+      argsType: PickupStorageBox.getTypeScriptAlgebraicType(),
+    },
     place_campfire: {
       reducerName: "place_campfire",
       argsType: PlaceCampfire.getTypeScriptAlgebraicType(),
@@ -391,6 +399,10 @@ const REMOTE_MODULE = {
     quick_move_to_box: {
       reducerName: "quick_move_to_box",
       argsType: QuickMoveToBox.getTypeScriptAlgebraicType(),
+    },
+    quick_move_to_campfire: {
+      reducerName: "quick_move_to_campfire",
+      argsType: QuickMoveToCampfire.getTypeScriptAlgebraicType(),
     },
     register_player: {
       reducerName: "register_player",
@@ -500,7 +512,6 @@ const REMOTE_MODULE = {
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
 | { name: "AddFuelToCampfire", args: AddFuelToCampfire }
-| { name: "AddWoodToFirstAvailableCampfireSlot", args: AddWoodToFirstAvailableCampfireSlot }
 | { name: "AutoAddWoodToCampfire", args: AutoAddWoodToCampfire }
 | { name: "AutoRemoveFuelFromCampfire", args: AutoRemoveFuelFromCampfire }
 | { name: "CheckCampfireFuelConsumption", args: CheckCampfireFuelConsumption }
@@ -510,6 +521,7 @@ export type Reducer = never
 | { name: "DropItem", args: DropItem }
 | { name: "EquipArmor", args: EquipArmor }
 | { name: "EquipArmorFromDrag", args: EquipArmorFromDrag }
+| { name: "EquipArmorFromInventory", args: EquipArmorFromInventory }
 | { name: "EquipItem", args: EquipItem }
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "IdentityDisconnected", args: IdentityDisconnected }
@@ -526,10 +538,12 @@ export type Reducer = never
 | { name: "MoveItemWithinBox", args: MoveItemWithinBox }
 | { name: "MoveToFirstAvailableHotbarSlot", args: MoveToFirstAvailableHotbarSlot }
 | { name: "PickupDroppedItem", args: PickupDroppedItem }
+| { name: "PickupStorageBox", args: PickupStorageBox }
 | { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "PlaceWoodenStorageBox", args: PlaceWoodenStorageBox }
 | { name: "QuickMoveFromBox", args: QuickMoveFromBox }
 | { name: "QuickMoveToBox", args: QuickMoveToBox }
+| { name: "QuickMoveToCampfire", args: QuickMoveToCampfire }
 | { name: "RegisterPlayer", args: RegisterPlayer }
 | { name: "RequestRespawn", args: RequestRespawn }
 | { name: "SeedEnvironment", args: SeedEnvironment }
@@ -569,22 +583,6 @@ export class RemoteReducers {
 
   removeOnAddFuelToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, targetSlotIndex: number, itemInstanceId: bigint) => void) {
     this.connection.offReducer("add_fuel_to_campfire", callback);
-  }
-
-  addWoodToFirstAvailableCampfireSlot(campfireId: number, itemInstanceId: bigint) {
-    const __args = { campfireId, itemInstanceId };
-    let __writer = new BinaryWriter(1024);
-    AddWoodToFirstAvailableCampfireSlot.getTypeScriptAlgebraicType().serialize(__writer, __args);
-    let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("add_wood_to_first_available_campfire_slot", __argsBuffer, this.setCallReducerFlags.addWoodToFirstAvailableCampfireSlotFlags);
-  }
-
-  onAddWoodToFirstAvailableCampfireSlot(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
-    this.connection.onReducer("add_wood_to_first_available_campfire_slot", callback);
-  }
-
-  removeOnAddWoodToFirstAvailableCampfireSlot(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
-    this.connection.offReducer("add_wood_to_first_available_campfire_slot", callback);
   }
 
   autoAddWoodToCampfire(campfireId: number, itemInstanceId: bigint) {
@@ -725,6 +723,22 @@ export class RemoteReducers {
 
   removeOnEquipArmorFromDrag(callback: (ctx: ReducerEventContext, itemInstanceId: bigint, targetSlotName: string) => void) {
     this.connection.offReducer("equip_armor_from_drag", callback);
+  }
+
+  equipArmorFromInventory(itemInstanceId: bigint) {
+    const __args = { itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    EquipArmorFromInventory.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("equip_armor_from_inventory", __argsBuffer, this.setCallReducerFlags.equipArmorFromInventoryFlags);
+  }
+
+  onEquipArmorFromInventory(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("equip_armor_from_inventory", callback);
+  }
+
+  removeOnEquipArmorFromInventory(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("equip_armor_from_inventory", callback);
   }
 
   equipItem(itemInstanceId: bigint) {
@@ -963,6 +977,22 @@ export class RemoteReducers {
     this.connection.offReducer("pickup_dropped_item", callback);
   }
 
+  pickupStorageBox(boxId: number) {
+    const __args = { boxId };
+    let __writer = new BinaryWriter(1024);
+    PickupStorageBox.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("pickup_storage_box", __argsBuffer, this.setCallReducerFlags.pickupStorageBoxFlags);
+  }
+
+  onPickupStorageBox(callback: (ctx: ReducerEventContext, boxId: number) => void) {
+    this.connection.onReducer("pickup_storage_box", callback);
+  }
+
+  removeOnPickupStorageBox(callback: (ctx: ReducerEventContext, boxId: number) => void) {
+    this.connection.offReducer("pickup_storage_box", callback);
+  }
+
   placeCampfire(itemInstanceId: bigint, worldX: number, worldY: number) {
     const __args = { itemInstanceId, worldX, worldY };
     let __writer = new BinaryWriter(1024);
@@ -1025,6 +1055,22 @@ export class RemoteReducers {
 
   removeOnQuickMoveToBox(callback: (ctx: ReducerEventContext, boxId: number, itemInstanceId: bigint) => void) {
     this.connection.offReducer("quick_move_to_box", callback);
+  }
+
+  quickMoveToCampfire(campfireId: number, itemInstanceId: bigint) {
+    const __args = { campfireId, itemInstanceId };
+    let __writer = new BinaryWriter(1024);
+    QuickMoveToCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("quick_move_to_campfire", __argsBuffer, this.setCallReducerFlags.quickMoveToCampfireFlags);
+  }
+
+  onQuickMoveToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
+    this.connection.onReducer("quick_move_to_campfire", callback);
+  }
+
+  removeOnQuickMoveToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
+    this.connection.offReducer("quick_move_to_campfire", callback);
   }
 
   registerPlayer(username: string) {
@@ -1331,11 +1377,6 @@ export class SetReducerFlags {
     this.addFuelToCampfireFlags = flags;
   }
 
-  addWoodToFirstAvailableCampfireSlotFlags: CallReducerFlags = 'FullUpdate';
-  addWoodToFirstAvailableCampfireSlot(flags: CallReducerFlags) {
-    this.addWoodToFirstAvailableCampfireSlotFlags = flags;
-  }
-
   autoAddWoodToCampfireFlags: CallReducerFlags = 'FullUpdate';
   autoAddWoodToCampfire(flags: CallReducerFlags) {
     this.autoAddWoodToCampfireFlags = flags;
@@ -1379,6 +1420,11 @@ export class SetReducerFlags {
   equipArmorFromDragFlags: CallReducerFlags = 'FullUpdate';
   equipArmorFromDrag(flags: CallReducerFlags) {
     this.equipArmorFromDragFlags = flags;
+  }
+
+  equipArmorFromInventoryFlags: CallReducerFlags = 'FullUpdate';
+  equipArmorFromInventory(flags: CallReducerFlags) {
+    this.equipArmorFromInventoryFlags = flags;
   }
 
   equipItemFlags: CallReducerFlags = 'FullUpdate';
@@ -1451,6 +1497,11 @@ export class SetReducerFlags {
     this.pickupDroppedItemFlags = flags;
   }
 
+  pickupStorageBoxFlags: CallReducerFlags = 'FullUpdate';
+  pickupStorageBox(flags: CallReducerFlags) {
+    this.pickupStorageBoxFlags = flags;
+  }
+
   placeCampfireFlags: CallReducerFlags = 'FullUpdate';
   placeCampfire(flags: CallReducerFlags) {
     this.placeCampfireFlags = flags;
@@ -1469,6 +1520,11 @@ export class SetReducerFlags {
   quickMoveToBoxFlags: CallReducerFlags = 'FullUpdate';
   quickMoveToBox(flags: CallReducerFlags) {
     this.quickMoveToBoxFlags = flags;
+  }
+
+  quickMoveToCampfireFlags: CallReducerFlags = 'FullUpdate';
+  quickMoveToCampfire(flags: CallReducerFlags) {
+    this.quickMoveToCampfireFlags = flags;
   }
 
   registerPlayerFlags: CallReducerFlags = 'FullUpdate';

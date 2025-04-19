@@ -261,6 +261,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const closestInteractableCampfireIdRef = useRef<number | null>(null); // Ref for nearby campfire ID (u32 maps to number)
   const closestInteractableDroppedItemIdRef = useRef<bigint | null>(null); // Ref for closest interactable dropped item ID
   const closestInteractableBoxIdRef = useRef<number | null>(null); // <<< ADDED: Ref for nearby box ID (u32)
+  const isClosestInteractableBoxEmptyRef = useRef<boolean>(false); // <<< NEW: Ref to track if the closest box is empty
   const isEHeldDownRef = useRef<boolean>(false);
   const isMouseDownRef = useRef<boolean>(false);
   const lastClientSwingAttemptRef = useRef<number>(0); // Store timestamp of last attempt
@@ -433,29 +434,72 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const closestMushroomId = closestInteractableMushroomIdRef.current;
         const closestDroppedItemId = closestInteractableDroppedItemIdRef.current;
         const closestBoxId = closestInteractableBoxIdRef.current;
+        const isClosestBoxEmpty = isClosestInteractableBoxEmptyRef.current; // Get emptiness state
         
-        // Prioritize interaction: DroppedItem > Box > Campfire > Mushroom
+        // Priority: DroppedItem > Empty Box > Mushroom > Open Box > Campfire
         if (closestDroppedItemId !== null && connection?.reducers) {
              try {
                  connection.reducers.pickupDroppedItem(closestDroppedItemId);
              } catch (err) {
                  console.error("Error calling pickupDroppedItem reducer:", err);
-                 // TODO: Display error feedback to the user?
              }
-             return; // Handled dropped item, prevent other interactions
-        } else if (closestBoxId !== null && connection?.reducers) {
-            console.log(`[GameCanvas KeyDown] Interacting with Box ID: ${closestBoxId}`);
-            try {
-                // Call reducer to validate interaction server-side
-                connection.reducers.interactWithStorageBox(closestBoxId);
-                // If no error, proceed to open UI via App state
-                onSetInteractingWith({ type: 'wooden_storage_box', id: closestBoxId });
-            } catch (err) {
-                console.error("[GameCanvas KeyDown] Error calling interactWithStorageBox reducer:", err);
-                // TODO: Show error to user? (e.g., too far away)
+             return; // Handled dropped item
+        } else if (closestBoxId !== null && connection?.reducers) { // <<< Check for ANY closest box first
+            console.log(`[GameCanvas KeyDown E] Starting hold check for Box ID: ${closestBoxId}. Empty: ${isClosestBoxEmpty}`);
+            isEHeldDownRef.current = true;
+            eKeyDownTimestampRef.current = Date.now();
+            // Set interaction progress ONLY if box is empty (for pickup visual)
+            if (isClosestBoxEmpty) {
+                setInteractionProgress({ targetId: closestBoxId, startTime: Date.now() });
             }
-            return; // Interaction handled
-        } else if (closestCampfireId !== null) {
+
+            // Clear any existing timer
+            if (eKeyHoldTimerRef.current) {
+                clearTimeout(eKeyHoldTimerRef.current);
+            }
+
+            // Set timer for HOLD action (pickup ONLY if empty)
+            eKeyHoldTimerRef.current = setTimeout(() => {
+                // Check if still holding E when timer expires
+                if (isEHeldDownRef.current) {
+                    const stillClosestBoxId = closestInteractableBoxIdRef.current; // Re-check closest box
+                    const stillEmpty = isClosestInteractableBoxEmptyRef.current; // Re-check empty status
+
+                    // Only pickup if it's still the closest box AND it's empty
+                    if (stillClosestBoxId === closestBoxId && stillEmpty) {
+                        console.log(`[GameCanvas Hold Timer] Executing pickup for EMPTY Box ID: ${closestBoxId}`);
+                        try {
+                            connection.reducers.pickupStorageBox(closestBoxId);
+                            // Pickup successful, reset hold state
+                            isEHeldDownRef.current = false;
+                            setInteractionProgress(null);
+                            eKeyHoldTimerRef.current = null;
+                        } catch (err) { 
+                             console.error("[GameCanvas Hold Timer] Error calling pickupStorageBox reducer:", err);
+                             // Even if error, reset state? Maybe not, let keyup handle it?
+                             // Let's reset hold state on error too for now to prevent stuck state
+                             isEHeldDownRef.current = false;
+                             setInteractionProgress(null);
+                             eKeyHoldTimerRef.current = null;
+                        } 
+                    } else {
+                         console.log(`[GameCanvas Hold Timer] Hold expired, but box ${closestBoxId} is not empty or no longer closest. No pickup.`);
+                         // DO NOT reset isEHeldDownRef here - let handleKeyUp manage it
+                         setInteractionProgress(null); // Still clear visual if it was showing
+                         eKeyHoldTimerRef.current = null; // Clear timer ref
+                    }
+                }
+            }, HOLD_INTERACTION_DURATION_MS);
+            return; // Box interaction initiated (hold or press)
+        } else if (closestMushroomId !== null && connection?.reducers) {
+            try {
+                connection.reducers.interactWithMushroom(closestMushroomId);
+            } catch (err) {
+                console.error("Error calling interactWithMushroom reducer:", err);
+            }
+             return; // Prevent adding 'e' to keysPressed
+        } else if (closestCampfireId !== null) { // Handle Campfire last
+          console.log(`[GameCanvas KeyDown E] Starting hold check for Campfire ID: ${closestCampfireId}`);
           isEHeldDownRef.current = true;
           eKeyDownTimestampRef.current = Date.now();
           setInteractionProgress({ targetId: closestCampfireId, startTime: Date.now() }); // Start visual indicator
@@ -465,25 +509,30 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             clearTimeout(eKeyHoldTimerRef.current);
           }
 
-          // Set timer for hold action
+          // Set timer for hold action (NOW toggles burn)
           eKeyHoldTimerRef.current = setTimeout(() => {
-            if (isEHeldDownRef.current) { // Check if still held
-              onSetInteractingWith({ type: 'campfire', id: closestCampfireId }); 
-              // Reset state AFTER triggering action
-              isEHeldDownRef.current = false;
-              setInteractionProgress(null);
-              eKeyHoldTimerRef.current = null;
+            // Check if still holding E when timer expires
+            if (isEHeldDownRef.current) { 
+              const stillClosestCampfireId = closestInteractableCampfireIdRef.current; // Re-check
+              // Only toggle if it's still the closest campfire
+              if (stillClosestCampfireId === closestCampfireId) {
+                  console.log(`[GameCanvas Hold Timer - Campfire] Executing toggle for Campfire ID: ${closestCampfireId}`);
+                  try {
+                      if(connection?.reducers) {
+                           connection.reducers.toggleCampfireBurning(closestCampfireId);
+                      }
+                  } catch (err) { console.error("[GameCanvas Hold Timer - Campfire] Error calling toggleCampfireBurning reducer:", err); }
+              } else {
+                  console.log(`[GameCanvas Hold Timer - Campfire] Hold expired, but campfire ${closestCampfireId} is no longer closest. No toggle.`);
+              }
+              // Reset state AFTER timeout completes (or key is released)
+              isEHeldDownRef.current = false; 
+              setInteractionProgress(null); 
+              eKeyHoldTimerRef.current = null; 
             }
           }, HOLD_INTERACTION_DURATION_MS);
           // Do NOT call other reducers here anymore
           return; // Prevent adding 'e' to keysPressed for movement
-        } else if (closestMushroomId !== null && connection?.reducers) {
-            try {
-                connection.reducers.interactWithMushroom(closestMushroomId);
-            } catch (err) {
-                console.error("Error calling interactWithMushroom reducer:", err);
-            }
-             return; // Prevent adding 'e' to keysPressed
         }
       }
     };
@@ -503,37 +552,54 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       }
       keysPressed.current.delete(key);
 
-      // --- 'E' Key Up Logic ---
+      // --- 'E' Key Up Logic --- 
       if (key === 'e') {
           if (isEHeldDownRef.current) {
+              // Get the closest interactable IDs *before* clearing state
+              const closestBoxIdBeforeClear = closestInteractableBoxIdRef.current;
+              const closestCampfireIdBeforeClear = closestInteractableCampfireIdRef.current;
+              
+              // Store hold duration before clearing timer/state
+              const holdDuration = Date.now() - eKeyDownTimestampRef.current;
+
+              // Always reset hold state and clear timer/visual on key up
               isEHeldDownRef.current = false;
-              // Clear the hold timer if it exists
               if (eKeyHoldTimerRef.current) {
                   clearTimeout(eKeyHoldTimerRef.current);
                   eKeyHoldTimerRef.current = null;
               }
-              // Always hide indicator on key up
-              setInteractionProgress(null);
-              
-              const closestCampfireId = closestInteractableCampfireIdRef.current;
-              if (closestCampfireId !== null) {
-                  const holdDuration = Date.now() - eKeyDownTimestampRef.current;
-                  
-                  // If held for less than the threshold, trigger toggle
-                  if (holdDuration < HOLD_INTERACTION_DURATION_MS) {
-                       if(connection?.reducers) {
-                           try {
-                              connection.reducers.toggleCampfireBurning(closestCampfireId);
-                           } catch (err) {
-                               console.error("Error calling toggleCampfireBurning reducer:", err);
-                           }
-                       } else {
-                           console.warn("Cannot toggle campfire: Connection or reducers unavailable.");
-                       }
-                  } // Else (hold was long enough), the timeout callback handled opening inventory
-              } 
-              // Reset timestamp just in case
+              setInteractionProgress(null); 
               eKeyDownTimestampRef.current = 0; 
+              
+              // --- Determine Action Based on Short Press --- 
+              if (holdDuration < HOLD_INTERACTION_DURATION_MS) {
+                   // Prioritize Box if it was the closest target when key went down
+                  if (closestBoxIdBeforeClear !== null) {
+                       console.log(`[KeyUp E - Box] Short press detected for Box ID: ${closestBoxIdBeforeClear}. Opening UI.`);
+                       try {
+                           if (connection?.reducers) {
+                               connection.reducers.interactWithStorageBox(closestBoxIdBeforeClear);
+                               onSetInteractingWith({ type: 'wooden_storage_box', id: closestBoxIdBeforeClear });
+                           } else { /* warning */ }
+                       } catch (err) { /* error handling */ }
+                  } 
+                  // Else, check if it was a campfire
+                  else if (closestCampfireIdBeforeClear !== null) {
+                       console.log(`[KeyUp E - Campfire] Short press detected for Campfire ID: ${closestCampfireIdBeforeClear}. Opening UI.`);
+                       // Call interact reducer first for validation (e.g., distance)
+                       try {
+                            if (connection?.reducers) {
+                                connection.reducers.interactWithCampfire(closestCampfireIdBeforeClear);
+                                // If validation ok, open UI
+                                onSetInteractingWith({ type: 'campfire', id: closestCampfireIdBeforeClear });
+                            } else { console.warn("Cannot interact with campfire: Connection or reducers unavailable."); }
+                       } catch (err) {
+                           console.error("[KeyUp E - Campfire] Error validating campfire interaction:", err);
+                       }
+                  }
+                  // Add else if for other potential short-press interactions here if needed
+              }
+              // --- End Short Press Action --- 
           }
       }
       // --- End 'E' Key Up Logic ---
@@ -953,6 +1019,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // --- Find Closest Interactable WoodenStorageBox <<< ADDED Block ---
     let closestBoxDistSq = PLAYER_BOX_INTERACTION_DISTANCE_SQUARED;
     closestInteractableBoxIdRef.current = null; // Reset each frame
+    isClosestInteractableBoxEmptyRef.current = false; // Reset each frame
     if (localPlayerData) {
       woodenStorageBoxes.forEach((box) => {
         const dx = localPlayerData.positionX - box.posX;
@@ -962,6 +1029,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         if (distSq < closestBoxDistSq) {
           closestBoxDistSq = distSq;
           closestInteractableBoxIdRef.current = box.id; // Store the number ID
+          // Check if the box is empty
+          let isEmpty = true;
+          for (let i = 0; i < 18; i++) { // Assuming NUM_BOX_SLOTS is 18
+            if (box[`slotInstanceId${i}` as keyof SpacetimeDBWoodenStorageBox] !== null && box[`slotInstanceId${i}` as keyof SpacetimeDBWoodenStorageBox] !== undefined) {
+              isEmpty = false;
+              break;
+            }
+          }
+          isClosestInteractableBoxEmptyRef.current = isEmpty;
+          console.log(`[ClosestBoxCheck] Box ${box.id} is closest. Empty: ${isEmpty}`);
         }
       });
     }
@@ -1155,7 +1232,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // <<< ADDED: Render Wooden Storage Box Interaction Label >>>
     woodenStorageBoxes.forEach(box => {
          if (closestInteractableBoxIdRef.current === box.id) {
-            const text = "Press E to Open";
+            // Determine text based on emptiness
+            const isEmpty = isClosestInteractableBoxEmptyRef.current;
+            const text = isEmpty ? "Press E to Pickup" : "Press E to Open";
             const textX = box.posX;
             const textY = box.posY - (BOX_HEIGHT / 2) - 10; // Adjust Y offset as needed
             ctx.fillStyle = "white";
@@ -1248,38 +1327,28 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
          ctx.drawImage(maskCanvas, 0, 0);
     }
 
-    // 3. Draw Campfire Sprites (AFTER Masked Overlay)
-    // --- MOVED: Campfire sprites are now rendered in the world space ground layer ---
-    /* 
-    campfires.forEach(fire => {
-        const screenX = fire.posX + cameraOffsetX;
-        const screenY = fire.posY + cameraOffsetY;
-        // Pass the isBurning state from the campfire data
-        renderCampfire(ctx, screenX, screenY, fire.isBurning);
-
-        // --- NEW: Draw Interaction Indicator ---
-        if (interactionProgress && interactionProgress.targetId === fire.id) {
+    // --- Interaction Indicator (Campfires and Boxes) --- 
+    // Draw this AFTER overlay but BEFORE glow, so indicator isn't shaded.
+    const drawIndicatorIfNeeded = (entityType: 'campfire' | 'wooden_storage_box', entityId: number, entityPosX: number, entityPosY: number, entityHeight: number) => {
+        if (interactionProgress && interactionProgress.targetId === entityId) {
+            const screenX = entityPosX + cameraOffsetX;
+            const screenY = entityPosY + cameraOffsetY;
             const interactionDuration = Date.now() - interactionProgress.startTime;
             const progressPercent = Math.min(interactionDuration / HOLD_INTERACTION_DURATION_MS, 1);
-            // Use the helper function to draw the indicator above the campfire
-            drawInteractionIndicator(ctx, screenX, screenY - CAMPFIRE_HEIGHT / 2 - 15, progressPercent);
+            drawInteractionIndicator(ctx, screenX, screenY - (entityHeight / 2) - 15, progressPercent);
         }
-        // --- End Interaction Indicator ---
-    });
-    */
-    
-    // --- NEW: Draw Campfire Interaction Indicator (Screen Space) ---
-    // We draw this *after* the overlay, but before the glow, so the indicator itself isn't shaded.
+    };
+
     campfires.forEach(fire => {
-        if (interactionProgress && interactionProgress.targetId === fire.id) {
-             const screenX = fire.posX + cameraOffsetX;
-             const screenY = fire.posY + cameraOffsetY;
-             const interactionDuration = Date.now() - interactionProgress.startTime;
-             const progressPercent = Math.min(interactionDuration / HOLD_INTERACTION_DURATION_MS, 1);
-             drawInteractionIndicator(ctx, screenX, screenY - CAMPFIRE_HEIGHT / 2 - 15, progressPercent);
+        drawIndicatorIfNeeded('campfire', fire.id, fire.posX, fire.posY, CAMPFIRE_HEIGHT);
+    });
+
+    woodenStorageBoxes.forEach(box => {
+         // Check if the interaction target is this box AND it's empty (pickup action)
+         if (interactionProgress && interactionProgress.targetId === box.id && isClosestInteractableBoxEmptyRef.current) {
+            drawIndicatorIfNeeded('wooden_storage_box', box.id, box.posX, box.posY, BOX_HEIGHT);
          }
     });
-    // --- End Interaction Indicator ---
 
     // 4. Draw Campfire Light Glow (Additively)
     ctx.save();

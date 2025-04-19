@@ -310,7 +310,8 @@ pub(crate) fn clear_specific_item_from_equipment_slots(ctx: &ReducerContext, pla
 }
 
 // Helper: Clear a specific item instance from any campfire fuel slot
-fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to_clear: u64) {
+// Make pub(crate) so inventory_management can call it
+pub(crate) fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to_clear: u64) {
     let mut campfires = ctx.db.campfire();
     // Iterate through campfires that *might* contain the item
     let potential_campfire_ids: Vec<u32> = campfires.iter()
@@ -635,15 +636,25 @@ pub fn move_item_to_hotbar(ctx: &ReducerContext, item_instance_id: u64, target_h
 #[spacetimedb::reducer]
 pub fn equip_armor_from_drag(ctx: &ReducerContext, item_instance_id: u64, target_slot_name: String) -> Result<(), String> {
     log::info!("[EquipArmorDrag] Attempting to equip item {} to slot {}", item_instance_id, target_slot_name);
-    let mut item_to_equip = get_player_item(ctx, item_instance_id)?;
+    let sender_id = ctx.sender; // Get sender early
+    let inventory_items = ctx.db.inventory_item(); // Need table access
 
-    // Get item definition
-    let item_def = ctx.db.item_definition().iter()
-        .filter(|def| def.id == item_to_equip.item_def_id)
-        .next()
+    // 1. Get Item and Definition (Fetch directly, don't assume player ownership yet)
+    let mut item_to_equip = inventory_items.instance_id().find(item_instance_id)
+        .ok_or_else(|| format!("Item instance {} not found.", item_instance_id))?;
+    let item_def = ctx.db.item_definition().id().find(item_to_equip.item_def_id)
         .ok_or_else(|| format!("Definition not found for item ID {}", item_to_equip.item_def_id))?;
 
-    // --- Validations ---
+    // --- Store original location --- 
+    let original_inv_slot = item_to_equip.inventory_slot;
+    let original_hotbar_slot = item_to_equip.hotbar_slot;
+    let came_from_player_inv = original_inv_slot.is_some() || original_hotbar_slot.is_some();
+
+    // --- Validations --- 
+    // Basic ownership check: Player must own it if it came from inv/hotbar
+    if came_from_player_inv && item_to_equip.player_identity != sender_id {
+        return Err(format!("Item {} in inventory/hotbar not owned by caller.", item_instance_id));
+    }
     // 1. Must be Armor category
     if item_def.category != ItemCategory::Armor {
         return Err(format!("Item '{}' is not armor.", item_def.name));
@@ -666,7 +677,7 @@ pub fn equip_armor_from_drag(ctx: &ReducerContext, item_instance_id: u64, target
 
     // --- Logic ---
     let active_equip_table = ctx.db.active_equipment();
-    let mut equip = active_equip_table.player_identity().find(ctx.sender)
+    let mut equip = active_equip_table.player_identity().find(sender_id)
                      .ok_or_else(|| "ActiveEquipment entry not found for player.".to_string())?;
 
     // Check if something is already in the target slot and unequip it
@@ -684,7 +695,7 @@ pub fn equip_armor_from_drag(ctx: &ReducerContext, item_instance_id: u64, target
 
         log::info!("[EquipArmorDrag] Unequipping item {} from slot {:?}", currently_equipped_id, target_slot_enum);
         // Try to move the currently equipped item to the first available inventory slot
-        match find_first_empty_inventory_slot(ctx, ctx.sender) {
+        match find_first_empty_inventory_slot(ctx, sender_id) {
             Some(empty_slot) => {
                 if let Ok(mut currently_equipped_item) = get_player_item(ctx, currently_equipped_id) {
                     currently_equipped_item.inventory_slot = Some(empty_slot);
@@ -717,10 +728,25 @@ pub fn equip_armor_from_drag(ctx: &ReducerContext, item_instance_id: u64, target
     // Update ActiveEquipment table
     active_equip_table.player_identity().update(equip);
 
-    // Clear the inventory/hotbar slot of the equipped item
-    item_to_equip.inventory_slot = None;
-    item_to_equip.hotbar_slot = None;
-    ctx.db.inventory_item().instance_id().update(item_to_equip);
+    // Clear the original slot of the equipped item
+    if came_from_player_inv {
+        log::debug!("[EquipArmorDrag] Clearing original inv/hotbar slot for item {}.", item_instance_id);
+        item_to_equip.inventory_slot = None;
+        item_to_equip.hotbar_slot = None;
+        inventory_items.instance_id().update(item_to_equip); // Update the item itself
+    } else {
+        log::debug!("[EquipArmorDrag] Item {} potentially came from container. Clearing containers.", item_instance_id);
+        // Item didn't come from player inv/hotbar, try clearing containers
+        crate::inventory_management::clear_item_from_any_container(ctx, item_instance_id);
+        // Also update the item instance itself to remove slot info just in case (should be None already)
+        // and assign ownership to the equipping player if it wasn't already.
+        if item_to_equip.player_identity != sender_id {
+             item_to_equip.player_identity = sender_id;
+        }
+        item_to_equip.inventory_slot = None; 
+        item_to_equip.hotbar_slot = None;
+        inventory_items.instance_id().update(item_to_equip);
+    }
 
     Ok(())
 }

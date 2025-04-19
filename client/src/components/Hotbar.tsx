@@ -210,40 +210,50 @@ const Hotbar: React.FC<HotbarProps> = ({
 
       const itemInstanceId = BigInt(itemInfo.instance.instanceId);
 
-      // Check if interacting with campfire and item is Wood
-      if (interactingWith?.type === 'campfire' && itemInfo.definition.name === 'Wood') {
-          const campfireIdNum = Number(interactingWith.id);
-          console.log(`[Hotbar ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling add_wood...`);
-          try {
-              connection.reducers.addWoodToFirstAvailableCampfireSlot(campfireIdNum, itemInstanceId);
-          } catch (error: any) {
-              console.error("[Hotbar ContextMenu] Error calling add_wood... reducer:", error);
-          }
-      } 
-      // <<< ADDED: Check if interacting with a storage box >>>
-      else if (interactingWith?.type === 'wooden_storage_box') {
+      // --- REORDERED LOGIC: Prioritize Open Containers --- 
+
+      // 1. Check if interacting with a storage box
+      if (interactingWith?.type === 'wooden_storage_box') {
           const boxIdNum = Number(interactingWith.id); // Box ID is u32, safe to Number
-          console.log(`[Hotbar ContextMenu] Right-clicked while Box ${boxIdNum} open. Calling quick_move_to_box for item ${itemInstanceId}`);
+          console.log(`[Hotbar ContextMenu Hotbar->Box] Box ${boxIdNum} open. Calling quick_move_to_box for item ${itemInstanceId}`);
           try {
               connection.reducers.quickMoveToBox(boxIdNum, itemInstanceId);
           } catch (error: any) {
-              console.error("[Hotbar ContextMenu] Failed to call quickMoveToBox reducer:", error);
+              console.error("[Hotbar ContextMenu Hotbar->Box] Failed to call quickMoveToBox reducer:", error);
               // TODO: Show user feedback? (e.g., "Box full")
           }
-      }
-      // Check if the item is Armor (original logic)
-      else if (itemInfo.definition.category.tag === 'Armor') {
-           console.log(`[Hotbar ContextMenu] Item is Armor. Calling equip_armor for item ${itemInstanceId}`);
+          return; // Action handled
+      } 
+      // 2. Else, check if interacting with campfire
+      else if (interactingWith?.type === 'campfire') {
+          const campfireIdNum = Number(interactingWith.id);
+          console.log(`[Hotbar ContextMenu Hotbar->Campfire] Campfire ${campfireIdNum} open. Calling quick_move_to_campfire for item ${itemInstanceId}`);
            try {
-               connection.reducers.equipArmor(itemInstanceId);
+               connection.reducers.quickMoveToCampfire(campfireIdNum, itemInstanceId);
            } catch (error: any) {
-               console.error("[Hotbar ContextMenu] Failed to call equipArmor reducer:", error);
+               console.error("[Hotbar ContextMenu Hotbar->Campfire] Failed to call quickMoveToCampfire reducer:", error);
+           }
+           return; // Action handled
+      } 
+      // 3. Else (no container open), check if it's armor to equip
+      else {
+          const isArmor = itemInfo.definition.category.tag === 'Armor';
+          const hasEquipSlot = itemInfo.definition.equipmentSlot !== null && itemInfo.definition.equipmentSlot !== undefined;
+          
+          if (isArmor && hasEquipSlot) {
+               console.log(`[Hotbar ContextMenu Equip] No container open. Item is Armor. Calling equip_armor for item ${itemInstanceId}`);
+               try {
+                   // Hotbar already has a specific equipArmor reducer call, let's keep it for now
+                   connection.reducers.equipArmor(itemInstanceId);
+               } catch (error: any) {
+                   console.error("[Hotbar ContextMenu Equip] Failed to call equipArmor reducer:", error);
+              }
+              return; // Action handled
           }
-      } else {
-          // Default behavior (no specific interaction context or incompatible item)
-          console.log("[Hotbar ContextMenu] No specific interaction context. Default action (if any) or ignore.");
-          // Currently no default right-click action needed when not interacting
       }
+
+      // 4. Default: If not handled above, do nothing for now
+      console.log("[Hotbar ContextMenu] No specific interaction context or non-armor item. Default action (none).");
   };
 
   // console.log(`[Hotbar Render] selectedSlot is: ${selectedSlot}`);

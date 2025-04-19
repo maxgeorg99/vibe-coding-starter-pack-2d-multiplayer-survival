@@ -200,7 +200,9 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
 
         const itemInstanceId = BigInt(itemInfo.instance.instanceId);
 
-        // Check if interacting with a box
+        // --- REORDERED LOGIC: Prioritize Open Containers --- 
+
+        // 1. Check if interacting with a box
         if (isBoxInteraction && boxIdNum !== null) {
             console.log(`[InventoryUI ContextMenu Inv->Box] Box ${boxIdNum} open. Calling quick_move_to_box for item ${itemInstanceId}`);
             try {
@@ -209,24 +211,43 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                  console.error("[InventoryUI ContextMenu Inv->Box] Failed to call quickMoveToBox reducer:", error);
                  // TODO: Show user feedback?
             }
-        } else if (isCampfireInteraction && campfireIdNum !== null && itemInfo.definition.name === 'Wood') {
-             console.log(`[InventoryUI ContextMenu] Wood right-clicked while Campfire ${campfireIdNum} open. Calling auto_add_wood_to_campfire...`);
+            return; // Action handled
+        } 
+        // 2. Else, check if interacting with a campfire
+        else if (isCampfireInteraction && campfireIdNum !== null) {
+             console.log(`[InventoryUI ContextMenu Inv->Campfire] Campfire ${campfireIdNum} open. Calling quick_move_to_campfire for item ${itemInstanceId}`);
             try {
-                connection.reducers.autoAddWoodToCampfire(campfireIdNum, itemInstanceId);
+                connection.reducers.quickMoveToCampfire(campfireIdNum, itemInstanceId);
             } catch (error: any) {
-                console.error("[InventoryUI ContextMenu] Failed to call autoAddWoodToCampfire reducer:", error);
-                // TODO: Show user feedback? (e.g., "Campfire full")
+                console.error("[InventoryUI ContextMenu Inv->Campfire] Failed to call quickMoveToCampfire reducer:", error);
+                 // TODO: Show user feedback?
             }
-            return; // Stop processing this context menu event
-        } else {
-            // Default: Move to hotbar (if not interacting with a compatible container)
-            console.log(`[InventoryUI ContextMenu Inv->Hotbar] Not interacting with box/campfire or item incompatible. Calling move_to_first_available_hotbar_slot for item ${itemInstanceId}`);
-             try {
-                 connection.reducers.moveToFirstAvailableHotbarSlot(itemInstanceId);
-             } catch (error: any) {
-                 console.error("[InventoryUI ContextMenu Inv->Hotbar] Failed to call moveToFirstAvailableHotbarSlot reducer:", error);
-             }
+            return; // Action handled
+        } 
+        // 3. Else (no container open), check if it's armor to equip
+        else {
+            const isArmor = itemInfo.definition.category.tag === 'Armor';
+            const hasEquipSlot = itemInfo.definition.equipmentSlot !== null && itemInfo.definition.equipmentSlot !== undefined;
+
+            if (isArmor && hasEquipSlot) {
+                console.log(`[InventoryUI ContextMenu Equip] No container open. Item ${itemInstanceId} is armor. Calling equip_armor_from_inventory.`);
+                try {
+                    connection.reducers.equipArmorFromInventory(itemInstanceId);
+                } catch (error: any) {
+                    console.error("[InventoryUI ContextMenu Equip] Failed to call equipArmorFromInventory reducer:", error);
+                    // TODO: Show feedback
+                }
+                return; // Armor equip attempted
+            }
         }
+
+        // 4. Default: If not handled above, move to hotbar
+        console.log(`[InventoryUI ContextMenu Inv->Hotbar] Default action. Calling move_to_first_available_hotbar_slot for item ${itemInstanceId}`);
+         try {
+             connection.reducers.moveToFirstAvailableHotbarSlot(itemInstanceId);
+         } catch (error: any) {
+             console.error("[InventoryUI ContextMenu Inv->Hotbar] Failed to call moveToFirstAvailableHotbarSlot reducer:", error);
+         }
     };
 
     // --- NEW: Right Click Handler (Box -> Inventory) --- 

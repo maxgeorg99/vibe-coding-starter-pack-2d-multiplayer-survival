@@ -5,6 +5,7 @@ use log;
 use crate::items::{InventoryItem, ItemDefinition, calculate_merge_result, add_item_to_player_inventory};
 use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait};
 use crate::wooden_storage_box::{WoodenStorageBox, NUM_BOX_SLOTS}; // Import Box struct and constant
+use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
 
 // --- Generic Item Container Trait --- 
 
@@ -126,6 +127,42 @@ pub(crate) fn is_container_empty<C: ItemContainer>(container: &C) -> bool {
     true // Went through all slots, all were empty
 }
 
+// --- NEW Helper: Clear item from any container --- 
+
+/// Checks known container types (Boxes, Campfires) and removes the specified item instance if found.
+pub(crate) fn clear_item_from_any_container(ctx: &ReducerContext, item_instance_id: u64) {
+    // Check Wooden Storage Boxes
+    let mut boxes = ctx.db.wooden_storage_box();
+    let mut box_updated = false;
+    let mut box_to_update: Option<WoodenStorageBox> = None; 
+
+    for current_box in boxes.iter() { // Iterate non-mutably first to find
+        let mut temp_box = current_box.clone(); // Clone to modify if needed
+        let mut found_in_this_box = false;
+        for i in 0..NUM_BOX_SLOTS as u8 {
+            if temp_box.get_slot_instance_id(i) == Some(item_instance_id) {
+                log::debug!("[ClearAnyContainer] Found item {} in box {} slot {}. Clearing.", item_instance_id, temp_box.id, i);
+                temp_box.set_slot(i, None, None);
+                box_to_update = Some(temp_box); // Store the modified box
+                box_updated = true;
+                found_in_this_box = true;
+                break; 
+            }
+        }
+        if found_in_this_box { break; } // Stop checking other boxes
+    }
+    // Update the box if it was modified
+    if let Some(updated_box) = box_to_update {
+         boxes.id().update(updated_box);
+    }
+
+    // If not found in a box, check Campfires (using the now pub(crate) helper)
+    if !box_updated {
+        crate::items::clear_item_from_campfire_fuel_slots(ctx, item_instance_id);
+        // This function logs internally if it clears something
+    }
+}
+
 // --- Core Logic Handlers (Refactored to handle more validation) --- 
 
 /// Handles moving an item from player inventory/hotbar INTO a container slot.
@@ -145,11 +182,16 @@ pub(crate) fn handle_move_to_container_slot<C: ItemContainer>(
         .ok_or(format!("Item instance {} not found", item_instance_id))?;
     let item_def_to_move = item_def_table.id().find(item_to_move.item_def_id)
         .ok_or(format!("Definition missing for item {}", item_to_move.item_def_id))?;
-    if item_to_move.player_identity != sender_id { return Err("Item does not belong to player".to_string()); }
+    
     // --- Determine Original Location --- 
     let original_location_was_equipment = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
     if original_location_was_equipment {
         log::debug!("[MoveToContainer] Item {} is potentially coming from an equipment slot.", item_instance_id);
+    } else {
+        // If it's NOT from equipment, it MUST be from inv/hotbar and owned by the sender.
+        if item_to_move.player_identity != sender_id { 
+            return Err("Item does not belong to player".to_string()); 
+        }
     }
 
     // --- Validate Target Slot --- 
@@ -613,7 +655,7 @@ pub(crate) fn handle_quick_move_to_container<C: ItemContainer>(
         .ok_or(format!("Item instance {} not found", item_instance_id))?;
     let item_def_to_move = item_def_table.id().find(item_to_move.item_def_id)
         .ok_or(format!("Definition missing for item {}", item_to_move.item_def_id))?;
-    if item_to_move.player_identity != sender_id { return Err("Item does not belong to player".to_string()); }
+    
     // --- Determine Original Location --- 
     let original_location_was_equipment = item_to_move.inventory_slot.is_none() && item_to_move.hotbar_slot.is_none();
     if original_location_was_equipment {

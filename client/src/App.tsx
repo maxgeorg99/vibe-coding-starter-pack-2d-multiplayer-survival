@@ -434,10 +434,14 @@ function App() {
             }
 
             // Differentiate based on source
-            if (sourceInfo.sourceSlot.type === 'inventory' || sourceInfo.sourceSlot.type === 'hotbar') {
-                console.log(`[App Drop] Calling move_item_to_box for item ${itemInstanceId} to box ${boxIdNum} slot ${targetIndexNum}`);
+            const source_type = sourceInfo.sourceSlot.type.trim(); // Trim potential whitespace
+            if (source_type === 'inventory' 
+                || source_type === 'hotbar' 
+                || source_type === 'equipment' 
+            ) {
+                console.log(`[App Drop] Calling move_item_to_box for item ${itemInstanceId} (from ${source_type}) to box ${boxIdNum} slot ${targetIndexNum}`);
                 connection.reducers.moveItemToBox(boxIdNum, targetIndexNum, itemInstanceId);
-            } else if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
+            } else if (source_type === 'wooden_storage_box') {
                 // Moving within the same box (or different, if parentId differs - handle later?)
                 const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
                  if (isNaN(sourceIndexNum)) { console.error("Invalid source box index", sourceInfo.sourceSlot.index); return; }
