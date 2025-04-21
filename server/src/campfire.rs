@@ -497,7 +497,7 @@ pub fn toggle_campfire_burning(ctx: &ReducerContext, campfire_id: u32) -> Result
 
         // Checks passed, light the fire!
         campfire.is_burning = true;
-        campfire.next_fuel_consume_at = Some(ctx.timestamp + Duration::from_secs(FUEL_CONSUME_INTERVAL_SECS).into());
+        campfire.next_fuel_consume_at = Some(ctx.timestamp + Duration::from_secs(FUEL_CONSUME_INTERVAL_SECS));
         let next_check_time_for_log = campfire.next_fuel_consume_at;
         campfires.id().update(campfire);
         log::info!("Campfire {} lit by player {:?}. Next fuel check at {:?}.", campfire_id, sender_id, next_check_time_for_log);
@@ -611,7 +611,7 @@ pub fn check_campfire_fuel_consumption(ctx: &ReducerContext, _schedule: Campfire
                                 let still_has_fuel = check_if_campfire_has_fuel(ctx, &campfire);
                                 log::debug!("Campfire {}: check_if_campfire_has_fuel result: {}", campfire_id, still_has_fuel);
                                 if still_has_fuel {
-                                    let new_consume_time = now + Duration::from_secs(FUEL_CONSUME_INTERVAL_SECS).into();
+                                    let new_consume_time = now + Duration::from_secs(FUEL_CONSUME_INTERVAL_SECS);
                                     campfire.next_fuel_consume_at = Some(new_consume_time);
                                     log::info!("Campfire {}: Rescheduled fuel check to {:?}", campfire_id, new_consume_time);
                                     campfire_changed = true;
@@ -635,7 +635,7 @@ pub fn check_campfire_fuel_consumption(ctx: &ReducerContext, _schedule: Campfire
                      let still_has_fuel = check_if_campfire_has_fuel(ctx, &campfire);
                       log::debug!("Campfire {}: Burning but no consume time set. Has fuel? {}", campfire_id, still_has_fuel);
                      if still_has_fuel {
-                         campfire.next_fuel_consume_at = Some(now + Duration::from_secs(FUEL_CONSUME_INTERVAL_SECS).into());
+                         campfire.next_fuel_consume_at = Some(now + Duration::from_secs(FUEL_CONSUME_INTERVAL_SECS));
                          campfire_changed = true;
                          log::info!("Campfire {}: Scheduling initial fuel consumption check to {:?}.", campfire_id, campfire.next_fuel_consume_at);
                      } else {

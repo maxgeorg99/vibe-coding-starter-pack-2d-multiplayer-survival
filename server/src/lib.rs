@@ -427,7 +427,7 @@ pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32,
 
     // --- 6b. Initialize Campfire with Fuel and Burning --- 
     let current_time = ctx.timestamp;
-    let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS).into();
+    let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS);
     
     // Initialize all fields explicitly
     let new_campfire = crate::campfire::Campfire {
@@ -643,7 +643,7 @@ pub fn update_player_position(
     let mut calculated_respawn_at = current_player.respawn_at; // Keep existing value by default
     if current_player.health > 0.0 && new_health <= 0.0 && !current_player.is_dead {
         player_died = true;
-        calculated_respawn_at = ctx.timestamp + Duration::from_secs(5).into(); // Set respawn time
+        calculated_respawn_at = ctx.timestamp + Duration::from_secs(5); // Set respawn time
         log::warn!("Player {} ({:?}) has died! Will be respawnable at {:?}", 
                  current_player.username, sender_id, calculated_respawn_at);
         

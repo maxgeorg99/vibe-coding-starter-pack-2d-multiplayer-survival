@@ -69,7 +69,7 @@ pub fn interact_with_mushroom(ctx: &ReducerContext, mushroom_id: u64) -> Result<
     crate::items::add_item_to_player_inventory(ctx, sender_id, mushroom_def.id, 1)?;
 
     // 6. Schedule Respawn instead of Deleting
-    let respawn_time = ctx.timestamp + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+    let respawn_time = ctx.timestamp + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
     let mut mushroom_to_update = mushroom; // Clone the found mushroom to modify
     mushroom_to_update.respawn_at = Some(respawn_time);
     mushrooms.id().update(mushroom_to_update); // Update with respawn time

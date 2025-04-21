@@ -4,12 +4,13 @@ import GameCanvas from './components/GameCanvas';
 import PlayerUI from './components/PlayerUI';
 import { DraggedItemInfo, DragSourceSlotInfo } from './types/dragDropTypes';
 import Hotbar from './components/Hotbar'; // Import the new Hotbar component
-import githubLogo from '../public/github.png'; // Import the logo
+import githubLogo from '../../public/github.png'; // Import the logo
 import * as SpacetimeDB from './generated';
 import { Identity as SpacetimeDBIdentity } from '@clockworklabs/spacetimedb-sdk';
 import { DbConnection } from './generated'; // Correct import source
 import { usePlacementManager, PlacementItemInfo, PlacementState, PlacementActions } from './hooks/usePlacementManager';
 import { WoodenStorageBox as SpacetimeDBWoodenStorageBox } from './generated';
+import { StoryTextbox } from './components/StoryTextbox';
 
 // SpacetimeDB connection parameters
 const SPACETIME_DB_ADDRESS = 'ws://localhost:3000';
@@ -51,6 +52,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const usernameInputRef = useRef<HTMLInputElement>(null); // Ref for autofocus
   
+  // State for Story:
+  const [storyCompleted, setStoryCompleted] = useState(false);
+
   // NEW: Use Placement Manager Hook
   const [placementState, placementActions] = usePlacementManager(connection);
   // Destructure for convenience (optional, could pass down objects)
@@ -1123,12 +1127,19 @@ function App() {
     }
   };
   
+  const handleStoryComplete = () => {
+    setStoryCompleted(true);
+  };
+
+  // Add character selection state at the top with other state declarations
+  const [selectedCharacter, setSelectedCharacter] = useState<string>('');
+
   return (
     <div className="App" style={{ backgroundColor: '#111' }}>
       {(error || placementError) && <div className="error-message">{error || placementError}</div>}
       
       {!isConnected ? (
-        <div style={{ /* Centering styles */
+        <div style={{
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
@@ -1136,63 +1147,102 @@ function App() {
           width: '100%',
           fontFamily: UI_FONT_FAMILY,
         }}>
-          <div style={{ /* Login Box Styles */
-            backgroundColor: UI_BG_COLOR,
-            color: 'white',
-            padding: '40px',
-            borderRadius: '4px',
-            border: `1px solid ${UI_BORDER_COLOR}`,
-            boxShadow: UI_SHADOW,
-            textAlign: 'center',
-            minWidth: '350px',
-          }}>
-            <img
-              src={githubLogo}
-              alt="GitHub Logo"
-              style={{ 
-                width: '300px',
-                height: '200px',
-                marginBottom: '25px',
-              }}
-            />
-            <input
-              ref={usernameInputRef}
-              type="text"
-              placeholder="Enter Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isLoading}
-              style={{ /* Input Styles */
-                padding: '10px',
-                marginBottom: '15px',
-                border: `1px solid ${UI_BORDER_COLOR}`,
-                backgroundColor: '#333',
-                color: 'white',
-                fontFamily: UI_FONT_FAMILY,
-                fontSize: '14px',
-                display: 'block',
-                width: 'calc(100% - 22px)',
-                textAlign: 'center',
-              }}
-            />
-            <button
-              onClick={handleRegisterPlayer}
-              disabled={isLoading || !username.trim()}
-              style={{ /* Button Styles */
-                padding: '10px 20px',
-                border: `1px solid ${UI_BORDER_COLOR}`,
-                backgroundColor: isLoading ? '#555' : '#777',
-                color: isLoading ? '#aaa' : 'white',
-                fontFamily: UI_FONT_FAMILY,
-                fontSize: '14px',
-                cursor: (isLoading || !username.trim()) ? 'not-allowed' : 'pointer',
-                boxShadow: UI_SHADOW,
-              }}
-            >
-              {isLoading ? 'Joining...' : 'Join Game'}
-            </button>
-          </div>
+          {!storyCompleted ? (
+            <div style={{
+                          backgroundColor: UI_BG_COLOR,
+                          color: 'white',
+                          padding: '40px',
+                          borderRadius: '4px',
+                          border: `1px solid ${UI_BORDER_COLOR}`,
+                          boxShadow: UI_SHADOW,
+                          textAlign: 'center',
+                          minWidth: '350px',
+                        }}>
+            <StoryTextbox onComplete={handleStoryComplete} />
+            </div>
+          ) : (
+            <div style={{
+              backgroundColor: UI_BG_COLOR,
+              color: 'white',
+              padding: '40px',
+              borderRadius: '4px',
+              border: `1px solid ${UI_BORDER_COLOR}`,
+              boxShadow: UI_SHADOW,
+              textAlign: 'center',
+              minWidth: '350px',
+            }}>
+              <div style={{ marginBottom: '20px' }}>
+                <h2 style={{ color: 'white', marginBottom: '15px' }}>Select Your Character</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '20px' }}>
+                  {['Chris', 'Max', 'Til', 'Marc'].map((character) => (
+                    <div
+                      key={character}
+                      onClick={() => setSelectedCharacter(character)}
+                      style={{
+                        padding: '10px',
+                        border: `2px solid ${selectedCharacter === character ? '#4CAF50' : UI_BORDER_COLOR}`,
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        backgroundColor: selectedCharacter === character ? '#2C5F2E' : '#333',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <img
+                        src="/marc.png"
+                        alt={character}
+                        style={{
+                          width: '64px',
+                          height: '64px',
+                          borderRadius: '50%',
+                        }}
+                      />
+                      <span>{character}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <input
+                ref={usernameInputRef}
+                type="text"
+                placeholder="Enter Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isLoading}
+                style={{
+                  padding: '10px',
+                  marginBottom: '15px',
+                  border: `1px solid ${UI_BORDER_COLOR}`,
+                  backgroundColor: '#333',
+                  color: 'white',
+                  fontFamily: UI_FONT_FAMILY,
+                  fontSize: '14px',
+                  display: 'block',
+                  width: 'calc(100% - 22px)',
+                  textAlign: 'center',
+                }}
+              />
+              <button
+                onClick={handleRegisterPlayer}
+                disabled={isLoading || !username.trim() || !selectedCharacter}
+                style={{
+                  padding: '10px 20px',
+                  border: `1px solid ${UI_BORDER_COLOR}`,
+                  backgroundColor: (!username.trim() || !selectedCharacter) ? '#555' : (isLoading ? '#555' : '#777'),
+                  color: (!username.trim() || !selectedCharacter) ? '#888' : (isLoading ? '#aaa' : 'white'),
+                  fontFamily: UI_FONT_FAMILY,
+                  fontSize: '14px',
+                  cursor: (isLoading || !username.trim() || !selectedCharacter) ? 'not-allowed' : 'pointer',
+                  boxShadow: UI_SHADOW,
+                }}
+              >
+                {isLoading ? 'Joining...' : 'Join Game'}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="game-container">
@@ -1217,6 +1267,7 @@ function App() {
             placementActions={placementActions}
             placementError={placementError}
             onSetInteractingWith={setInteractingWith}
+            selectedCharacter={selectedCharacter}
           />
           <PlayerUI 
             identity={connection?.identity || null}

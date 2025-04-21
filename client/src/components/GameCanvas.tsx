@@ -45,6 +45,15 @@ import { drawShadow } from '../utils/shadowUtils'; // Import shadow utility
 // NEW: Import placement types
 import { PlacementItemInfo, PlacementActions } from '../hooks/usePlacementManager';
 
+// Add character colors at the top of the file
+const CHARACTER_COLORS = {
+  'Chris': '#FF6B6B',
+  'Max': '#4ECDC4',
+  'Til': '#95E1D3',
+  'Marc': '#FFE66D',
+  'default': '#FFFFFF'
+};
+
 // Threshold for movement animation (position delta)
 const MOVEMENT_POSITION_THRESHOLD = 0.1; // Small threshold to account for float precision
 const ANIMATION_INTERVAL_MS = 150;
@@ -91,6 +100,7 @@ interface GameCanvasProps {
   placementActions: PlacementActions;
   placementError: string | null; 
   onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
+  selectedCharacter?: string; // Add selectedCharacter to props
 }
 
 // Type guard for Player
@@ -240,6 +250,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   placementActions,
   placementError,
   onSetInteractingWith,
+  selectedCharacter, // Add selectedCharacter to props
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1483,4 +1494,4 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   );
 };
 
-export default GameCanvas; 
+export default GameCanvas;

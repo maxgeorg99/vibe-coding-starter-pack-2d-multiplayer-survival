@@ -282,7 +282,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
 
             if stone.health == 0 {
                 log::info!("Stone {} depleted by Player {:?}. Scheduling respawn.", stone_id, sender_id);
-                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                 stone.respawn_at = Some(respawn_time);
                 stones.id().update(stone); // Update with health 0 and respawn time
                 // stones.id().delete(stone_id); // Removed delete
@@ -342,7 +342,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             
             if tree.health == 0 {
                 log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
-                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                 tree.respawn_at = Some(respawn_time);
                 trees.id().update(tree); // Update with health 0 and respawn time
                 // trees.id().delete(tree_id); // REMOVED delete
@@ -423,7 +423,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
 
                     if tree.health == 0 {
                         log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         tree.respawn_at = Some(respawn_time);
                         trees.id().update(tree); // Update with health 0 and respawn time
                         // trees.id().delete(tree_id); // REMOVED delete
@@ -455,7 +455,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
 
                     if stone.health == 0 {
                         log::info!("Stone {} depleted by Player {:?}. Scheduling respawn.", stone_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         stone.respawn_at = Some(respawn_time);
                         stones.id().update(stone); // Update with health 0 and respawn time
                         // stones.id().delete(stone_id);
@@ -529,7 +529,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                             sender_id, tree_id, item_def.name, item_damage, old_health, tree.health);
                     if tree.health == 0 {
                         log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         tree.respawn_at = Some(respawn_time);
                         trees.id().update(tree); // Update with health 0 and respawn time
                         // trees.id().delete(tree_id); // REMOVED delete
@@ -549,7 +549,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                             sender_id, stone_id, item_def.name, item_damage, old_health, stone.health);
                     if stone.health == 0 {
                         log::info!("Stone {} depleted by Player {:?}. Scheduling respawn.", stone_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         stone.respawn_at = Some(respawn_time);
                         stones.id().update(stone); // Update with health 0 and respawn time
                         // stones.id().delete(stone_id);
