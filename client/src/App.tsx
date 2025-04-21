@@ -10,6 +10,7 @@ import { Identity as SpacetimeDBIdentity } from '@clockworklabs/spacetimedb-sdk'
 import { DbConnection } from './generated'; // Correct import source
 import { usePlacementManager, PlacementItemInfo, PlacementState, PlacementActions } from './hooks/usePlacementManager';
 import { WoodenStorageBox as SpacetimeDBWoodenStorageBox } from './generated';
+import DayNightCycleTracker from './components/DayNightCycleTracker';
 
 // SpacetimeDB connection parameters
 const SPACETIME_DB_ADDRESS = 'ws://localhost:3000';
@@ -1253,6 +1254,9 @@ function App() {
             interactingWith={interactingWith}
             campfires={campfires}
           />
+          
+          {/* Day/Night Cycle Tracker */}
+          <DayNightCycleTracker worldState={worldState} />
         </div>
       )}
     </div>

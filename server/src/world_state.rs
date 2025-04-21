@@ -137,27 +137,6 @@ pub fn tick_world_state(ctx: &ReducerContext, _timestamp: Timestamp) -> Result<(
         log::debug!("World tick: Progress {:.2}, Time: {:?}, Cycle: {}, Full Moon: {}", new_progress, world_state.time_of_day, new_cycle_count, new_is_full_moon);
     }
 
-    // --- Campfire Fuel Consumption Logic REMOVED --- 
-    // This logic is now handled by campfire::check_campfire_fuel_consumption, 
-    // called from lib.rs/update_player_position
-    /*
-    if elapsed_seconds > 0.0 { 
-        let mut campfires = ctx.db.campfire(); 
-        let mut inventory_items = ctx.db.inventory_item(); 
-        
-        // Collect IDs of burning campfires with fuel items
-        let burning_campfire_info: Vec<(u32, u64)> = campfires.iter()
-            .filter(|c| c.is_burning && c.fuel_item_instance_id.is_some()) // OLD LOGIC
-            .map(|c| (c.id, c.fuel_item_instance_id.unwrap())) // OLD LOGIC
-            .collect();
-
-        for (campfire_id, fuel_instance_id) in burning_campfire_info {
-             // ... removed consumption logic ...
-        }
-    }
-    */
-    // --- End Campfire Fuel Consumption ---
-
     Ok(())
 }
 
