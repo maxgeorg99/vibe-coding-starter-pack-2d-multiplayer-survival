@@ -15,6 +15,8 @@ use crate::dropped_item::{calculate_drop_position, create_dropped_item_entity};
 use crate::items_database; // ADD import for new module
 use std::cmp::min;
 use spacetimedb::Identity; // ADDED for add_item_to_player_inventory
+// Import the ContainerItemClearer trait
+use crate::inventory_management::ContainerItemClearer;
 
 // --- Item Enums and Structs ---
 
@@ -311,8 +313,10 @@ pub(crate) fn clear_specific_item_from_equipment_slots(ctx: &ReducerContext, pla
 
 // Helper: Clear a specific item instance from any campfire fuel slot
 // Make pub(crate) so inventory_management can call it
-pub(crate) fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to_clear: u64) {
+pub(crate) fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to_clear: u64) -> bool {
     let mut campfires = ctx.db.campfire();
+    let mut found_and_cleared = false;
+    
     // Iterate through campfires that *might* contain the item
     let potential_campfire_ids: Vec<u32> = campfires.iter()
                                             .filter(|c|
@@ -357,9 +361,32 @@ pub(crate) fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_ins
                     log::info!("Campfire {} extinguished as last valid fuel was removed.", campfire_id);
                 }
                 campfires.id().update(campfire);
+                found_and_cleared = true; // Mark as found
             }
         }
     }
+    
+    found_and_cleared
+}
+
+/// Checks all registered container types and removes the specified item instance if found.
+/// This function delegates to specific container modules via the ContainerItemClearer trait.
+pub(crate) fn clear_item_from_any_container(ctx: &ReducerContext, item_instance_id: u64) {
+    // Delegate to container-specific clearing functions
+    // Each returns a boolean indicating if the item was found and cleared
+    
+    // Check wooden storage boxes
+    let found_in_boxes = crate::wooden_storage_box::WoodenStorageBoxClearer::clear_item(ctx, item_instance_id);
+    
+    // If not found in boxes, check campfires
+    if !found_in_boxes {
+        let _found_in_campfire = clear_item_from_campfire_fuel_slots(ctx, item_instance_id);
+    }
+    
+    // Additional container types can be added here in the future:
+    // if !found_in_boxes && !found_in_campfire {
+    //     crate::some_container::SomeContainerClearer::clear_item(ctx, item_instance_id);
+    // }
 }
 
 // NEW Refactored Helper: Clears an item from equipment OR campfire slots based on its state
@@ -737,7 +764,7 @@ pub fn equip_armor_from_drag(ctx: &ReducerContext, item_instance_id: u64, target
     } else {
         log::debug!("[EquipArmorDrag] Item {} potentially came from container. Clearing containers.", item_instance_id);
         // Item didn't come from player inv/hotbar, try clearing containers
-        crate::inventory_management::clear_item_from_any_container(ctx, item_instance_id);
+        clear_item_from_any_container(ctx, item_instance_id);
         // Also update the item instance itself to remove slot info just in case (should be None already)
         // and assign ownership to the equipping player if it wasn't already.
         if item_to_equip.player_identity != sender_id {

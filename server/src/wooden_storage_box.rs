@@ -7,7 +7,6 @@ pub(crate) const BOX_COLLISION_Y_OFFSET: f32 = 10.0; // Similar to campfire
 pub(crate) const PLAYER_BOX_COLLISION_DISTANCE_SQUARED: f32 = (super::PLAYER_RADIUS + BOX_COLLISION_RADIUS) * (super::PLAYER_RADIUS + BOX_COLLISION_RADIUS);
 const BOX_INTERACTION_DISTANCE_SQUARED: f32 = 64.0 * 64.0; // Similar to campfire interaction
 pub const NUM_BOX_SLOTS: usize = 18;
-// TODO: Consider box-box collision? For now, just player-box.
 
 // Import InventoryItem and ItemDefinition tables/traits AND STRUCTS for item finding/checking
 use crate::items::{InventoryItem, inventory_item as InventoryItemTableTrait, ItemDefinition, item_definition as ItemDefinitionTableTrait};
@@ -16,13 +15,15 @@ use crate::player as PlayerTableTrait;
 // ADDED: Import the WoodenStorageBox table trait itself - REMOVED as it's defined here and accessed via ctx.db
 use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
 // Import inventory management helpers
-use crate::inventory_management; // Import the module
+use crate::inventory_management; // still needed for generic handlers but helper fns removed
 // Import add_item_to_player_inventory from items module
 use crate::items::add_item_to_player_inventory;
 // Import Player struct correctly
 use crate::Player;
 // Import the ItemContainer trait
 use crate::inventory_management::ItemContainer;
+// Import the ContainerItemClearer trait
+use crate::inventory_management::ContainerItemClearer;
 
 #[spacetimedb::table(name = wooden_storage_box, public)]
 #[derive(Clone)]
@@ -83,15 +84,120 @@ impl ItemContainer for WoodenStorageBox {
     }
 
     fn get_slot_instance_id(&self, slot_index: u8) -> Option<u64> {
-        crate::inventory_management::get_box_slot_instance_id(self, slot_index)
+        if slot_index >= NUM_BOX_SLOTS as u8 { return None; }
+        match slot_index {
+            0 => self.slot_instance_id_0,
+            1 => self.slot_instance_id_1,
+            2 => self.slot_instance_id_2,
+            3 => self.slot_instance_id_3,
+            4 => self.slot_instance_id_4,
+            5 => self.slot_instance_id_5,
+            6 => self.slot_instance_id_6,
+            7 => self.slot_instance_id_7,
+            8 => self.slot_instance_id_8,
+            9 => self.slot_instance_id_9,
+            10 => self.slot_instance_id_10,
+            11 => self.slot_instance_id_11,
+            12 => self.slot_instance_id_12,
+            13 => self.slot_instance_id_13,
+            14 => self.slot_instance_id_14,
+            15 => self.slot_instance_id_15,
+            16 => self.slot_instance_id_16,
+            17 => self.slot_instance_id_17,
+            _ => None, // Unreachable due to index check
+        }
     }
 
     fn get_slot_def_id(&self, slot_index: u8) -> Option<u64> {
-        crate::inventory_management::get_box_slot_def_id(self, slot_index)
+        if slot_index >= NUM_BOX_SLOTS as u8 { return None; }
+        match slot_index {
+            0 => self.slot_def_id_0,
+            1 => self.slot_def_id_1,
+            2 => self.slot_def_id_2,
+            3 => self.slot_def_id_3,
+            4 => self.slot_def_id_4,
+            5 => self.slot_def_id_5,
+            6 => self.slot_def_id_6,
+            7 => self.slot_def_id_7,
+            8 => self.slot_def_id_8,
+            9 => self.slot_def_id_9,
+            10 => self.slot_def_id_10,
+            11 => self.slot_def_id_11,
+            12 => self.slot_def_id_12,
+            13 => self.slot_def_id_13,
+            14 => self.slot_def_id_14,
+            15 => self.slot_def_id_15,
+            16 => self.slot_def_id_16,
+            17 => self.slot_def_id_17,
+            _ => None,
+        }
     }
 
     fn set_slot(&mut self, slot_index: u8, instance_id: Option<u64>, def_id: Option<u64>) {
-        crate::inventory_management::set_box_slot(self, slot_index, instance_id, def_id)
+        if slot_index >= NUM_BOX_SLOTS as u8 { return; }
+        match slot_index {
+            0 => { self.slot_instance_id_0 = instance_id; self.slot_def_id_0 = def_id; },
+            1 => { self.slot_instance_id_1 = instance_id; self.slot_def_id_1 = def_id; },
+            2 => { self.slot_instance_id_2 = instance_id; self.slot_def_id_2 = def_id; },
+            3 => { self.slot_instance_id_3 = instance_id; self.slot_def_id_3 = def_id; },
+            4 => { self.slot_instance_id_4 = instance_id; self.slot_def_id_4 = def_id; },
+            5 => { self.slot_instance_id_5 = instance_id; self.slot_def_id_5 = def_id; },
+            6 => { self.slot_instance_id_6 = instance_id; self.slot_def_id_6 = def_id; },
+            7 => { self.slot_instance_id_7 = instance_id; self.slot_def_id_7 = def_id; },
+            8 => { self.slot_instance_id_8 = instance_id; self.slot_def_id_8 = def_id; },
+            9 => { self.slot_instance_id_9 = instance_id; self.slot_def_id_9 = def_id; },
+            10 => { self.slot_instance_id_10 = instance_id; self.slot_def_id_10 = def_id; },
+            11 => { self.slot_instance_id_11 = instance_id; self.slot_def_id_11 = def_id; },
+            12 => { self.slot_instance_id_12 = instance_id; self.slot_def_id_12 = def_id; },
+            13 => { self.slot_instance_id_13 = instance_id; self.slot_def_id_13 = def_id; },
+            14 => { self.slot_instance_id_14 = instance_id; self.slot_def_id_14 = def_id; },
+            15 => { self.slot_instance_id_15 = instance_id; self.slot_def_id_15 = def_id; },
+            16 => { self.slot_instance_id_16 = instance_id; self.slot_def_id_16 = def_id; },
+            17 => { self.slot_instance_id_17 = instance_id; self.slot_def_id_17 = def_id; },
+            _ => {}, // Unreachable due to index check
+        }
+    }
+}
+
+// --- Implementation of ContainerItemClearer ---
+
+/// Helper struct to implement the ContainerItemClearer trait for WoodenStorageBox
+pub struct WoodenStorageBoxClearer;
+
+impl ContainerItemClearer for WoodenStorageBoxClearer {
+    fn clear_item(ctx: &ReducerContext, item_instance_id: u64) -> bool {
+        // Get access to the table
+        let mut boxes = ctx.db.wooden_storage_box();
+        let mut box_updated = false;
+        let mut box_to_update: Option<WoodenStorageBox> = None; 
+
+        // Iterate through all boxes to find the item
+        for current_box in boxes.iter() {
+            let mut temp_box = current_box.clone(); // Clone to modify if needed
+            let mut found_in_this_box = false;
+            
+            // Use the ItemContainer trait methods to search through slots
+            for i in 0..temp_box.num_slots() as u8 {
+                if temp_box.get_slot_instance_id(i) == Some(item_instance_id) {
+                    log::debug!("[WoodenStorageBoxClearer] Found item {} in box {} slot {}. Clearing.", 
+                              item_instance_id, temp_box.id, i);
+                    temp_box.set_slot(i, None, None);
+                    box_to_update = Some(temp_box);
+                    box_updated = true;
+                    found_in_this_box = true;
+                    break;
+                }
+            }
+            if found_in_this_box { break; } // Stop checking other boxes
+        }
+
+        // Update the box if it was modified
+        if let Some(updated_box) = box_to_update {
+            boxes.id().update(updated_box);
+        }
+
+        // Return whether the item was found and cleared
+        box_updated
     }
 }
 

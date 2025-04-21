@@ -4,8 +4,9 @@ use log;
 // Import necessary types and Table Traits
 use crate::items::{InventoryItem, ItemDefinition, calculate_merge_result, add_item_to_player_inventory};
 use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait};
-use crate::wooden_storage_box::{WoodenStorageBox, NUM_BOX_SLOTS}; // Import Box struct and constant
-use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
+// Remove specific container imports
+// use crate::wooden_storage_box::{WoodenStorageBox, NUM_BOX_SLOTS};
+// use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
 
 // --- Generic Item Container Trait --- 
 
@@ -25,97 +26,9 @@ pub(crate) trait ItemContainer {
     /// Sets the instance and definition IDs for a specific slot index.
     /// Implementations should handle invalid indices gracefully (e.g., do nothing).
     fn set_slot(&mut self, slot_index: u8, instance_id: Option<u64>, def_id: Option<u64>);
-
-    // We could add more methods later if needed, e.g., find_first_empty_slot
 }
 
-// --- Helper functions for getting/setting box slots by index --- 
-
-/// Gets the instance ID from a specific slot index in a WoodenStorageBox.
-pub(crate) fn get_box_slot_instance_id(storage_box: &WoodenStorageBox, slot_index: u8) -> Option<u64> {
-    if slot_index >= NUM_BOX_SLOTS as u8 { return None; }
-    match slot_index {
-        0 => storage_box.slot_instance_id_0,
-        1 => storage_box.slot_instance_id_1,
-        2 => storage_box.slot_instance_id_2,
-        3 => storage_box.slot_instance_id_3,
-        4 => storage_box.slot_instance_id_4,
-        5 => storage_box.slot_instance_id_5,
-        6 => storage_box.slot_instance_id_6,
-        7 => storage_box.slot_instance_id_7,
-        8 => storage_box.slot_instance_id_8,
-        9 => storage_box.slot_instance_id_9,
-        10 => storage_box.slot_instance_id_10,
-        11 => storage_box.slot_instance_id_11,
-        12 => storage_box.slot_instance_id_12,
-        13 => storage_box.slot_instance_id_13,
-        14 => storage_box.slot_instance_id_14,
-        15 => storage_box.slot_instance_id_15,
-        16 => storage_box.slot_instance_id_16,
-        17 => storage_box.slot_instance_id_17,
-        _ => None, // Should be unreachable due to check above
-    }
-}
-
-/// Gets the definition ID from a specific slot index in a WoodenStorageBox.
-pub(crate) fn get_box_slot_def_id(storage_box: &WoodenStorageBox, slot_index: u8) -> Option<u64> {
-    if slot_index >= NUM_BOX_SLOTS as u8 { return None; }
-    match slot_index {
-        0 => storage_box.slot_def_id_0,
-        1 => storage_box.slot_def_id_1,
-        2 => storage_box.slot_def_id_2,
-        3 => storage_box.slot_def_id_3,
-        4 => storage_box.slot_def_id_4,
-        5 => storage_box.slot_def_id_5,
-        6 => storage_box.slot_def_id_6,
-        7 => storage_box.slot_def_id_7,
-        8 => storage_box.slot_def_id_8,
-        9 => storage_box.slot_def_id_9,
-        10 => storage_box.slot_def_id_10,
-        11 => storage_box.slot_def_id_11,
-        12 => storage_box.slot_def_id_12,
-        13 => storage_box.slot_def_id_13,
-        14 => storage_box.slot_def_id_14,
-        15 => storage_box.slot_def_id_15,
-        16 => storage_box.slot_def_id_16,
-        17 => storage_box.slot_def_id_17,
-        _ => None,
-    }
-}
-
-/// Sets the instance and definition IDs for a specific slot index in a mutable WoodenStorageBox.
-pub(crate) fn set_box_slot(
-    storage_box: &mut WoodenStorageBox, 
-    slot_index: u8, 
-    instance_id: Option<u64>, 
-    def_id: Option<u64>
-) {
-    if slot_index >= NUM_BOX_SLOTS as u8 { return; } // Ignore invalid index
-    match slot_index {
-        0 => { storage_box.slot_instance_id_0 = instance_id; storage_box.slot_def_id_0 = def_id; }
-        1 => { storage_box.slot_instance_id_1 = instance_id; storage_box.slot_def_id_1 = def_id; }
-        2 => { storage_box.slot_instance_id_2 = instance_id; storage_box.slot_def_id_2 = def_id; }
-        3 => { storage_box.slot_instance_id_3 = instance_id; storage_box.slot_def_id_3 = def_id; }
-        4 => { storage_box.slot_instance_id_4 = instance_id; storage_box.slot_def_id_4 = def_id; }
-        5 => { storage_box.slot_instance_id_5 = instance_id; storage_box.slot_def_id_5 = def_id; }
-        6 => { storage_box.slot_instance_id_6 = instance_id; storage_box.slot_def_id_6 = def_id; }
-        7 => { storage_box.slot_instance_id_7 = instance_id; storage_box.slot_def_id_7 = def_id; }
-        8 => { storage_box.slot_instance_id_8 = instance_id; storage_box.slot_def_id_8 = def_id; }
-        9 => { storage_box.slot_instance_id_9 = instance_id; storage_box.slot_def_id_9 = def_id; }
-        10 => { storage_box.slot_instance_id_10 = instance_id; storage_box.slot_def_id_10 = def_id; }
-        11 => { storage_box.slot_instance_id_11 = instance_id; storage_box.slot_def_id_11 = def_id; }
-        12 => { storage_box.slot_instance_id_12 = instance_id; storage_box.slot_def_id_12 = def_id; }
-        13 => { storage_box.slot_instance_id_13 = instance_id; storage_box.slot_def_id_13 = def_id; }
-        14 => { storage_box.slot_instance_id_14 = instance_id; storage_box.slot_def_id_14 = def_id; }
-        15 => { storage_box.slot_instance_id_15 = instance_id; storage_box.slot_def_id_15 = def_id; }
-        16 => { storage_box.slot_instance_id_16 = instance_id; storage_box.slot_def_id_16 = def_id; }
-        17 => { storage_box.slot_instance_id_17 = instance_id; storage_box.slot_def_id_17 = def_id; }
-        _ => {}, // Should be unreachable
-    }
-}
-
-
-// --- NEW Helper: Check if Container is Empty --- 
+// --- Helper: Check if Container is Empty --- 
 
 /// Checks if all slots in an ItemContainer are empty.
 pub(crate) fn is_container_empty<C: ItemContainer>(container: &C) -> bool {
@@ -127,41 +40,18 @@ pub(crate) fn is_container_empty<C: ItemContainer>(container: &C) -> bool {
     true // Went through all slots, all were empty
 }
 
-// --- NEW Helper: Clear item from any container --- 
+// --- Container Item Search Helper Interface --- 
 
-/// Checks known container types (Boxes, Campfires) and removes the specified item instance if found.
-pub(crate) fn clear_item_from_any_container(ctx: &ReducerContext, item_instance_id: u64) {
-    // Check Wooden Storage Boxes
-    let mut boxes = ctx.db.wooden_storage_box();
-    let mut box_updated = false;
-    let mut box_to_update: Option<WoodenStorageBox> = None; 
-
-    for current_box in boxes.iter() { // Iterate non-mutably first to find
-        let mut temp_box = current_box.clone(); // Clone to modify if needed
-        let mut found_in_this_box = false;
-        for i in 0..NUM_BOX_SLOTS as u8 {
-            if temp_box.get_slot_instance_id(i) == Some(item_instance_id) {
-                log::debug!("[ClearAnyContainer] Found item {} in box {} slot {}. Clearing.", item_instance_id, temp_box.id, i);
-                temp_box.set_slot(i, None, None);
-                box_to_update = Some(temp_box); // Store the modified box
-                box_updated = true;
-                found_in_this_box = true;
-                break; 
-            }
-        }
-        if found_in_this_box { break; } // Stop checking other boxes
-    }
-    // Update the box if it was modified
-    if let Some(updated_box) = box_to_update {
-         boxes.id().update(updated_box);
-    }
-
-    // If not found in a box, check Campfires (using the now pub(crate) helper)
-    if !box_updated {
-        crate::items::clear_item_from_campfire_fuel_slots(ctx, item_instance_id);
-        // This function logs internally if it clears something
-    }
+/// Trait for clearing an item from a container type.
+/// Each container module should implement this trait for its container type.
+pub(crate) trait ContainerItemClearer {
+    /// Search for and remove the specified item instance from this container type.
+    /// Returns true if the item was found and removed.
+    fn clear_item(ctx: &ReducerContext, item_instance_id: u64) -> bool;
 }
+
+// Note: The clear_item_from_any_container function has been moved to items.rs
+// to keep inventory_management.rs container-agnostic.
 
 // --- Core Logic Handlers (Refactored to handle more validation) --- 
 
