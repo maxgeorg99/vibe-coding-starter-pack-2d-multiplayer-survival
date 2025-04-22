@@ -171,6 +171,94 @@ pub fn get_initial_item_definitions() -> Vec<ItemDefinition> {
             is_equippable: false,
             equipment_slot: None,
         },
+        ItemDefinition {
+            id: 0,
+            name: "Hammer".to_string(),
+            description: "A heavy hammer that deals high damage but is slow to swing.".to_string(),
+            category: ItemCategory::Tool,
+            icon_asset_name: "hammer.png".to_string(),
+            damage: Some(15),
+            is_stackable: false,
+            stack_size: 1,
+            is_equippable: true,
+            equipment_slot: None,
+        },
+        ItemDefinition {
+            id: 0,
+            name: "Dagger".to_string(),
+            description: "A quick dagger that attacks rapidly but deals less damage.".to_string(),
+            category: ItemCategory::Tool,
+            icon_asset_name: "dagger.png".to_string(),
+            damage: Some(5),
+            is_stackable: false,
+            stack_size: 1,
+            is_equippable: true,
+            equipment_slot: None,
+        },
+        ItemDefinition {
+            id: 0,
+            name: "Sword".to_string(),
+            description: "A balanced sword with good damage and attack speed.".to_string(),
+            category: ItemCategory::Tool,
+            icon_asset_name: "sword.png".to_string(),
+            damage: Some(10),
+            is_stackable: false,
+            stack_size: 1,
+            is_equippable: true,
+            equipment_slot: None,
+        },
     ];
     initial_items
 }
+
+// --- Weapon Definitions ---
+pub const HAMMER_DEF: ItemDefinition = ItemDefinition {
+    id: 100,
+    name: "Hammer",
+    description: "A heavy hammer that deals high damage but is slow to swing.",
+    category: ItemCategory::Tool,
+    is_equippable: true,
+    equipment_slot: None,
+    damage: Some(15),
+    swing_cooldown_ms: Some(1000),
+    durability: Some(100),
+    stack_size: 1,
+    icon_path: "items/hammer.png",
+};
+
+pub const DAGGER_DEF: ItemDefinition = ItemDefinition {
+    id: 101,
+    name: "Dagger",
+    description: "A quick dagger that attacks rapidly but deals less damage.",
+    category: ItemCategory::Tool,
+    is_equippable: true,
+    equipment_slot: None,
+    damage: Some(5),
+    swing_cooldown_ms: Some(300),
+    durability: Some(100),
+    stack_size: 1,
+    icon_path: "items/dagger.png",
+};
+
+pub const SWORD_DEF: ItemDefinition = ItemDefinition {
+    id: 102,
+    name: "Sword",
+    description: "A balanced sword with good damage and attack speed.",
+    category: ItemCategory::Tool,
+    is_equippable: true,
+    equipment_slot: None,
+    damage: Some(10),
+    swing_cooldown_ms: Some(500),
+    durability: Some(100),
+    stack_size: 1,
+    icon_path: "items/sword.png",
+};
+
+// Add to ITEM_DEFINITIONS array
+pub const ITEM_DEFINITIONS: &[ItemDefinition] = &[
+    // ... existing items ...
+    HAMMER_DEF,
+    DAGGER_DEF,
+    SWORD_DEF,
+    // ... rest of existing items ...
+];

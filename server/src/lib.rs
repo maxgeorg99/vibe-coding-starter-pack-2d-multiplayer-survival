@@ -178,8 +178,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     let players = ctx.db.player();
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
-    let campfires = ctx.db.campfire(); // Get campfire table
-    let wooden_storage_boxes = ctx.db.wooden_storage_box(); // <<< ADDED: Get box table
+    let campfires = ctx.db.campfire();
+    let wooden_storage_boxes = ctx.db.wooden_storage_box();
     
     // Check if username is already taken by *any* player
     let username_taken = players.iter().any(|p| p.username == username);
@@ -188,7 +188,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         return Err(format!("Username '{}' is already taken.", username));
     }
     
-    // Check if this identity is already registered (shouldn't happen if disconnect works, but good safety check)
+    // Check if this identity is already registered
     if players.identity().find(sender_id).is_some() {
         log::warn!("Identity {:?} already registered. Registration failed.", sender_id);
         return Err("Player identity already registered".to_string());
@@ -326,20 +326,25 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     // Insert the new player
     match players.try_insert(player) {
         Ok(_) => {
-            log::info!("Player registered: {}. Granting starting items...", username);
+            log::info!("Player registered: {}. Initializing systems...", username);
 
-            // --- Grant Starting Items --- 
-            // Call the dedicated function from the starting_items module
-            match crate::starting_items::grant_starting_items(ctx, sender_id, &username) {
-                Ok(_) => { /* Items granted (or individual errors logged) */ },
-                Err(e) => {
-                    // This function currently always returns Ok, but handle error just in case
-                    log::error!("Unexpected error during grant_starting_items for player {}: {}", username, e);
-                    // Potentially return the error from register_player if item grant failure is critical
-                    // return Err(format!("Failed to grant starting items: {}", e)); 
-                }
+            // Initialize player stats
+            match crate::player_stats::initialize_player_stats(ctx, sender_id) {
+                Ok(_) => log::info!("Player stats initialized for {}", username),
+                Err(e) => log::error!("Failed to initialize player stats: {}", e),
             }
-            // --- End Grant Starting Items ---
+
+            // Initialize character system
+            match crate::character::initialize_character(ctx, sender_id) {
+                Ok(_) => log::info!("Character system initialized for {}", username),
+                Err(e) => log::error!("Failed to initialize character system: {}", e),
+            }
+
+            // Grant starting items
+            match crate::starting_items::grant_starting_items(ctx, sender_id, &username) {
+                Ok(_) => log::info!("Starting items granted to {}", username),
+                Err(e) => log::error!("Failed to grant starting items: {}", e),
+            }
 
             Ok(())
         },
