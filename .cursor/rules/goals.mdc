@@ -3,20 +3,9 @@ description:
 globs: 
 alwaysApply: false
 ---
-Immediate Fixes:
+Short-Term Goals:
 
-1) Modify the client_disconnected handler:
-Ensure it properly removes ALL references to a player
-Add logging to confirm disconnections are fully processed
-Check if any player remnants remain in other tables
-
-2) Separate stat calculations from movement:
-Move stats calculation to a separate reducer that runs on a timer
-Only update stats every few seconds rather than on every movement
-
-Medium-Term Solutions:
-
-1) Add a proper scheduler system:
+1) Separate stat calculations from movement and add a proper scheduler system:
 Implement a central game tick system rather than updating on player movement
 Create schedule tables specifically for player stat updates
 Similar to how the campfire fuel checks work in the code
@@ -28,11 +17,6 @@ Run it automatically every few minutes
 Long-Term Architectural Changes:
 
 1) Redesign movement system:
-Split movement input from physics/stats processing
 Process player inputs and positions at a fixed rate
 Implement proper delta-time handling
-
-2) Implement client-side prediction:
-Move more collision detection to the client
-Let server validate and correct only when needed
 
