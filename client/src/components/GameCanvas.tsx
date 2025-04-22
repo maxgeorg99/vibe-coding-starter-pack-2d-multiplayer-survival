@@ -1202,7 +1202,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
          if (closestInteractableDroppedItemIdRef.current === item.id) {
             const itemDef = itemDefinitions.get(item.itemDefId.toString());
             const itemName = itemDef ? itemDef.name : 'Item';
-            const text = `Press E to pick up ${itemName} (x${item.quantity})`;
+            const text = `Hold E to pick up ${itemName} (x${item.quantity})`;
             const textX = item.posX;
             const textY = item.posY - 25;
             ctx.fillStyle = "white";
