@@ -15,12 +15,16 @@ import {
     EquipmentSlot as BackendEquipmentSlot, // Keep alias if used
     ActiveEquipment,
     Campfire as SpacetimeDBCampfire, // Import Campfire type
-    WoodenStorageBox as SpacetimeDBWoodenStorageBox // <<< Import Box type
+    WoodenStorageBox as SpacetimeDBWoodenStorageBox, // <<< Import Box type
+    Recipe,
+    CraftingQueueItem
 } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import { itemIcons, getItemIcon } from '../utils/itemIconUtils';
 // NEW: Import placement types
 import { PlacementItemInfo, PlacementState, PlacementActions } from '../hooks/usePlacementManager';
+// ADD: Import CraftingUI component
+import CraftingUI from './CraftingUI';
 
 // --- Type Definitions ---
 // Define props for InventoryUI component
@@ -42,6 +46,9 @@ interface InventoryUIProps {
     startPlacement: (itemInfo: PlacementItemInfo) => void;
     cancelPlacement: () => void; // Assuming cancel might be needed (e.g., close button cancels placement)
     placementInfo: PlacementItemInfo | null; // To potentially disable actions while placing
+    // ADD: Crafting related props
+    recipes: Map<string, Recipe>;
+    craftingQueueItems: Map<string, CraftingQueueItem>;
 }
 
 // Represents an item instance with its definition for rendering
@@ -49,27 +56,6 @@ export interface PopulatedItem {
     instance: InventoryItem;
     definition: ItemDefinition;
 }
-
-// --- Placeholder Data (Restore) ---
-// Placeholder type for items - replace with actual type later
-interface PlaceholderItem {
-    id: number;
-    name: string;
-    icon: string; // Path to icon asset
-}
-
-// Placeholder data - replace with actual data later
-const placeholderCraftableItems: PlaceholderItem[] = Array.from({ length: 15 }).map((_, i) => ({
-    id: i,
-    name: `Craftable ${i + 1}`,
-    icon: './assets/icons/placeholder.png', // Example path
-}));
-
-const placeholderCraftingQueue: PlaceholderItem[] = Array.from({ length: 8 }).map((_, i) => ({
-    id: 100 + i,
-    name: `Crafting ${i + 1}`,
-    icon: './assets/icons/placeholder.png', // Example path
-}));
 
 // --- Main Component ---
 
@@ -90,6 +76,9 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
     startPlacement,
     cancelPlacement,
     placementInfo, // Read isPlacing state from this
+    // ADD: Destructure crafting props
+    recipes,
+    craftingQueueItems,
 }) => {
     const NUM_FUEL_SLOTS = 5; // For Campfire
     const NUM_BOX_SLOTS = 18; // For Wooden Storage Box
@@ -269,6 +258,9 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
     // Ensure props are defined
     const currentInventoryItems = inventoryItems || new Map<string, InventoryItem>();
     const currentItemDefinitions = itemDefinitions || new Map<string, ItemDefinition>();
+    const currentActiveEquipments = activeEquipments || new Map<string, ActiveEquipment>();
+    const currentRecipes = recipes || new Map<string, Recipe>(); // Ensure recipes is defined
+    const currentCraftingQueueItems = craftingQueueItems || new Map<string, CraftingQueueItem>(); // Ensure queue is defined
 
     const inventoryRows = 4;
     const inventoryCols = 6;
@@ -279,7 +271,6 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
     const itemsByInvSlot = new Map<number, PopulatedItem>();
     // Key items by the LOGICAL slot name (Head, Chest, etc.)
     const itemsByEquipSlot = new Map<string, PopulatedItem>();
-    const currentActiveEquipments = activeEquipments || new Map<string, ActiveEquipment>();
 
     // Map inventory items first
     Array.from(currentInventoryItems.values())
@@ -553,40 +544,15 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
                  </> {/* End fragment wrapper */}
              </div>
  
-             {/* Right Pane (Crafting - Not making draggable/droppable yet) */}
-            <div className={styles.rightPane}>
-                {/* --- Restore Crafting UI --- */}
-                <div className={styles.craftingHeader}>
-                    <h3 className={styles.sectionTitle}>CRAFTING</h3>
-                    {/* Maybe add a button/link like in concept */}
-                </div>
-
-                <div className={styles.craftableItemsSection}>
-                    <div className={styles.craftableItemsGrid}>
-                        {placeholderCraftableItems.map((item) => (
-                        <div key={`craftable-${item.id}`} className={styles.slot}>
-                            <img src={getItemIcon(item.icon)} alt={item.name} style={{ width: '80%', height: '80%', objectFit: 'contain', imageRendering: 'pixelated' }} />
-                        </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className={styles.craftingQueueSection}>
-                    <h4 className={styles.queueTitle}>CRAFTING QUEUE</h4>
-                    <div className={styles.craftingQueueList}>
-                        {placeholderCraftingQueue.map((item) => (
-                        <div key={`queue-${item.id}`} className={styles.queueItem}>
-                            <div className={`${styles.slot} ${styles.queueItemSlot}`}>
-                                <img src={getItemIcon(item.icon)} alt={item.name} style={{ width: '80%', height: '80%', objectFit: 'contain', imageRendering: 'pixelated' }} />
-                            </div>
-                            <span>{item.name} (??s)</span>
-                        </div>
-                        ))}
-                        {placeholderCraftingQueue.length === 0 && <p className={styles.emptyQueueText}>Queue is empty</p>}
-                    </div>
-                </div>
-                 {/* --- End Restore Crafting UI --- */}
-            </div>
+             {/* Right Pane (Replace placeholder with CraftingUI) */}
+            <CraftingUI 
+                playerIdentity={playerIdentity}
+                recipes={currentRecipes} // Pass down recipes
+                craftingQueueItems={currentCraftingQueueItems} // Pass down queue items
+                itemDefinitions={currentItemDefinitions} // Pass down item definitions
+                inventoryItems={currentInventoryItems} // Pass down inventory items
+                connection={connection} // Pass down connection
+            />
         </div>
     );
 };

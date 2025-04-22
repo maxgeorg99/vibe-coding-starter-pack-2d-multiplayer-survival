@@ -4,29 +4,35 @@ globs:
 alwaysApply: false
 ---
 Immediate Fixes:
-Modify the client_disconnected handler:
+
+1) Modify the client_disconnected handler:
 Ensure it properly removes ALL references to a player
 Add logging to confirm disconnections are fully processed
 Check if any player remnants remain in other tables
-Optimize collision detection:
-Use spatial partitioning (grid/quadtree) to reduce unnecessary checks
-Only check collisions with entities near the player, not the entire world
-Separate stat calculations from movement:
+
+2) Separate stat calculations from movement:
 Move stats calculation to a separate reducer that runs on a timer
 Only update stats every few seconds rather than on every movement
+
 Medium-Term Solutions:
-Add a proper scheduler system:
+
+1) Add a proper scheduler system:
 Implement a central game tick system rather than updating on player movement
 Create schedule tables specifically for player stat updates
 Similar to how the campfire fuel checks work in the code
-Database maintenance reducer:
+
+2) Database maintenance reducer:
 Create a periodic cleanup reducer that detects and removes orphaned entities
 Run it automatically every few minutes
+
 Long-Term Architectural Changes:
-Redesign movement system:
+
+1) Redesign movement system:
 Split movement input from physics/stats processing
 Process player inputs and positions at a fixed rate
 Implement proper delta-time handling
-Implement client-side prediction:
+
+2) Implement client-side prediction:
 Move more collision detection to the client
 Let server validate and correct only when needed
+

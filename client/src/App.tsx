@@ -44,6 +44,10 @@ function App() {
   const [droppedItems, setDroppedItems] = useState<Map<string, SpacetimeDB.DroppedItem>>(new Map());
   // Add state for Wooden Storage Boxes
   const [woodenStorageBoxes, setWoodenStorageBoxes] = useState<Map<string, SpacetimeDBWoodenStorageBox>>(new Map());
+  // ADD: State for Recipes
+  const [recipes, setRecipes] = useState<Map<string, SpacetimeDB.Recipe>>(new Map());
+  // ADD: State for Crafting Queue Items
+  const [craftingQueueItems, setCraftingQueueItems] = useState<Map<string, SpacetimeDB.CraftingQueueItem>>(new Map());
   // State holds the generated connection type after successful connection
   const [connection, setConnection] = useState<SpacetimeDB.DbConnection | null>(null);
   const [username, setUsername] = useState<string>('');
@@ -545,8 +549,11 @@ function App() {
     let mushroomSubscription: any = null; // Subscription for Mushroom
     let droppedItemSubscription: any = null;
     let woodenStorageBoxSubscription: any = null; // <<< ADDED
+    // ADD: Subscription variables for crafting
+    let recipeSubscription: any = null;
+    let craftingQueueSubscription: any = null;
 
-    console.log('Setting up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox table subscriptions...');
+    console.log('Setting up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox, Recipe, CraftingQueueItem table subscriptions...');
 
     // --- Player Callbacks --- 
     const handlePlayerInsert = (ctx: any, player: SpacetimeDB.Player) => {
@@ -885,6 +892,47 @@ function App() {
       });
     };
 
+    // --- ADD: Recipe Callbacks ---
+    const handleRecipeInsert = (ctx: any, recipe: SpacetimeDB.Recipe) => {
+      console.log('[App handleRecipeInsert] Recipe Inserted:', recipe.recipeId);
+      setRecipes(prev => {
+          const newMap = new Map(prev).set(recipe.recipeId.toString(), recipe);
+          console.log('[App handleRecipeInsert] Updated recipes state:', newMap);
+          return newMap;
+      });
+    };
+    const handleRecipeUpdate = (ctx: any, oldRecipe: SpacetimeDB.Recipe, newRecipe: SpacetimeDB.Recipe) => {
+      console.log('[App handleRecipeUpdate] Recipe Updated:', newRecipe.recipeId);
+      setRecipes(prev => new Map(prev).set(newRecipe.recipeId.toString(), newRecipe));
+    };
+    const handleRecipeDelete = (ctx: any, recipe: SpacetimeDB.Recipe) => {
+      console.log('[App handleRecipeDelete] Recipe Deleted:', recipe.recipeId);
+      setRecipes(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(recipe.recipeId.toString());
+          return newMap;
+      });
+    };
+
+    // --- ADD: CraftingQueueItem Callbacks ---
+    const handleCraftingQueueInsert = (ctx: any, queueItem: SpacetimeDB.CraftingQueueItem) => {
+      console.log(`CraftingQueueItem Inserted: ${queueItem.queueItemId} for player ${queueItem.playerIdentity.toHexString()}`);
+      setCraftingQueueItems(prev => new Map(prev).set(queueItem.queueItemId.toString(), queueItem));
+    };
+    const handleCraftingQueueUpdate = (ctx: any, oldItem: SpacetimeDB.CraftingQueueItem, newItem: SpacetimeDB.CraftingQueueItem) => {
+      // Updates might happen if finish time changes due to cancellation, but unlikely
+      console.log(`CraftingQueueItem Updated: ${newItem.queueItemId}`);
+      setCraftingQueueItems(prev => new Map(prev).set(newItem.queueItemId.toString(), newItem));
+    };
+    const handleCraftingQueueDelete = (ctx: any, queueItem: SpacetimeDB.CraftingQueueItem) => {
+      console.log(`CraftingQueueItem Deleted: ${queueItem.queueItemId}`);
+      setCraftingQueueItems(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(queueItem.queueItemId.toString());
+          return newMap;
+      });
+    };
+
     // Register the callbacks for Player
     connection.db.player.onInsert(handlePlayerInsert);
     connection.db.player.onUpdate(handlePlayerUpdate);
@@ -940,8 +988,18 @@ function App() {
     connection.db.woodenStorageBox.onUpdate(handleWoodenStorageBoxUpdate);
     connection.db.woodenStorageBox.onDelete(handleWoodenStorageBoxDelete);
 
+    // ADD: Register Recipe callbacks
+    connection.db.recipe.onInsert(handleRecipeInsert);
+    connection.db.recipe.onUpdate(handleRecipeUpdate);
+    connection.db.recipe.onDelete(handleRecipeDelete);
+
+    // ADD: Register CraftingQueueItem callbacks
+    connection.db.craftingQueueItem.onInsert(handleCraftingQueueInsert);
+    connection.db.craftingQueueItem.onUpdate(handleCraftingQueueUpdate);
+    connection.db.craftingQueueItem.onDelete(handleCraftingQueueDelete);
+
     // --- Subscriptions --- 
-    console.log('Subscribing to Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox tables...');
+    console.log('Subscribing to Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox, Recipe, CraftingQueueItem tables...');
     playerSubscription = connection.subscriptionBuilder()
       .onApplied(() => console.log('Subscription to Player table APPLIED.'))
       .onError((ctx: SpacetimeDB.ErrorContext) => {
@@ -1037,9 +1095,27 @@ function App() {
       })
       .subscribe('SELECT * FROM wooden_storage_box');
 
+    // ADD: Subscribe to Recipe
+    recipeSubscription = connection.subscriptionBuilder()
+      .onApplied(() => console.log('Subscription to Recipe table APPLIED.'))
+      .onError((ctx: SpacetimeDB.ErrorContext) => {
+        console.error('Subscription to Recipe table FAILED. Context:', ctx);
+        setError(`Recipe subscription failed. Check console.`);
+      })
+      .subscribe('SELECT * FROM recipe');
+
+    // ADD: Subscribe to CraftingQueueItem
+    craftingQueueSubscription = connection.subscriptionBuilder()
+      .onApplied(() => console.log('Subscription to CraftingQueueItem table APPLIED.'))
+      .onError((ctx: SpacetimeDB.ErrorContext) => {
+        console.error('Subscription to CraftingQueueItem table FAILED. Context:', ctx);
+        setError(`CraftingQueueItem subscription failed. Check console.`);
+      })
+      .subscribe('SELECT * FROM crafting_queue_item');
+
     // Cleanup function for this effect
     return () => {
-      console.log('Cleaning up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox table subscriptions...');
+      console.log('Cleaning up Player, Tree, Stone, Campfire, ItemDefinition, InventoryItem, WorldState, DroppedItem, WoodenStorageBox, Recipe, CraftingQueueItem table subscriptions...');
       // Remove Player listeners
       connection.db.player.removeOnInsert(handlePlayerInsert);
       connection.db.player.removeOnUpdate(handlePlayerUpdate);
@@ -1091,6 +1167,16 @@ function App() {
       connection.db.woodenStorageBox.removeOnUpdate(handleWoodenStorageBoxUpdate);
       connection.db.woodenStorageBox.removeOnDelete(handleWoodenStorageBoxDelete);
       
+      // ADD: Remove Recipe listeners
+      connection.db.recipe.removeOnInsert(handleRecipeInsert);
+      connection.db.recipe.removeOnUpdate(handleRecipeUpdate);
+      connection.db.recipe.removeOnDelete(handleRecipeDelete);
+
+      // ADD: Remove CraftingQueueItem listeners
+      connection.db.craftingQueueItem.removeOnInsert(handleCraftingQueueInsert);
+      connection.db.craftingQueueItem.removeOnUpdate(handleCraftingQueueUpdate);
+      connection.db.craftingQueueItem.removeOnDelete(handleCraftingQueueDelete);
+      
       // Unsubscribe from queries
       if (playerSubscription) playerSubscription.unsubscribe();
       if (treeSubscription) treeSubscription.unsubscribe();
@@ -1103,6 +1189,8 @@ function App() {
       if (mushroomSubscription) mushroomSubscription.unsubscribe(); // Unsubscribe mushroom
       if (droppedItemSubscription) droppedItemSubscription.unsubscribe();
       if (woodenStorageBoxSubscription) woodenStorageBoxSubscription.unsubscribe(); // <<< ADDED
+      if (recipeSubscription) recipeSubscription.unsubscribe();
+      if (craftingQueueSubscription) craftingQueueSubscription.unsubscribe();
     };
     
   }, [connection]); // ONLY depends on connection
@@ -1240,6 +1328,8 @@ function App() {
                 ? woodenStorageBoxes.get(interactingWith.id.toString()) || null 
                 : null
             }
+            recipes={recipes}
+            craftingQueueItems={craftingQueueItems}
           />
           <Hotbar 
             playerIdentity={connection?.identity || null}

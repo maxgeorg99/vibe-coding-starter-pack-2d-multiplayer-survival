@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment, Campfire as SpacetimeDBCampfire, WoodenStorageBox as SpacetimeDBWoodenStorageBox } from '../generated';
+import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment, Campfire as SpacetimeDBCampfire, WoodenStorageBox as SpacetimeDBWoodenStorageBox, Recipe, CraftingQueueItem } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import InventoryUI, { PopulatedItem } from './InventoryUI';
 import Hotbar from './Hotbar';
@@ -63,6 +63,8 @@ interface PlayerUIProps {
   cancelPlacement: () => void;
   placementInfo: PlacementItemInfo | null;
   currentStorageBox?: SpacetimeDBWoodenStorageBox | null;
+  recipes: Map<string, Recipe>;
+  craftingQueueItems: Map<string, CraftingQueueItem>;
 }
 
 const PlayerUI: React.FC<PlayerUIProps> = ({
@@ -81,7 +83,9 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
     startPlacement,
     cancelPlacement,
     placementInfo,
-    currentStorageBox
+    currentStorageBox,
+    recipes,
+    craftingQueueItems
  }) => {
     const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
@@ -228,6 +232,8 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
                     cancelPlacement={cancelPlacement}
                     placementInfo={placementInfo}
                     currentStorageBox={currentStorageBox}
+                    recipes={recipes}
+                    craftingQueueItems={craftingQueueItems}
                  />
              )}
 

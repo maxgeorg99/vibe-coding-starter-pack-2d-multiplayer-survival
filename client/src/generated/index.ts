@@ -38,8 +38,12 @@ import { AutoAddWoodToCampfire } from "./auto_add_wood_to_campfire_reducer.ts";
 export { AutoAddWoodToCampfire };
 import { AutoRemoveFuelFromCampfire } from "./auto_remove_fuel_from_campfire_reducer.ts";
 export { AutoRemoveFuelFromCampfire };
+import { CancelCraftingItem } from "./cancel_crafting_item_reducer.ts";
+export { CancelCraftingItem };
 import { CheckCampfireFuelConsumption } from "./check_campfire_fuel_consumption_reducer.ts";
 export { CheckCampfireFuelConsumption };
+import { CheckFinishedCrafting } from "./check_finished_crafting_reducer.ts";
+export { CheckFinishedCrafting };
 import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
 export { CheckResourceRespawns };
 import { ConsumeItem } from "./consume_item_reducer.ts";
@@ -106,6 +110,8 @@ import { SeedEnvironment } from "./seed_environment_reducer.ts";
 export { SeedEnvironment };
 import { SeedItems } from "./seed_items_reducer.ts";
 export { SeedItems };
+import { SeedRecipes } from "./seed_recipes_reducer.ts";
+export { SeedRecipes };
 import { SeedWorldState } from "./seed_world_state_reducer.ts";
 export { SeedWorldState };
 import { SetSprinting } from "./set_sprinting_reducer.ts";
@@ -128,6 +134,8 @@ import { SplitStackWithinBox } from "./split_stack_within_box_reducer.ts";
 export { SplitStackWithinBox };
 import { SplitStackWithinCampfire } from "./split_stack_within_campfire_reducer.ts";
 export { SplitStackWithinCampfire };
+import { StartCrafting } from "./start_crafting_reducer.ts";
+export { StartCrafting };
 import { TickWorldState } from "./tick_world_state_reducer.ts";
 export { TickWorldState };
 import { ToggleCampfireBurning } from "./toggle_campfire_burning_reducer.ts";
@@ -146,6 +154,10 @@ import { CampfireTableHandle } from "./campfire_table.ts";
 export { CampfireTableHandle };
 import { CampfireFuelCheckScheduleTableHandle } from "./campfire_fuel_check_schedule_table.ts";
 export { CampfireFuelCheckScheduleTableHandle };
+import { CraftingFinishScheduleTableHandle } from "./crafting_finish_schedule_table.ts";
+export { CraftingFinishScheduleTableHandle };
+import { CraftingQueueItemTableHandle } from "./crafting_queue_item_table.ts";
+export { CraftingQueueItemTableHandle };
 import { DroppedItemTableHandle } from "./dropped_item_table.ts";
 export { DroppedItemTableHandle };
 import { DroppedItemDespawnScheduleTableHandle } from "./dropped_item_despawn_schedule_table.ts";
@@ -158,6 +170,8 @@ import { MushroomTableHandle } from "./mushroom_table.ts";
 export { MushroomTableHandle };
 import { PlayerTableHandle } from "./player_table.ts";
 export { PlayerTableHandle };
+import { RecipeTableHandle } from "./recipe_table.ts";
+export { RecipeTableHandle };
 import { StoneTableHandle } from "./stone_table.ts";
 export { StoneTableHandle };
 import { TreeTableHandle } from "./tree_table.ts";
@@ -174,6 +188,10 @@ import { Campfire } from "./campfire_type.ts";
 export { Campfire };
 import { CampfireFuelCheckSchedule } from "./campfire_fuel_check_schedule_type.ts";
 export { CampfireFuelCheckSchedule };
+import { CraftingFinishSchedule } from "./crafting_finish_schedule_type.ts";
+export { CraftingFinishSchedule };
+import { CraftingQueueItem } from "./crafting_queue_item_type.ts";
+export { CraftingQueueItem };
 import { DroppedItem } from "./dropped_item_type.ts";
 export { DroppedItem };
 import { DroppedItemDespawnSchedule } from "./dropped_item_despawn_schedule_type.ts";
@@ -190,6 +208,10 @@ import { Mushroom } from "./mushroom_type.ts";
 export { Mushroom };
 import { Player } from "./player_type.ts";
 export { Player };
+import { Recipe } from "./recipe_type.ts";
+export { Recipe };
+import { RecipeIngredient } from "./recipe_ingredient_type.ts";
+export { RecipeIngredient };
 import { Stone } from "./stone_type.ts";
 export { Stone };
 import { TimeOfDay } from "./time_of_day_type.ts";
@@ -220,6 +242,16 @@ const REMOTE_MODULE = {
       rowType: CampfireFuelCheckSchedule.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
+    crafting_finish_schedule: {
+      tableName: "crafting_finish_schedule",
+      rowType: CraftingFinishSchedule.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    crafting_queue_item: {
+      tableName: "crafting_queue_item",
+      rowType: CraftingQueueItem.getTypeScriptAlgebraicType(),
+      primaryKey: "queueItemId",
+    },
     dropped_item: {
       tableName: "dropped_item",
       rowType: DroppedItem.getTypeScriptAlgebraicType(),
@@ -249,6 +281,11 @@ const REMOTE_MODULE = {
       tableName: "player",
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
+    },
+    recipe: {
+      tableName: "recipe",
+      rowType: Recipe.getTypeScriptAlgebraicType(),
+      primaryKey: "recipeId",
     },
     stone: {
       tableName: "stone",
@@ -284,9 +321,17 @@ const REMOTE_MODULE = {
       reducerName: "auto_remove_fuel_from_campfire",
       argsType: AutoRemoveFuelFromCampfire.getTypeScriptAlgebraicType(),
     },
+    cancel_crafting_item: {
+      reducerName: "cancel_crafting_item",
+      argsType: CancelCraftingItem.getTypeScriptAlgebraicType(),
+    },
     check_campfire_fuel_consumption: {
       reducerName: "check_campfire_fuel_consumption",
       argsType: CheckCampfireFuelConsumption.getTypeScriptAlgebraicType(),
+    },
+    check_finished_crafting: {
+      reducerName: "check_finished_crafting",
+      argsType: CheckFinishedCrafting.getTypeScriptAlgebraicType(),
     },
     check_resource_respawns: {
       reducerName: "check_resource_respawns",
@@ -420,6 +465,10 @@ const REMOTE_MODULE = {
       reducerName: "seed_items",
       argsType: SeedItems.getTypeScriptAlgebraicType(),
     },
+    seed_recipes: {
+      reducerName: "seed_recipes",
+      argsType: SeedRecipes.getTypeScriptAlgebraicType(),
+    },
     seed_world_state: {
       reducerName: "seed_world_state",
       argsType: SeedWorldState.getTypeScriptAlgebraicType(),
@@ -463,6 +512,10 @@ const REMOTE_MODULE = {
     split_stack_within_campfire: {
       reducerName: "split_stack_within_campfire",
       argsType: SplitStackWithinCampfire.getTypeScriptAlgebraicType(),
+    },
+    start_crafting: {
+      reducerName: "start_crafting",
+      argsType: StartCrafting.getTypeScriptAlgebraicType(),
     },
     tick_world_state: {
       reducerName: "tick_world_state",
@@ -514,7 +567,9 @@ export type Reducer = never
 | { name: "AddFuelToCampfire", args: AddFuelToCampfire }
 | { name: "AutoAddWoodToCampfire", args: AutoAddWoodToCampfire }
 | { name: "AutoRemoveFuelFromCampfire", args: AutoRemoveFuelFromCampfire }
+| { name: "CancelCraftingItem", args: CancelCraftingItem }
 | { name: "CheckCampfireFuelConsumption", args: CheckCampfireFuelConsumption }
+| { name: "CheckFinishedCrafting", args: CheckFinishedCrafting }
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
 | { name: "ConsumeItem", args: ConsumeItem }
 | { name: "DespawnExpiredItems", args: DespawnExpiredItems }
@@ -548,6 +603,7 @@ export type Reducer = never
 | { name: "RequestRespawn", args: RequestRespawn }
 | { name: "SeedEnvironment", args: SeedEnvironment }
 | { name: "SeedItems", args: SeedItems }
+| { name: "SeedRecipes", args: SeedRecipes }
 | { name: "SeedWorldState", args: SeedWorldState }
 | { name: "SetSprinting", args: SetSprinting }
 | { name: "SplitAndMove", args: SplitAndMove }
@@ -559,6 +615,7 @@ export type Reducer = never
 | { name: "SplitStackIntoCampfire", args: SplitStackIntoCampfire }
 | { name: "SplitStackWithinBox", args: SplitStackWithinBox }
 | { name: "SplitStackWithinCampfire", args: SplitStackWithinCampfire }
+| { name: "StartCrafting", args: StartCrafting }
 | { name: "TickWorldState", args: TickWorldState }
 | { name: "ToggleCampfireBurning", args: ToggleCampfireBurning }
 | { name: "UnequipItem", args: UnequipItem }
@@ -617,6 +674,22 @@ export class RemoteReducers {
     this.connection.offReducer("auto_remove_fuel_from_campfire", callback);
   }
 
+  cancelCraftingItem(queueItemId: bigint) {
+    const __args = { queueItemId };
+    let __writer = new BinaryWriter(1024);
+    CancelCraftingItem.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("cancel_crafting_item", __argsBuffer, this.setCallReducerFlags.cancelCraftingItemFlags);
+  }
+
+  onCancelCraftingItem(callback: (ctx: ReducerEventContext, queueItemId: bigint) => void) {
+    this.connection.onReducer("cancel_crafting_item", callback);
+  }
+
+  removeOnCancelCraftingItem(callback: (ctx: ReducerEventContext, queueItemId: bigint) => void) {
+    this.connection.offReducer("cancel_crafting_item", callback);
+  }
+
   checkCampfireFuelConsumption(schedule: CampfireFuelCheckSchedule) {
     const __args = { schedule };
     let __writer = new BinaryWriter(1024);
@@ -631,6 +704,22 @@ export class RemoteReducers {
 
   removeOnCheckCampfireFuelConsumption(callback: (ctx: ReducerEventContext, schedule: CampfireFuelCheckSchedule) => void) {
     this.connection.offReducer("check_campfire_fuel_consumption", callback);
+  }
+
+  checkFinishedCrafting(schedule: CraftingFinishSchedule) {
+    const __args = { schedule };
+    let __writer = new BinaryWriter(1024);
+    CheckFinishedCrafting.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("check_finished_crafting", __argsBuffer, this.setCallReducerFlags.checkFinishedCraftingFlags);
+  }
+
+  onCheckFinishedCrafting(callback: (ctx: ReducerEventContext, schedule: CraftingFinishSchedule) => void) {
+    this.connection.onReducer("check_finished_crafting", callback);
+  }
+
+  removeOnCheckFinishedCrafting(callback: (ctx: ReducerEventContext, schedule: CraftingFinishSchedule) => void) {
+    this.connection.offReducer("check_finished_crafting", callback);
   }
 
   checkResourceRespawns() {
@@ -1125,6 +1214,18 @@ export class RemoteReducers {
     this.connection.offReducer("seed_items", callback);
   }
 
+  seedRecipes() {
+    this.connection.callReducer("seed_recipes", new Uint8Array(0), this.setCallReducerFlags.seedRecipesFlags);
+  }
+
+  onSeedRecipes(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("seed_recipes", callback);
+  }
+
+  removeOnSeedRecipes(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("seed_recipes", callback);
+  }
+
   seedWorldState() {
     this.connection.callReducer("seed_world_state", new Uint8Array(0), this.setCallReducerFlags.seedWorldStateFlags);
   }
@@ -1297,6 +1398,22 @@ export class RemoteReducers {
     this.connection.offReducer("split_stack_within_campfire", callback);
   }
 
+  startCrafting(recipeId: bigint) {
+    const __args = { recipeId };
+    let __writer = new BinaryWriter(1024);
+    StartCrafting.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("start_crafting", __argsBuffer, this.setCallReducerFlags.startCraftingFlags);
+  }
+
+  onStartCrafting(callback: (ctx: ReducerEventContext, recipeId: bigint) => void) {
+    this.connection.onReducer("start_crafting", callback);
+  }
+
+  removeOnStartCrafting(callback: (ctx: ReducerEventContext, recipeId: bigint) => void) {
+    this.connection.offReducer("start_crafting", callback);
+  }
+
   tickWorldState(timestamp: Timestamp) {
     const __args = { timestamp };
     let __writer = new BinaryWriter(1024);
@@ -1387,9 +1504,19 @@ export class SetReducerFlags {
     this.autoRemoveFuelFromCampfireFlags = flags;
   }
 
+  cancelCraftingItemFlags: CallReducerFlags = 'FullUpdate';
+  cancelCraftingItem(flags: CallReducerFlags) {
+    this.cancelCraftingItemFlags = flags;
+  }
+
   checkCampfireFuelConsumptionFlags: CallReducerFlags = 'FullUpdate';
   checkCampfireFuelConsumption(flags: CallReducerFlags) {
     this.checkCampfireFuelConsumptionFlags = flags;
+  }
+
+  checkFinishedCraftingFlags: CallReducerFlags = 'FullUpdate';
+  checkFinishedCrafting(flags: CallReducerFlags) {
+    this.checkFinishedCraftingFlags = flags;
   }
 
   checkResourceRespawnsFlags: CallReducerFlags = 'FullUpdate';
@@ -1547,6 +1674,11 @@ export class SetReducerFlags {
     this.seedItemsFlags = flags;
   }
 
+  seedRecipesFlags: CallReducerFlags = 'FullUpdate';
+  seedRecipes(flags: CallReducerFlags) {
+    this.seedRecipesFlags = flags;
+  }
+
   seedWorldStateFlags: CallReducerFlags = 'FullUpdate';
   seedWorldState(flags: CallReducerFlags) {
     this.seedWorldStateFlags = flags;
@@ -1602,6 +1734,11 @@ export class SetReducerFlags {
     this.splitStackWithinCampfireFlags = flags;
   }
 
+  startCraftingFlags: CallReducerFlags = 'FullUpdate';
+  startCrafting(flags: CallReducerFlags) {
+    this.startCraftingFlags = flags;
+  }
+
   tickWorldStateFlags: CallReducerFlags = 'FullUpdate';
   tickWorldState(flags: CallReducerFlags) {
     this.tickWorldStateFlags = flags;
@@ -1644,6 +1781,14 @@ export class RemoteTables {
     return new CampfireFuelCheckScheduleTableHandle(this.connection.clientCache.getOrCreateTable<CampfireFuelCheckSchedule>(REMOTE_MODULE.tables.campfire_fuel_check_schedule));
   }
 
+  get craftingFinishSchedule(): CraftingFinishScheduleTableHandle {
+    return new CraftingFinishScheduleTableHandle(this.connection.clientCache.getOrCreateTable<CraftingFinishSchedule>(REMOTE_MODULE.tables.crafting_finish_schedule));
+  }
+
+  get craftingQueueItem(): CraftingQueueItemTableHandle {
+    return new CraftingQueueItemTableHandle(this.connection.clientCache.getOrCreateTable<CraftingQueueItem>(REMOTE_MODULE.tables.crafting_queue_item));
+  }
+
   get droppedItem(): DroppedItemTableHandle {
     return new DroppedItemTableHandle(this.connection.clientCache.getOrCreateTable<DroppedItem>(REMOTE_MODULE.tables.dropped_item));
   }
@@ -1666,6 +1811,10 @@ export class RemoteTables {
 
   get player(): PlayerTableHandle {
     return new PlayerTableHandle(this.connection.clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
+  }
+
+  get recipe(): RecipeTableHandle {
+    return new RecipeTableHandle(this.connection.clientCache.getOrCreateTable<Recipe>(REMOTE_MODULE.tables.recipe));
   }
 
   get stone(): StoneTableHandle {

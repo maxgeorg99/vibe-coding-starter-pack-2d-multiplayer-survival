@@ -25,21 +25,24 @@ mod items_database; // <<< ADDED module declaration
 mod starting_items; // <<< ADDED module declaration
 mod inventory_management; // <<< ADDED new module
 mod spatial_grid; // ADD: Spatial grid module for optimized collision detection
+mod crafting; // ADD: Crafting recipe definitions
+mod crafting_queue; // ADD: Crafting queue logic
 
 // Import Table Traits needed in this module
-use crate::tree::tree as TreeTableTrait; 
+use crate::tree::tree as TreeTableTrait;
 use crate::stone::stone as StoneTableTrait;
-use crate::campfire::campfire as CampfireTableTrait; // Already present, but good to keep together
-use crate::world_state::world_state as WorldStateTableTrait; // Already present
-use crate::items::inventory_item as InventoryItemTableTrait; // Already present
-use crate::items::item_definition as ItemDefinitionTableTrait; // Already present
-use crate::player as PlayerTableTrait; // Needed for ctx.db.player()
+use crate::campfire::campfire as CampfireTableTrait;
+use crate::world_state::world_state as WorldStateTableTrait;
+use crate::items::inventory_item as InventoryItemTableTrait;
+use crate::items::item_definition as ItemDefinitionTableTrait;
 use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
-// Import the schedule table trait
 use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
-// NEW: Import the campfire fuel check schedule table trait
 use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTableTrait;
 use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
+// Use struct names directly for trait aliases
+use crate::crafting::Recipe as RecipeTableTrait;
+use crate::crafting_queue::CraftingQueueItem as CraftingQueueItemTableTrait;
+use crate::crafting_queue::CraftingFinishSchedule as CraftingFinishScheduleTableTrait;
 
 // Use specific items needed globally (or use qualified paths)
 // use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
@@ -113,8 +116,10 @@ pub fn init_module(ctx: &ReducerContext) -> Result<(), String> {
 
     // Initialize the dropped item despawn schedule
     crate::dropped_item::init_dropped_item_schedule(ctx)?;
-    // NEW: Initialize the campfire fuel check schedule
+    // Initialize the campfire fuel check schedule
     crate::campfire::init_campfire_fuel_schedule(ctx)?;
+    // Initialize the crafting finish check schedule
+    crate::crafting_queue::init_crafting_schedule(ctx)?;
 
     log::info!("Module initialization complete.");
     Ok(())
@@ -127,6 +132,7 @@ pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
     crate::environment::seed_environment(ctx)?; // Call the updated seeder
     crate::items::seed_items(ctx)?; // Call the item seeder
     crate::world_state::seed_world_state(ctx)?; // Call the world state seeder
+    crate::crafting::seed_recipes(ctx)?; // Seed the crafting recipes
     // No seeder needed for Campfire yet, table will be empty initially
     Ok(())
 }
@@ -166,6 +172,9 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
             log::info!("Deleted active equipment for player {:?}", sender_id);
         }
 
+        // 4. Clear player's crafting queue and refund resources
+        crate::crafting_queue::clear_player_crafting_queue(ctx, sender_id);
+
     } else {
         log::warn!("Disconnected identity {:?} did not have a registered player entity. No cleanup needed.", sender_id);
     }
@@ -190,7 +199,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     }
     
     // Check if this identity is already registered (shouldn't happen if disconnect works, but good safety check)
-    if players.identity().find(sender_id).is_some() {
+    if players.identity().find(&sender_id).is_some() {
         log::warn!("Identity {:?} already registered. Registration failed.", sender_id);
         return Err("Player identity already registered".to_string());
     }
@@ -1125,7 +1134,7 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
         return Err(format!("Respawn available in {} seconds.", remaining_secs));
     }
 
-    log::info!("Respawning player {} ({:?}). Clearing inventory...", player.username, sender_id);
+    log::info!("Respawning player {} ({:?}). Clearing inventory and crafting queue...", player.username, sender_id);
 
     // --- Clear Player Inventory ---
     let mut items_to_delete = Vec::new();
@@ -1138,6 +1147,10 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     }
     log::info!("Cleared {} items from inventory for player {:?}.", delete_count, sender_id);
     // --- End Clear Inventory ---
+
+    // --- ADD: Clear Crafting Queue & Refund ---
+    crate::crafting_queue::clear_player_crafting_queue(ctx, sender_id);
+    // --- END ADD ---
 
     // --- Grant Starting Rock ---
     log::info!("Granting starting Rock to respawned player: {}", player.username);
