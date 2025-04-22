@@ -24,6 +24,7 @@ mod wooden_storage_box; // Add the new module
 mod items_database; // <<< ADDED module declaration
 mod starting_items; // <<< ADDED module declaration
 mod inventory_management; // <<< ADDED new module
+mod spatial_grid; // ADD: Spatial grid module for optimized collision detection
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait; 
@@ -665,184 +666,217 @@ pub fn update_player_position(
     let mut final_y = clamped_y;
     let mut collision_handled = false;
 
-    // --- Sliding Collision Checks ---
-    // Check Player-Player Collision
-    for other_player in players.iter() {
-        if other_player.identity == sender_id {
-            continue;
-        }
-        let dx = clamped_x - other_player.position_x;
-        let dy = clamped_y - other_player.position_y;
-        let dist_sq = dx * dx + dy * dy;
+    // NEW: Use spatial grid for efficient collision detection
+    let mut grid = spatial_grid::SpatialGrid::new();
+    grid.populate_from_world(&ctx.db);
 
-        if dist_sq < PLAYER_DIAMETER_SQUARED {
-            log::debug!("Player-Player collision detected between {:?} and {:?}. Calculating slide.", sender_id, other_player.identity);
+    // Extract nearby entities for collision checks instead of checking all entities
+    let nearby_entities = grid.get_entities_in_range(clamped_x, clamped_y);
 
-            // Calculate slide vector
-            let intended_dx = clamped_x - current_player.position_x;
-            let intended_dy = clamped_y - current_player.position_y;
-            let collision_normal_x = dx;
-            let collision_normal_y = dy;
-            let normal_mag_sq = dist_sq;
-
-            if normal_mag_sq > 0.0 {
-                let normal_mag = normal_mag_sq.sqrt();
-                let norm_x = collision_normal_x / normal_mag;
-                let norm_y = collision_normal_y / normal_mag;
-
-                let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-
-                // Project intended movement onto the normal
-                let projection_x = dot_product * norm_x;
-                let projection_y = dot_product * norm_y;
-
-                // Subtract projection to get the slide vector (tangential movement)
-                let slide_dx = intended_dx - projection_x;
-                let slide_dy = intended_dy - projection_y;
-
-                // Apply slide to the *original* position
-                final_x = current_player.position_x + slide_dx;
-                final_y = current_player.position_y + slide_dy;
-
-                // Re-clamp to world boundaries after sliding
-                final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
-                final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
-            } else {
-                // Fallback: If somehow distance is zero, just revert
-                final_x = current_player.position_x;
-                final_y = current_player.position_y;
-            }
-            collision_handled = true;
-            break; // Handle first player collision
-        }
-    }
-
-    // Only check trees if no player collision was handled
-    if !collision_handled {
-        for tree in trees.iter() {
-            if tree.health == 0 { continue; }
-
-            let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
-            let dx = clamped_x - tree.pos_x;
-            let dy = clamped_y - tree_collision_y;
-            let dist_sq = dx * dx + dy * dy;
-
-            if dist_sq < crate::tree::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
-                log::debug!("Player-Tree collision detected between {:?} and tree {}. Calculating slide.", sender_id, tree.id);
-
-                let intended_dx = clamped_x - current_player.position_x;
-                let intended_dy = clamped_y - current_player.position_y;
-                let collision_normal_x = dx;
-                let collision_normal_y = dy;
-                let normal_mag_sq = dist_sq;
-
-                if normal_mag_sq > 0.0 {
-                    let normal_mag = normal_mag_sq.sqrt();
-                    let norm_x = collision_normal_x / normal_mag;
-                    let norm_y = collision_normal_y / normal_mag;
-                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-                    let projection_x = dot_product * norm_x;
-                    let projection_y = dot_product * norm_y;
-                    let slide_dx = intended_dx - projection_x;
-                    let slide_dy = intended_dy - projection_y;
-                    final_x = current_player.position_x + slide_dx;
-                    final_y = current_player.position_y + slide_dy;
-                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
-                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
-                } else {
-                    final_x = current_player.position_x;
-                    final_y = current_player.position_y;
+    // Check collisions with nearby entities
+    for entity in &nearby_entities {
+        match entity {
+            spatial_grid::EntityType::Player(other_identity) => {
+                // Skip self-collision
+                if *other_identity == sender_id {
+                    continue;
                 }
-                collision_handled = true;
-                break; // Handle first tree collision
-            }
-        }
-    }
+                
+                // Find the player in the database
+                if let Some(other_player) = players.identity().find(other_identity) {
+                    let dx = clamped_x - other_player.position_x;
+                    let dy = clamped_y - other_player.position_y;
+                    let dist_sq = dx * dx + dy * dy;
 
-    // Only check stones if no player or tree collision was handled
-    if !collision_handled {
-        for stone in stones.iter() {
-            if stone.health == 0 { continue; }
+                    if dist_sq < PLAYER_DIAMETER_SQUARED {
+                        log::debug!("Player-Player collision detected between {:?} and {:?}. Calculating slide.", sender_id, other_player.identity);
 
-            let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
-            let dx = clamped_x - stone.pos_x;
-            let dy = clamped_y - stone_collision_y;
-            let dist_sq = dx * dx + dy * dy;
+                        // Calculate slide vector (same as before)
+                        let intended_dx = clamped_x - current_player.position_x;
+                        let intended_dy = clamped_y - current_player.position_y;
+                        let collision_normal_x = dx;
+                        let collision_normal_y = dy;
+                        let normal_mag_sq = dist_sq;
 
-            if dist_sq < crate::stone::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
-                log::debug!("Player-Stone collision detected between {:?} and stone {}. Calculating slide.", sender_id, stone.id);
+                        if normal_mag_sq > 0.0 {
+                            let normal_mag = normal_mag_sq.sqrt();
+                            let norm_x = collision_normal_x / normal_mag;
+                            let norm_y = collision_normal_y / normal_mag;
 
-                let intended_dx = clamped_x - current_player.position_x;
-                let intended_dy = clamped_y - current_player.position_y;
-                let collision_normal_x = dx;
-                let collision_normal_y = dy;
-                let normal_mag_sq = dist_sq;
+                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
 
-                if normal_mag_sq > 0.0 {
-                    let normal_mag = normal_mag_sq.sqrt();
-                    let norm_x = collision_normal_x / normal_mag;
-                    let norm_y = collision_normal_y / normal_mag;
-                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-                    let projection_x = dot_product * norm_x;
-                    let projection_y = dot_product * norm_y;
-                    let slide_dx = intended_dx - projection_x;
-                    let slide_dy = intended_dy - projection_y;
-                    final_x = current_player.position_x + slide_dx;
-                    final_y = current_player.position_y + slide_dy;
-                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
-                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
-                } else {
-                    final_x = current_player.position_x;
-                    final_y = current_player.position_y;
+                            // Project intended movement onto the normal
+                            let projection_x = dot_product * norm_x;
+                            let projection_y = dot_product * norm_y;
+
+                            // Subtract projection to get the slide vector (tangential movement)
+                            let slide_dx = intended_dx - projection_x;
+                            let slide_dy = intended_dy - projection_y;
+
+                            // Apply slide to the *original* position
+                            final_x = current_player.position_x + slide_dx;
+                            final_y = current_player.position_y + slide_dy;
+
+                            // Re-clamp to world boundaries after sliding
+                            final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                            final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                        } else {
+                            // Fallback: If somehow distance is zero, just revert
+                            final_x = current_player.position_x;
+                            final_y = current_player.position_y;
+                        }
+                        collision_handled = true;
+                        break; // Handle first player collision
+                    }
                 }
-                collision_handled = true;
-                break; // Handle first stone collision
-            }
-        }
-    }
-
-    // <<< ADDED: Check Wooden Storage Boxes >>>
-    // Only check boxes if no player, tree, or stone collision was handled
-    if !collision_handled {
-        for box_instance in wooden_storage_boxes.iter() {
-            // Similar logic to trees/stones
-            let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
-            let dx = clamped_x - box_instance.pos_x;
-            let dy = clamped_y - box_collision_y;
-            let dist_sq = dx * dx + dy * dy;
-
-            if dist_sq < crate::wooden_storage_box::PLAYER_BOX_COLLISION_DISTANCE_SQUARED {
-                log::debug!("Player-Box collision detected between {:?} and box {}. Calculating slide.", sender_id, box_instance.id);
-
-                let intended_dx = clamped_x - current_player.position_x;
-                let intended_dy = clamped_y - current_player.position_y;
-                let collision_normal_x = dx;
-                let collision_normal_y = dy;
-                let normal_mag_sq = dist_sq;
-
-                if normal_mag_sq > 0.0 {
-                    let normal_mag = normal_mag_sq.sqrt();
-                    let norm_x = collision_normal_x / normal_mag;
-                    let norm_y = collision_normal_y / normal_mag;
-                    let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-                    let projection_x = dot_product * norm_x;
-                    let projection_y = dot_product * norm_y;
-                    let slide_dx = intended_dx - projection_x;
-                    let slide_dy = intended_dy - projection_y;
-                    final_x = current_player.position_x + slide_dx;
-                    final_y = current_player.position_y + slide_dy;
-                    final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
-                    final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
-                } else {
-                    final_x = current_player.position_x;
-                    final_y = current_player.position_y;
+            },
+            
+            spatial_grid::EntityType::Tree(tree_id) => {
+                if collision_handled {
+                    continue;
                 }
-                // No need to set collision_handled=true here as it's the last check in this sequence
-                break; // Handle first box collision
-            }
+                
+                // Find the tree in the database
+                if let Some(tree) = trees.id().find(tree_id) {
+                    if tree.health == 0 { continue; }
+
+                    let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
+                    let dx = clamped_x - tree.pos_x;
+                    let dy = clamped_y - tree_collision_y;
+                    let dist_sq = dx * dx + dy * dy;
+
+                    if dist_sq < crate::tree::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
+                        log::debug!("Player-Tree collision detected between {:?} and tree {}. Calculating slide.", sender_id, tree.id);
+
+                        // Rest of tree collision handling (same as before)
+                        let intended_dx = clamped_x - current_player.position_x;
+                        let intended_dy = clamped_y - current_player.position_y;
+                        let collision_normal_x = dx;
+                        let collision_normal_y = dy;
+                        let normal_mag_sq = dist_sq;
+
+                        if normal_mag_sq > 0.0 {
+                            let normal_mag = normal_mag_sq.sqrt();
+                            let norm_x = collision_normal_x / normal_mag;
+                            let norm_y = collision_normal_y / normal_mag;
+                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                            let projection_x = dot_product * norm_x;
+                            let projection_y = dot_product * norm_y;
+                            let slide_dx = intended_dx - projection_x;
+                            let slide_dy = intended_dy - projection_y;
+                            final_x = current_player.position_x + slide_dx;
+                            final_y = current_player.position_y + slide_dy;
+                            final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                            final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                        } else {
+                            final_x = current_player.position_x;
+                            final_y = current_player.position_y;
+                        }
+                        collision_handled = true;
+                    }
+                }
+            },
+            
+            spatial_grid::EntityType::Stone(stone_id) => {
+                if collision_handled {
+                    continue;
+                }
+                
+                // Find the stone in the database
+                if let Some(stone) = stones.id().find(stone_id) {
+                    if stone.health == 0 { continue; }
+
+                    let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
+                    let dx = clamped_x - stone.pos_x;
+                    let dy = clamped_y - stone_collision_y;
+                    let dist_sq = dx * dx + dy * dy;
+
+                    if dist_sq < crate::stone::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
+                        log::debug!("Player-Stone collision detected between {:?} and stone {}. Calculating slide.", sender_id, stone.id);
+
+                        // Rest of stone collision handling (same as before)
+                        let intended_dx = clamped_x - current_player.position_x;
+                        let intended_dy = clamped_y - current_player.position_y;
+                        let collision_normal_x = dx;
+                        let collision_normal_y = dy;
+                        let normal_mag_sq = dist_sq;
+
+                        if normal_mag_sq > 0.0 {
+                            let normal_mag = normal_mag_sq.sqrt();
+                            let norm_x = collision_normal_x / normal_mag;
+                            let norm_y = collision_normal_y / normal_mag;
+                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                            let projection_x = dot_product * norm_x;
+                            let projection_y = dot_product * norm_y;
+                            let slide_dx = intended_dx - projection_x;
+                            let slide_dy = intended_dy - projection_y;
+                            final_x = current_player.position_x + slide_dx;
+                            final_y = current_player.position_y + slide_dy;
+                            final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                            final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                        } else {
+                            final_x = current_player.position_x;
+                            final_y = current_player.position_y;
+                        }
+                        collision_handled = true;
+                    }
+                }
+            },
+            
+            spatial_grid::EntityType::WoodenStorageBox(box_id) => {
+                if collision_handled {
+                    continue;
+                }
+                
+                // Find the box in the database
+                if let Some(box_instance) = wooden_storage_boxes.id().find(box_id) {
+                    let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
+                    let dx = clamped_x - box_instance.pos_x;
+                    let dy = clamped_y - box_collision_y;
+                    let dist_sq = dx * dx + dy * dy;
+
+                    if dist_sq < crate::wooden_storage_box::PLAYER_BOX_COLLISION_DISTANCE_SQUARED {
+                        log::debug!("Player-Box collision detected between {:?} and box {}. Calculating slide.", sender_id, box_instance.id);
+
+                        // Rest of box collision handling (same as before)
+                        let intended_dx = clamped_x - current_player.position_x;
+                        let intended_dy = clamped_y - current_player.position_y;
+                        let collision_normal_x = dx;
+                        let collision_normal_y = dy;
+                        let normal_mag_sq = dist_sq;
+
+                        if normal_mag_sq > 0.0 {
+                            let normal_mag = normal_mag_sq.sqrt();
+                            let norm_x = collision_normal_x / normal_mag;
+                            let norm_y = collision_normal_y / normal_mag;
+                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                            let projection_x = dot_product * norm_x;
+                            let projection_y = dot_product * norm_y;
+                            let slide_dx = intended_dx - projection_x;
+                            let slide_dy = intended_dy - projection_y;
+                            final_x = current_player.position_x + slide_dx;
+                            final_y = current_player.position_y + slide_dy;
+                            final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                            final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                        } else {
+                            final_x = current_player.position_x;
+                            final_y = current_player.position_y;
+                        }
+                        collision_handled = true;
+                    }
+                }
+            },
+            
+            spatial_grid::EntityType::Campfire(campfire_id) => {
+                // Remove campfire collision - players should walk over them
+                // Keeping this case but making it a no-op
+                // This comment explains why we're not checking collisions for campfires
+            },
+            
+            // For now, we don't need to handle collision with mushrooms or dropped items
+            _ => {}
         }
     }
-    // <<< END ADDED BOX CHECK >>>
 
     // --- Iterative Collision Resolution (Push-out) ---
     let mut resolved_x = final_x;
@@ -852,100 +886,119 @@ pub fn update_player_position(
 
     for _iter in 0..resolution_iterations {
         let mut overlap_found_in_iter = false;
+        
+        // Get entities near the resolved position
+        let nearby_entities = grid.get_entities_in_range(resolved_x, resolved_y);
+        
+        // Check overlaps with nearby entities
+        for entity in &nearby_entities {
+            match entity {
+                spatial_grid::EntityType::Player(other_identity) => {
+                    if *other_identity == sender_id { continue; }
+                    
+                    if let Some(other_player) = players.identity().find(other_identity) {
+                        let dx = resolved_x - other_player.position_x;
+                        let dy = resolved_y - other_player.position_y;
+                        let dist_sq = dx * dx + dy * dy;
+                        let min_dist = PLAYER_RADIUS * 2.0;
+                        let min_dist_sq = min_dist * min_dist;
 
-        // Check Player-Player Overlap
-        for other_player in players.iter() {
-            if other_player.identity == sender_id { continue; }
-            let dx = resolved_x - other_player.position_x;
-            let dy = resolved_y - other_player.position_y;
-            let dist_sq = dx * dx + dy * dy;
-            let min_dist = PLAYER_RADIUS * 2.0;
-            let min_dist_sq = min_dist * min_dist;
+                        if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                            overlap_found_in_iter = true;
+                            let distance = dist_sq.sqrt();
+                            let overlap = min_dist - distance;
+                            // Push each player half the overlap distance + epsilon
+                            let push_amount = (overlap / 2.0) + epsilon;
+                            let push_x = (dx / distance) * push_amount;
+                            let push_y = (dy / distance) * push_amount;
+                            resolved_x += push_x;
+                            resolved_y += push_y;
+                            log::trace!("Resolving player-player overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+                        }
+                    }
+                },
+                
+                spatial_grid::EntityType::Tree(tree_id) => {
+                    if let Some(tree) = trees.id().find(tree_id) {
+                        if tree.health == 0 { continue; }
 
-            if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                overlap_found_in_iter = true;
-                let distance = dist_sq.sqrt();
-                let overlap = min_dist - distance;
-                // Push each player half the overlap distance + epsilon
-                let push_amount = (overlap / 2.0) + epsilon;
-                let push_x = (dx / distance) * push_amount;
-                let push_y = (dy / distance) * push_amount;
-                resolved_x += push_x;
-                resolved_y += push_y;
-                // Note: Ideally, push other_player by -push_x, -push_y, but requires mutable access or separate update mechanism.
-                // For now, only pushing the current player.
-                log::trace!("Resolving player-player overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+                        let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
+                        let dx = resolved_x - tree.pos_x;
+                        let dy = resolved_y - tree_collision_y;
+                        let dist_sq = dx * dx + dy * dy;
+                        let min_dist = PLAYER_RADIUS + crate::tree::TREE_TRUNK_RADIUS;
+                        let min_dist_sq = min_dist * min_dist;
+
+                        if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                            overlap_found_in_iter = true;
+                            let distance = dist_sq.sqrt();
+                            let overlap = (min_dist - distance) + epsilon;
+                            let push_x = (dx / distance) * overlap;
+                            let push_y = (dy / distance) * overlap;
+                            resolved_x += push_x;
+                            resolved_y += push_y;
+                            log::trace!("Resolving player-tree overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+                        }
+                    }
+                },
+                
+                spatial_grid::EntityType::Stone(stone_id) => {
+                    if let Some(stone) = stones.id().find(stone_id) {
+                        if stone.health == 0 { continue; }
+
+                        let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
+                        let dx = resolved_x - stone.pos_x;
+                        let dy = resolved_y - stone_collision_y;
+                        let dist_sq = dx * dx + dy * dy;
+                        let min_dist = PLAYER_RADIUS + crate::stone::STONE_RADIUS;
+                        let min_dist_sq = min_dist * min_dist;
+
+                        if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                            overlap_found_in_iter = true;
+                            let distance = dist_sq.sqrt();
+                            let overlap = (min_dist - distance) + epsilon;
+                            let push_x = (dx / distance) * overlap;
+                            let push_y = (dy / distance) * overlap;
+                            resolved_x += push_x;
+                            resolved_y += push_y;
+                            log::trace!("Resolving player-stone overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+                        }
+                    }
+                },
+                
+                spatial_grid::EntityType::WoodenStorageBox(box_id) => {
+                    if let Some(box_instance) = wooden_storage_boxes.id().find(box_id) {
+                        let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
+                        let dx = resolved_x - box_instance.pos_x;
+                        let dy = resolved_y - box_collision_y;
+                        let dist_sq = dx * dx + dy * dy;
+                        let min_dist = PLAYER_RADIUS + crate::wooden_storage_box::BOX_COLLISION_RADIUS;
+                        let min_dist_sq = min_dist * min_dist;
+
+                        if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                            overlap_found_in_iter = true;
+                            let distance = dist_sq.sqrt();
+                            let overlap = (min_dist - distance) + epsilon;
+                            let push_x = (dx / distance) * overlap;
+                            let push_y = (dy / distance) * overlap;
+                            resolved_x += push_x;
+                            resolved_y += push_y;
+                            log::trace!("Resolving player-box overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+                        }
+                    }
+                },
+                
+                spatial_grid::EntityType::Campfire(campfire_id) => {
+                    // Remove campfire collision - players should walk over them
+                    // Keeping this case but making it a no-op
+                    // This comment explains why we're not checking collisions for campfires
+                },
+                
+                // Skip other entity types for overlap resolution
+                _ => {}
             }
         }
-
-        // Check Player-Tree Overlap
-        for tree in trees.iter() {
-            if tree.health == 0 { continue; }
-
-            let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
-            let dx = resolved_x - tree.pos_x;
-            let dy = resolved_y - tree_collision_y;
-            let dist_sq = dx * dx + dy * dy;
-            let min_dist = PLAYER_RADIUS + crate::tree::TREE_TRUNK_RADIUS;
-            let min_dist_sq = min_dist * min_dist;
-
-            if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                 overlap_found_in_iter = true;
-                 let distance = dist_sq.sqrt();
-                 let overlap = (min_dist - distance) + epsilon;
-                 let push_x = (dx / distance) * overlap;
-                 let push_y = (dy / distance) * overlap;
-                 resolved_x += push_x;
-                 resolved_y += push_y;
-                 log::trace!("Resolving player-tree overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
-            }
-        }
-
-        // Check Player-Stone Overlap
-        for stone in stones.iter() {
-            if stone.health == 0 { continue; }
-
-            let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
-            let dx = resolved_x - stone.pos_x;
-            let dy = resolved_y - stone_collision_y;
-            let dist_sq = dx * dx + dy * dy;
-            let min_dist = PLAYER_RADIUS + crate::stone::STONE_RADIUS;
-            let min_dist_sq = min_dist * min_dist;
-
-            if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                overlap_found_in_iter = true;
-                let distance = dist_sq.sqrt();
-                let overlap = (min_dist - distance) + epsilon;
-                let push_x = (dx / distance) * overlap;
-                let push_y = (dy / distance) * overlap;
-                resolved_x += push_x;
-                resolved_y += push_y;
-                log::trace!("Resolving player-stone overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
-            }
-        }
-
-        // <<< ADDED: Check Player-Box Overlap >>>
-        for box_instance in wooden_storage_boxes.iter() {
-            let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
-            let dx = resolved_x - box_instance.pos_x;
-            let dy = resolved_y - box_collision_y;
-            let dist_sq = dx * dx + dy * dy;
-            let min_dist = PLAYER_RADIUS + crate::wooden_storage_box::BOX_COLLISION_RADIUS;
-            let min_dist_sq = min_dist * min_dist;
-
-            if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                overlap_found_in_iter = true;
-                let distance = dist_sq.sqrt();
-                let overlap = (min_dist - distance) + epsilon;
-                let push_x = (dx / distance) * overlap;
-                let push_y = (dy / distance) * overlap;
-                resolved_x += push_x;
-                resolved_y += push_y;
-                log::trace!("Resolving player-box overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
-            }
-        }
-        // <<< END ADDED BOX CHECK >>>
-
+        
         // Re-clamp final resolved position to world boundaries after each iteration
         resolved_x = resolved_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
         resolved_y = resolved_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
@@ -955,7 +1008,7 @@ pub fn update_player_position(
             break; // Exit iterations if no overlaps were found in this pass
         }
         if _iter == resolution_iterations - 1 {
-             log::warn!("Overlap resolution reached max iterations ({}) for player {:?}. Position might still overlap slightly.", resolution_iterations, sender_id);
+            log::warn!("Overlap resolution reached max iterations ({}) for player {:?}. Position might still overlap slightly.", resolution_iterations, sender_id);
         }
     }
 
