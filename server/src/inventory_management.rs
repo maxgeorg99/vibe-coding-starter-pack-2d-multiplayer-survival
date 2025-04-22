@@ -505,8 +505,8 @@ pub(crate) fn handle_quick_move_from_container<C: ItemContainer>(
     container: &mut C, 
     source_slot_index: u8
 ) -> Result<(), String> {
-    // Get inventory table handle
     let inventory_table = ctx.db.inventory_item();
+    let item_defs = ctx.db.item_definition(); // Needed for stacking check
     let sender_id = ctx.sender;
 
     // Get item info using trait methods
@@ -515,17 +515,110 @@ pub(crate) fn handle_quick_move_from_container<C: ItemContainer>(
     let source_def_id = container.get_slot_def_id(source_slot_index)
         .ok_or_else(|| format!("Missing definition ID in source slot {}", source_slot_index))?;
     
+    // Fetch the item to move
     let mut item_to_move = inventory_table.instance_id().find(source_instance_id)
         .ok_or("Item instance in container slot not found in inventory table")?;
+    let item_def = item_defs.id().find(source_def_id)
+        .ok_or("Item definition not found")?;
 
-    // Clear Slot in container struct using trait method
-    container.set_slot(source_slot_index, None, None);
-    
     log::info!("[InvManager QuickFromContainer] Moving item {} (Def {}) from container slot {} to player {:?} inventory", 
              source_instance_id, source_def_id, source_slot_index, sender_id);
+
+    // --- Logic to add/merge item into player inventory --- 
+    let mut remaining_quantity = item_to_move.quantity;
+    let mut item_deleted_from_container = false;
+
+    // 1. Try merging onto existing stacks (Hotbar first, then Inventory)
+    if item_def.is_stackable {
+        let mut items_to_update: Vec<InventoryItem> = Vec::new();
+        // Hotbar merge attempt
+        for mut target_item in inventory_table.iter().filter(|i| i.player_identity == sender_id && i.item_def_id == source_def_id && i.hotbar_slot.is_some()) {
+            let space_available = item_def.stack_size.saturating_sub(target_item.quantity);
+            if space_available > 0 {
+                let transfer_qty = std::cmp::min(remaining_quantity, space_available);
+                target_item.quantity += transfer_qty;
+                remaining_quantity -= transfer_qty;
+                items_to_update.push(target_item); // Stage update
+                if remaining_quantity == 0 { break; }
+            }
+        }
+        // Inventory merge attempt
+        if remaining_quantity > 0 {
+            for mut target_item in inventory_table.iter().filter(|i| i.player_identity == sender_id && i.item_def_id == source_def_id && i.inventory_slot.is_some()) {
+                 let space_available = item_def.stack_size.saturating_sub(target_item.quantity);
+                 if space_available > 0 {
+                    let transfer_qty = std::cmp::min(remaining_quantity, space_available);
+                    target_item.quantity += transfer_qty;
+                    remaining_quantity -= transfer_qty;
+                    items_to_update.push(target_item); // Stage update
+                    if remaining_quantity == 0 { break; }
+                }
+            }
+        }
+        // Apply merged updates
+        for updated_item in items_to_update {
+             inventory_table.instance_id().update(updated_item);
+        }
+    }
+
+    // 2. If quantity remains, find empty slot (Hotbar first, then Inventory)
+    if remaining_quantity > 0 {
+        let target_slot: Option<(String, u32)> = find_first_empty_player_slot(ctx, sender_id);
+
+        if let Some((slot_type, slot_index)) = target_slot {
+            // Assign the *original item* to the empty slot
+            item_to_move.player_identity = sender_id; // Ensure ownership
+            item_to_move.quantity = remaining_quantity; // Update quantity if partially merged
+            if slot_type == "hotbar" {
+                item_to_move.hotbar_slot = Some(slot_index as u8);
+                item_to_move.inventory_slot = None;
+            } else {
+                item_to_move.hotbar_slot = None;
+                item_to_move.inventory_slot = Some(slot_index as u16);
+            }
+            inventory_table.instance_id().update(item_to_move);
+            log::info!("[InvManager QuickFromContainer] Placed item {} (Qty {}) into {} slot {}", source_instance_id, remaining_quantity, slot_type, slot_index);
+            item_deleted_from_container = true; // The item instance is now fully owned by the player
+        } else {
+             log::warn!("[InvManager QuickFromContainer] Inventory full for player {:?}. Could not place remaining {} of item {}. Item remains in container.", 
+                      sender_id, remaining_quantity, source_instance_id);
+            return Err("Inventory is full".to_string());
+        }
+    } else {
+        // Item fully merged, delete the original instance
+        log::info!("[InvManager QuickFromContainer] Item {} fully merged. Deleting instance.", source_instance_id);
+        inventory_table.instance_id().delete(source_instance_id);
+        item_deleted_from_container = true;
+    }
+
+    // --- If item was successfully moved/merged/deleted, clear container slot --- 
+    if item_deleted_from_container {
+        container.set_slot(source_slot_index, None, None);
+    }
     
-    // Call helper from items.rs to add to player inventory (handles stacking/finding slots)
-    add_item_to_player_inventory(ctx, sender_id, source_def_id, item_to_move.quantity)
+    Ok(()) 
+}
+
+// Helper to find the first available slot (hotbar preferred)
+pub(crate) fn find_first_empty_player_slot(ctx: &ReducerContext, player_id: Identity) -> Option<(String, u32)> {
+    let inventory = ctx.db.inventory_item();
+    // Check Hotbar (0-5)
+    let occupied_hotbar: std::collections::HashSet<u8> = inventory.iter()
+        .filter(|i| i.player_identity == player_id && i.hotbar_slot.is_some())
+        .map(|i| i.hotbar_slot.unwrap())
+        .collect();
+    if let Some(empty_slot) = (0..6).find(|slot| !occupied_hotbar.contains(slot)) {
+        return Some(("hotbar".to_string(), empty_slot as u32));
+    }
+    // Check Inventory (0-23)
+    let occupied_inventory: std::collections::HashSet<u16> = inventory.iter()
+        .filter(|i| i.player_identity == player_id && i.inventory_slot.is_some())
+        .map(|i| i.inventory_slot.unwrap())
+        .collect();
+    if let Some(empty_slot) = (0..24).find(|slot| !occupied_inventory.contains(slot)) {
+        return Some(("inventory".to_string(), empty_slot as u32));
+    }
+    None // No empty slots found
 }
 
 /// Handles quickly moving an item FROM the player inventory/hotbar INTO the first

@@ -22,7 +22,7 @@ Adding a deployable involves server-side logic (defining the item, the placed en
         *   Use snake_case for the `name`.
         *   Include `public` if clients need to see it directly.
     *   Add `#[derive(Clone)]`.
-    *   Define fields: `#[primary_key] #[auto_inc] pub id: u32`, `pub pos_x: f32`, `pub pos_y: f32`, `pub placed_by: Identity`, and any other state.
+    *   Define fields: `#[primary_key] #[auto_inc] pub id: u32`, `pub pos_x: f32`, `pub pos_y: f32`, and any other state.
     *   **Collision (Optional):** If the item should have collision:
         *   Define `pub(crate)` constants within the module (e.g., `DEPLOYABLE_COLLISION_RADIUS`, `DEPLOYABLE_COLLISION_Y_OFFSET`, `PLAYER_DEPLOYABLE_COLLISION_DISTANCE_SQUARED`). See `wooden_storage_box.rs` for examples.
 

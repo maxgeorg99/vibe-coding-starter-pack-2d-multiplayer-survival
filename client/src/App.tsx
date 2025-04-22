@@ -722,20 +722,22 @@ function App() {
     // --- InventoryItem Callbacks ---
     const handleInventoryInsert = (ctx: any, invItem: SpacetimeDB.InventoryItem) => {
       const instanceIdStr = invItem.instanceId.toString();
-      console.log(`[handleInventoryInsert] Received insert for item instance: ${instanceIdStr}, Player: ${invItem.playerIdentity.toHexString()}, InvSlot: ${invItem.inventorySlot}, HotbarSlot: ${invItem.hotbarSlot}`); 
+      // ADD Log for quick-move debugging
+      console.log(`[App InvInsert DEBUG] Received insert for item ${instanceIdStr}. Player: ${invItem.playerIdentity.toHexString()}, InvSlot: ${invItem.inventorySlot}, HotbarSlot: ${invItem.hotbarSlot}, DefID: ${invItem.itemDefId}`);
 
-      // Always update the state map, regardless of owner
       setInventoryItems(prev => {
           const newMap = new Map(prev);
           newMap.set(instanceIdStr, invItem);
-          // Log map update - check if it belongs to local player for info
-          const isLocalPlayerItem = connection?.identity && invItem.playerIdentity.isEqual(connection.identity);
-          // console.log(`[handleInventoryInsert] Updated inventoryItems map. Item belongs to local player? ${isLocalPlayerItem}. New size: ${newMap.size}. Contains key ${instanceIdStr}? ${newMap.has(instanceIdStr)}`); 
           return newMap;
       });
     };
     const handleInventoryUpdate = (ctx: any, oldItem: SpacetimeDB.InventoryItem, newItem: SpacetimeDB.InventoryItem) => {
       const instanceIdStr = newItem.instanceId.toString(); 
+      
+      // ADD Log for quick-move debugging
+      console.log(`[App InvUpdate DEBUG] Received update for item ${instanceIdStr}.`);
+      console.log(`  OLD -> Player: ${oldItem.playerIdentity.toHexString()}, InvSlot: ${oldItem.inventorySlot}, HotbarSlot: ${oldItem.hotbarSlot}, Qty: ${oldItem.quantity}`);
+      console.log(`  NEW -> Player: ${newItem.playerIdentity.toHexString()}, InvSlot: ${newItem.inventorySlot}, HotbarSlot: ${newItem.hotbarSlot}, Qty: ${newItem.quantity}`);
       
       // *** SPECIFIC LOGGING FOR CAMPFIRE DEBUG ***
       const oldInvSlot = oldItem.inventorySlot;
@@ -749,33 +751,28 @@ function App() {
       }
       // *** END SPECIFIC LOGGING ***
 
-      // Original verbose log (can be removed later)
-      console.log(`[handleInventoryUpdate] Received update for item instance: ${instanceIdStr}, Player: ${newItem.playerIdentity.toHexString()}, InvSlot: ${newItem.inventorySlot}, HotbarSlot: ${newItem.hotbarSlot}`);
-
-      // Always update the state map, regardless of owner
+      // Always update the state map
       setInventoryItems(prev => {
           const newMap = new Map(prev);
           newMap.set(instanceIdStr, newItem);
-          // Log map update - check if it belongs to local player for info
-          const isLocalPlayerItem = connection?.identity && newItem.playerIdentity.isEqual(connection.identity);
-          console.log(`[handleInventoryUpdate] Updated inventoryItems map. Item belongs to local player? ${isLocalPlayerItem}. New size: ${newMap.size}. Contains key ${instanceIdStr}? ${newMap.has(instanceIdStr)}`); 
+          // Log map update
+          // const isLocalPlayerItem = connection?.identity && newItem.playerIdentity.isEqual(connection.identity);
+          // console.log(`[handleInventoryUpdate] Updated inventoryItems map. Item belongs to local player? ${isLocalPlayerItem}. New size: ${newMap.size}. Contains key ${instanceIdStr}? ${newMap.has(instanceIdStr)}`); 
           return newMap;
       });
     };
     const handleInventoryDelete = (ctx: any, invItem: SpacetimeDB.InventoryItem) => {
       const instanceIdStr = invItem.instanceId.toString(); 
-       // Log ALL deletes
-      console.log(`[handleInventoryDelete] Received delete for item instance: ${instanceIdStr}, Player: ${invItem.playerIdentity.toHexString()}`);
+      // ADD Log for quick-move debugging
+      console.log(`[App InvDelete DEBUG] Received delete for item instance: ${instanceIdStr}, Player: ${invItem.playerIdentity.toHexString()}`);
 
-      if (connection?.identity && invItem.playerIdentity.isEqual(connection.identity)) {
-          setInventoryItems(prev => {
-              const newMap = new Map(prev);
-              const deleted = newMap.delete(instanceIdStr);
-               // Log map update
-              console.log(`[handleInventoryDelete] Updated inventoryItems map for local player. Deleted key ${instanceIdStr}? ${deleted}. New size: ${newMap.size}.`);
-              return newMap;
-          });
-       } 
+      // Removed the ownership check here to ensure items are removed regardless of perceived owner during potential state inconsistencies
+      setInventoryItems(prev => {
+          const newMap = new Map(prev);
+          const deleted = newMap.delete(instanceIdStr);
+          console.log(`[App InvDelete DEBUG] Updated inventoryItems map. Deleted key ${instanceIdStr}? ${deleted}. New size: ${newMap.size}.`);
+          return newMap;
+      });
     };
 
     // --- WorldState Callbacks --- 

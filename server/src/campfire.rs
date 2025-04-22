@@ -129,90 +129,93 @@ pub fn add_fuel_to_campfire(ctx: &ReducerContext, campfire_id: u32, target_slot_
         log::debug!("[AddFuel] Item {} potentially coming from equipment slot.", item_instance_id);
     }
 
-    // 5. Check the target campfire fuel slot
-    let target_instance_id_opt = match target_slot_index {
+    // 6. Check if target slot is occupied and handle merge/swap
+    let target_instance_id = match target_slot_index {
         0 => campfire.fuel_instance_id_0,
         1 => campfire.fuel_instance_id_1,
         2 => campfire.fuel_instance_id_2,
         3 => campfire.fuel_instance_id_3,
         4 => campfire.fuel_instance_id_4,
-        _ => None,
+        _ => None, // Should be caught by earlier validation
     };
 
-    if let Some(target_instance_id) = target_instance_id_opt {
-        // --- Target Slot is Occupied: Try to Merge --- 
-        let mut target_item = inventory_items.instance_id().find(target_instance_id)
-                                .ok_or_else(|| format!("Target item instance {} in slot {} not found!", target_instance_id, target_slot_index))?;
-
-        // Call the merge helper
-        match crate::items::calculate_merge_result(&item_to_add, &target_item, &definition_to_add) {
+    if let Some(existing_fuel_instance_id) = target_instance_id {
+        // --- Target Slot Occupied: Attempt Merge --- 
+        log::debug!("[AddFuel] Target slot {} occupied by item {}. Attempting merge with {}.", 
+                 target_slot_index, existing_fuel_instance_id, item_instance_id);
+        let mut existing_fuel_item = inventory_items.instance_id().find(existing_fuel_instance_id)
+            .ok_or(format!("Existing fuel item {} not found in slot {}", existing_fuel_instance_id, target_slot_index))?;
+        
+        match crate::items::calculate_merge_result(&item_to_add, &existing_fuel_item, &definition_to_add) {
             Ok((qty_transfer, source_new_qty, target_new_qty, delete_source)) => {
-                log::info!("[AddFuel Merge] Merging {} from item {} onto item {}. New Qty: {}, Target Qty: {}", 
-                         qty_transfer, item_instance_id, target_instance_id, source_new_qty, target_new_qty);
+                // Merge successful
+                log::info!("[AddFuel Merge] Merging {} from item {} onto campfire item {}. Target new qty: {}.",
+                         qty_transfer, item_instance_id, existing_fuel_instance_id, target_new_qty);
+                existing_fuel_item.quantity = target_new_qty;
+                inventory_items.instance_id().update(existing_fuel_item);
 
-                // Update target item quantity
-                target_item.quantity = target_new_qty;
-                inventory_items.instance_id().update(target_item);
-
-                // Update or delete source item
                 if delete_source {
+                    log::info!("[AddFuel Merge] Source item {} depleted. Deleting instance.", item_instance_id);
                     inventory_items.instance_id().delete(item_instance_id);
-                    log::info!("[AddFuel Merge] Source item {} deleted.", item_instance_id);
+                    // Item is gone, no need to clear slots later
                 } else {
-                    item_to_add.quantity = source_new_qty;
-                    inventory_items.instance_id().update(item_to_add);
+                     log::info!("[AddFuel Merge] Source item {} reduced to {}. Updating instance.", item_instance_id, source_new_qty);
+                     item_to_add.quantity = source_new_qty;
+                     // Update the source item to reflect reduced quantity BUT KEEP its player slots for now
+                     // It wasn't fully consumed.
+                     inventory_items.instance_id().update(item_to_add);
+                     // Return error because the *entire* source stack wasn't moved/merged
+                     return Err("Could not merge entire stack into campfire slot.".to_string());
                 }
-                // Campfire state doesn't change in a merge (item ref remains the same)
+                // No need to update campfire struct here, the target item quantity was updated.
             },
             Err(e) => {
-                // Merge failed (e.g., different types, target full) - reject the drop for now
-                log::warn!("[AddFuel Merge] Cannot merge item {} onto slot {}: {}", item_instance_id, target_slot_index, e);
-                return Err(format!("Cannot merge into slot {}: {}", target_slot_index, e));
-                // FUTURE: Could implement swapping logic here as a fallback
+                // Merge failed (different item type, target full, etc.)
+                log::warn!("[AddFuel Merge Failed] Cannot merge item {} onto {}: {}. Aborting add.", 
+                         item_instance_id, existing_fuel_instance_id, e);
+                 return Err(format!("Cannot merge onto item in slot {}: {}", target_slot_index, e));
             }
         }
-
-        // Clear equipment slot AFTER successful merge
-        if original_location_was_equipment {
-            crate::items::clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
-        }
-
     } else {
-        // --- Target Slot is Empty: Place Item --- 
-        // 6. Update item (remove from inv/hotbar)
+        // --- Target Slot Empty: Place Item --- 
+        log::info!("[AddFuel Place] Placing item {} (Def {}) into empty campfire slot {}.", 
+                 item_instance_id, definition_to_add.id, target_slot_index);
+        
+        // UPDATE the item being moved: clear its player inventory/hotbar slots
         item_to_add.inventory_slot = None;
         item_to_add.hotbar_slot = None;
-        inventory_items.instance_id().update(item_to_add.clone()); // Clone needed as item_to_add borrowed for log
-        log::info!("Moved item {} ({}) from player {:?} inv/hotbar to campfire {}", item_instance_id, definition_to_add.name, sender_id, campfire_id);
-
-        // 7. Update campfire state in the specific slot (use match)
+        // Don't change player_identity yet, it's now 'in' the campfire world object
+        inventory_items.instance_id().update(item_to_add); 
+        
+        // Update the specific campfire slot field
         match target_slot_index {
-            0 => {
-                log::info!("[AddFuel Debug] Matching slot 0");
-                campfire.fuel_instance_id_0 = Some(item_instance_id); campfire.fuel_def_id_0 = Some(definition_to_add.id); 
-            },
+            0 => { campfire.fuel_instance_id_0 = Some(item_instance_id); campfire.fuel_def_id_0 = Some(definition_to_add.id); },
             1 => { campfire.fuel_instance_id_1 = Some(item_instance_id); campfire.fuel_def_id_1 = Some(definition_to_add.id); },
             2 => { campfire.fuel_instance_id_2 = Some(item_instance_id); campfire.fuel_def_id_2 = Some(definition_to_add.id); },
             3 => { campfire.fuel_instance_id_3 = Some(item_instance_id); campfire.fuel_def_id_3 = Some(definition_to_add.id); },
             4 => { campfire.fuel_instance_id_4 = Some(item_instance_id); campfire.fuel_def_id_4 = Some(definition_to_add.id); },
             _ => {}, // Should not happen
         }
+    }
         
-        // Re-check if fire should extinguish if it was burning without valid fuel
-        let can_light_now = check_if_campfire_has_fuel(ctx, &campfire);
-        if !can_light_now && campfire.is_burning {
-            campfire.is_burning = false;
-            campfire.next_fuel_consume_at = None;
-            log::warn!("Campfire {} extinguished as newly added fuel is not valid wood.", campfire_id);
-        }
+    // --- Final Steps --- 
+    // Re-check if fire should extinguish if it was burning without valid fuel
+    // (Keep this logic as it might be relevant after merging/placing)
+    let can_light_now = check_if_campfire_has_fuel(ctx, &campfire);
+    if !can_light_now && campfire.is_burning {
+        campfire.is_burning = false;
+        campfire.next_fuel_consume_at = None;
+        log::warn!("Campfire {} extinguished as newly added fuel is not valid wood.", campfire_id);
+    }
 
-        campfires.id().update(campfire); // Update the campfire
-        log::info!("Added item instance {} (Def {}) as fuel to campfire {} slot {}.", item_instance_id, definition_to_add.id, campfire_id, target_slot_index);
+    campfires.id().update(campfire); // Update the campfire state
+    log::info!("Successfully added/merged item instance {} as fuel to campfire {} slot {}.", 
+             item_instance_id, campfire_id, target_slot_index);
 
-        // Clear equipment slot AFTER successful placement
-        if original_location_was_equipment {
-            crate::items::clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
-        }
+    // Clear equipment slot AFTER successful placement/merge
+    // (This handles the edge case of equipping fuel directly)
+    if original_location_was_equipment {
+        crate::items::clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
     }
 
     Ok(())

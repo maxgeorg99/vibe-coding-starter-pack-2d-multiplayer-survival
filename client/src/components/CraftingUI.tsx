@@ -44,17 +44,33 @@ const CraftingUI: React.FC<CraftingUIProps> = ({
         return () => clearInterval(timerId);
     }, []);
 
-    // Memoize player inventory calculation for performance
+    // Memoize player inventory calculation
     const playerInventoryResources = useMemo(() => {
         const resources: Map<string, number> = new Map();
         if (!playerIdentity) return resources;
 
+        console.log('[CraftingUI DEBUG] Recalculating resources. inventoryItems prop:', new Map(inventoryItems)); // Log a clone
+
         Array.from(inventoryItems.values())
-            .filter(item => item.playerIdentity && item.playerIdentity.isEqual(playerIdentity) && (item.inventorySlot !== null || item.hotbarSlot !== null))
+            .filter(item => {
+                const isOwned = item.playerIdentity && item.playerIdentity.isEqual(playerIdentity);
+                // Check both null and undefined explicitly for robustness
+                const isInPlayerSlots = (item.inventorySlot !== null && item.inventorySlot !== undefined) || 
+                                        (item.hotbarSlot !== null && item.hotbarSlot !== undefined);
+                // Focus logging on items involved in the move - ADJUST DEF IDs IF NEEDED
+                if (item.itemDefId.toString() === '1' || item.itemDefId.toString() === '0') { // Check Wood(0) or Stone(1)
+                     console.log(`[CraftingUI DEBUG Filter Check] Item ${item.instanceId} (Def ${item.itemDefId}): Owned=${isOwned}, InvSlot=${item.inventorySlot}, HotbarSlot=${item.hotbarSlot} => Included=${isOwned && isInPlayerSlots}`);
+                 }
+                return isOwned && isInPlayerSlots;
+            })
             .forEach(item => {
                 const defIdStr = item.itemDefId.toString();
+                console.log(`[CraftingUI DEBUG Sum] Adding ${item.quantity} of Def ${defIdStr} (Instance ${item.instanceId}) from slot Inv=${item.inventorySlot}/Hotbar=${item.hotbarSlot}`);
                 resources.set(defIdStr, (resources.get(defIdStr) || 0) + item.quantity);
             });
+            
+        console.log('[CraftingUI DEBUG] Calculated playerInventoryResources:', resources);
+            
         return resources;
     }, [inventoryItems, playerIdentity]);
 

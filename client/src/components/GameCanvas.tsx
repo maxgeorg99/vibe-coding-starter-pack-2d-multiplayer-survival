@@ -108,8 +108,7 @@ function isStone(entity: any): entity is SpacetimeDBStone {
   // Check for properties specific to Stone and not Player/Tree/Campfire
   return entity && typeof entity.health === 'number' && 
          typeof entity.posX === 'number' && typeof entity.posY === 'number' && 
-         typeof entity.identity === 'undefined' && typeof entity.treeType === 'undefined' && 
-         typeof entity.placed_by === 'undefined'; 
+         typeof entity.identity === 'undefined' && typeof entity.treeType === 'undefined'
 }
 
 // Type guard for Campfire
@@ -1038,7 +1037,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             }
           }
           isClosestInteractableBoxEmptyRef.current = isEmpty;
-          console.log(`[ClosestBoxCheck] Box ${box.id} is closest. Empty: ${isEmpty}`);
+          // console.log(`[ClosestBoxCheck] Box ${box.id} is closest. Empty: ${isEmpty}`);
         }
       });
     }
