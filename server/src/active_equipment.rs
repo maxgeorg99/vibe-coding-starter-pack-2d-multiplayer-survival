@@ -100,22 +100,20 @@ pub fn equip_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), Str
 
 // Reducer to explicitly unequip whatever item is active in the main hand
 #[spacetimedb::reducer]
-pub fn unequip_item(ctx: &ReducerContext) -> Result<(), String> {
-    let sender_id = ctx.sender;
+pub fn unequip_item(ctx: &ReducerContext, player_identity: Identity) -> Result<(), String> {
     let active_equipments = ctx.db.active_equipment();
-    let inventory_items = ctx.db.inventory_item();
 
-    if let Some(mut equipment) = active_equipments.player_identity().find(sender_id) {
+    if let Some(mut equipment) = active_equipments.player_identity().find(player_identity) {
         // Only clear the main hand fields. Leave armor slots untouched.
         if equipment.equipped_item_instance_id.is_some() {
-             log::info!("Player {:?} explicitly unequipped main hand item.", sender_id);
+             log::info!("Player {:?} explicitly unequipped main hand item.", player_identity);
              equipment.equipped_item_def_id = None;
              equipment.equipped_item_instance_id = None;
              equipment.swing_start_time_ms = 0;
              active_equipments.player_identity().update(equipment);
         }
     } else {
-        log::info!("Player {:?} tried to unequip, but no ActiveEquipment row found.", sender_id);
+        log::info!("Player {:?} tried to unequip, but no ActiveEquipment row found.", player_identity);
         // No row exists, so nothing to unequip. Not an error.
     }
     Ok(())
@@ -464,7 +462,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     }
                     hit_something = true;
                 }
-            },
+            }
             Some("player") => {
                 if let Some((player_id, _)) = closest_player_target { // Retrieve ID again
                     // --- Damage Player (Rock Damage = 1 * Multiplier) ---

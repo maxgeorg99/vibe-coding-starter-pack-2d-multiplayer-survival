@@ -27,6 +27,8 @@ mod inventory_management; // <<< ADDED new module
 mod spatial_grid; // ADD: Spatial grid module for optimized collision detection
 mod crafting; // ADD: Crafting recipe definitions
 mod crafting_queue; // ADD: Crafting queue logic
+mod player_stats; // ADD: Player stat scheduling logic
+mod global_tick; // ADD: Global tick scheduling logic
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait;
@@ -43,13 +45,16 @@ use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
 use crate::crafting::Recipe as RecipeTableTrait;
 use crate::crafting_queue::CraftingQueueItem as CraftingQueueItemTableTrait;
 use crate::crafting_queue::CraftingFinishSchedule as CraftingFinishScheduleTableTrait;
+use crate::global_tick::GlobalTickSchedule as GlobalTickScheduleTableTrait;
 
 // Use specific items needed globally (or use qualified paths)
-// use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait}; 
-use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
+// use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait};
+// Remove world_state constants related to warmth drain, they are now used in player_stats.rs
+// use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
+use crate::world_state::TimeOfDay; // Keep TimeOfDay if needed elsewhere, otherwise remove
 use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED, PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED };
 
-// --- World/Player Constants --- 
+// --- World/Player Constants ---
 pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
 pub(crate) const WORLD_HEIGHT_TILES: u32 = 100;
 pub(crate) const TILE_SIZE_PX: u32 = 48;
@@ -58,26 +63,26 @@ pub(crate) const WORLD_HEIGHT_PX: f32 = (WORLD_HEIGHT_TILES * TILE_SIZE_PX) as f
 pub(crate) const PLAYER_RADIUS: f32 = 24.0;
 const PLAYER_DIAMETER_SQUARED: f32 = (PLAYER_RADIUS * 2.0) * (PLAYER_RADIUS * 2.0);
 
-// Passive Stat Drain Rates
-const HUNGER_DRAIN_PER_SECOND: f32 = 100.0 / (30.0 * 60.0); 
-const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0); 
-const STAMINA_DRAIN_PER_SECOND: f32 = 20.0; 
-const STAMINA_RECOVERY_PER_SECOND: f32 = 5.0;  
-const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;     
+// Passive Stat Drain Rates (Keep constants needed directly in lib.rs or move if only used in player_stats)
+pub(crate) const HUNGER_DRAIN_PER_SECOND: f32 = 100.0 / (30.0 * 60.0); // Moved usage to player_stats
+pub(crate) const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0); // Moved usage to player_stats
+const STAMINA_DRAIN_PER_SECOND: f32 = 20.0; // Keep for sprint drain calculation
+pub(crate) const STAMINA_RECOVERY_PER_SECOND: f32 = 5.0; // Moved usage to player_stats
+const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;
 const JUMP_COOLDOWN_MS: u64 = 500; // Prevent jumping again for 500ms
 
-// Status Effect Constants
-const LOW_NEED_THRESHOLD: f32 = 20.0;         
-const LOW_THIRST_SPEED_PENALTY: f32 = 0.75; 
-const HEALTH_LOSS_PER_SEC_LOW_THIRST: f32 = 0.5; 
-const HEALTH_LOSS_PER_SEC_LOW_HUNGER: f32 = 0.4; 
-const HEALTH_LOSS_MULTIPLIER_AT_ZERO: f32 = 2.0; 
-const HEALTH_RECOVERY_THRESHOLD: f32 = 80.0;    
-const HEALTH_RECOVERY_PER_SEC: f32 = 1.0;      
+// Status Effect Constants (Keep constants needed directly in lib.rs or move if only used in player_stats)
+pub(crate) const LOW_NEED_THRESHOLD: f32 = 20.0; // Keep for speed penalty check
+pub(crate) const LOW_THIRST_SPEED_PENALTY: f32 = 0.75; // Keep for speed penalty check
+pub(crate) const HEALTH_LOSS_PER_SEC_LOW_THIRST: f32 = 0.5; // Moved usage to player_stats
+pub(crate) const HEALTH_LOSS_PER_SEC_LOW_HUNGER: f32 = 0.4; // Moved usage to player_stats
+pub(crate) const HEALTH_LOSS_MULTIPLIER_AT_ZERO: f32 = 2.0; // Moved usage to player_stats
+pub(crate) const HEALTH_RECOVERY_THRESHOLD: f32 = 80.0; // Moved usage to player_stats
+pub(crate) const HEALTH_RECOVERY_PER_SEC: f32 = 1.0; // Moved usage to player_stats
 
 // New Warmth Penalties
-const HEALTH_LOSS_PER_SEC_LOW_WARMTH: f32 = 0.6; // Slightly higher than thirst/hunger
-const LOW_WARMTH_SPEED_PENALTY: f32 = 0.8; // 20% speed reduction when cold
+pub(crate) const HEALTH_LOSS_PER_SEC_LOW_WARMTH: f32 = 0.6; // Moved usage to player_stats
+pub(crate) const LOW_WARMTH_SPEED_PENALTY: f32 = 0.8; // Keep for speed penalty check
 
 // NEW: Campfire placement range constant
 const CAMPFIRE_PLACEMENT_MAX_DISTANCE: f32 = 96.0;
@@ -94,7 +99,7 @@ pub struct Player {
     pub position_y: f32,
     pub color: String,
     pub direction: String,
-    pub last_update: Timestamp,
+    pub last_update: Timestamp, // Timestamp of the last update (movement or stats)
     pub jump_start_time_ms: u64,
     pub health: f32,
     pub stamina: f32,
@@ -120,6 +125,10 @@ pub fn init_module(ctx: &ReducerContext) -> Result<(), String> {
     crate::campfire::init_campfire_fuel_schedule(ctx)?;
     // Initialize the crafting finish check schedule
     crate::crafting_queue::init_crafting_schedule(ctx)?;
+    // ADD: Initialize the player stat update schedule
+    crate::player_stats::init_player_stat_schedule(ctx)?;
+    // ADD: Initialize the global tick schedule
+    crate::global_tick::init_global_tick_schedule(ctx)?;
 
     log::info!("Module initialization complete.");
     Ok(())
@@ -134,6 +143,9 @@ pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
     crate::world_state::seed_world_state(ctx)?; // Call the world state seeder
     crate::crafting::seed_recipes(ctx)?; // Seed the crafting recipes
     // No seeder needed for Campfire yet, table will be empty initially
+
+    // Note: Initial scheduling for player stats happens in register_player
+    // Note: Initial scheduling for global ticks happens in init_module
     Ok(())
 }
 
@@ -143,7 +155,7 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
     log::info!("identity_disconnected triggered for identity: {:?}", ctx.sender);
     let sender_id = ctx.sender;
     let players = ctx.db.player();
-    
+
     if let Some(player) = players.identity().find(sender_id) {
         let username = player.username.clone();
         // 1. Delete the Player entity
@@ -190,22 +202,22 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     let stones = ctx.db.stone();
     let campfires = ctx.db.campfire(); // Get campfire table
     let wooden_storage_boxes = ctx.db.wooden_storage_box(); // <<< ADDED: Get box table
-    
+
     // Check if username is already taken by *any* player
     let username_taken = players.iter().any(|p| p.username == username);
     if username_taken {
         log::warn!("Username '{}' already taken. Registration failed for {:?}.", username, sender_id);
         return Err(format!("Username '{}' is already taken.", username));
     }
-    
+
     // Check if this identity is already registered (shouldn't happen if disconnect works, but good safety check)
     if players.identity().find(&sender_id).is_some() {
         log::warn!("Identity {:?} already registered. Registration failed.", sender_id);
         return Err("Player identity already registered".to_string());
     }
-    
-    // --- Find a valid spawn position --- 
-    let initial_x = 640.0; 
+
+    // --- Find a valid spawn position ---
+    let initial_x = 640.0;
     let initial_y = 480.0;
     let mut spawn_x = initial_x;
     let mut spawn_y = initial_y;
@@ -218,6 +230,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
 
         // 1. Check Player-Player Collision
         for other_player in players.iter() {
+             // Don't collide with dead players during spawn
+            if other_player.is_dead { continue; }
             let dx = spawn_x - other_player.position_x;
             let dy = spawn_y - other_player.position_y;
             if (dx * dx + dy * dy) < PLAYER_DIAMETER_SQUARED {
@@ -229,6 +243,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         // 2. Check Player-Tree Collision (if no player collision)
         if !collision {
             for tree in trees.iter() {
+                 // Don't collide with felled trees
+                if tree.health == 0 { continue; }
                 let dx = spawn_x - tree.pos_x;
                 let dy = spawn_y - (tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET); // Already qualified
                 let dist_sq = dx * dx + dy * dy;
@@ -242,6 +258,8 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         // 2.5 Check Player-Stone Collision (if no player/tree collision)
         if !collision {
             for stone in stones.iter() {
+                // Don't collide with depleted stones
+                if stone.health == 0 { continue; }
                 let dx = spawn_x - stone.pos_x;
                 let dy = spawn_y - (stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET); // Already qualified
                 let dist_sq = dx * dx + dy * dy;
@@ -252,26 +270,26 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
             }
         }
 
-        // 2.7 Check Player-Campfire Collision
-        if !collision {
-            for fire in campfires.iter() {
-                let dx = spawn_x - fire.pos_x;
-                let dy = spawn_y - (fire.pos_y - CAMPFIRE_COLLISION_Y_OFFSET);
-                let dist_sq = dx * dx + dy * dy;
-                // Use specific player-campfire collision check distance
-                if dist_sq < PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
-                    collision = true;
-                    break;
-                }
-            }
-        }
+        // 2.7 Check Player-Campfire Collision (Allow spawning on campfires)
+        // if !collision {
+        //     for fire in campfires.iter() {
+        //         let dx = spawn_x - fire.pos_x;
+        //         let dy = spawn_y - (fire.pos_y - CAMPFIRE_COLLISION_Y_OFFSET);
+        //         let dist_sq = dx * dx + dy * dy;
+        //         // Use specific player-campfire collision check distance
+        //         if dist_sq < PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
+        //             collision = true;
+        //             break;
+        //         }
+        //     }
+        // }
 
         // 2.8 Check Player-WoodenStorageBox Collision <<< ADDED Check
         if !collision {
             for box_instance in wooden_storage_boxes.iter() {
                 // Use constants from wooden_storage_box module
                 let dx = spawn_x - box_instance.pos_x;
-                let dy = spawn_y - (box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET); 
+                let dy = spawn_y - (box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET);
                 let dist_sq = dx * dx + dy * dy;
                 // Use specific player-box collision check distance
                 if dist_sq < crate::wooden_storage_box::PLAYER_BOX_COLLISION_DISTANCE_SQUARED {
@@ -283,7 +301,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
 
         // 3. Decide if position is valid or max attempts reached
         if !collision || attempt >= max_attempts {
-            if attempt >= max_attempts && collision { 
+            if attempt >= max_attempts && collision {
                  log::warn!("Could not find clear spawn point for {}, spawning at default (may collide).", username);
                  spawn_x = initial_x;
                  spawn_y = initial_y;
@@ -294,17 +312,17 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         // Simple offset pattern: move right, down, left, up, then spiral out slightly?
         // This is basic, could be improved (random, spiral search)
         match attempt % 4 {
-            0 => spawn_x += offset_step, 
-            1 => spawn_y += offset_step, 
-            2 => spawn_x -= offset_step * 2.0, 
-            3 => spawn_y -= offset_step * 2.0, 
-            _ => {}, 
+            0 => spawn_x += offset_step,
+            1 => spawn_y += offset_step,
+            2 => spawn_x -= offset_step * 2.0,
+            3 => spawn_y -= offset_step * 2.0,
+            _ => {},
         }
         // Reset to center if offset gets too wild after a few attempts (basic safeguard)
-        if attempt == 5 { 
+        if attempt == 5 {
              spawn_x = initial_x;
              spawn_y = initial_y;
-             spawn_x += offset_step * 1.5; 
+             spawn_x += offset_step * 1.5;
              spawn_y += offset_step * 1.5;
         }
         attempt += 1;
@@ -312,16 +330,16 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     // --- End spawn position logic ---
 
     let color = random_color(&username);
-    
+
     let player = Player {
         identity: sender_id,
-        username: username.clone(), 
-        position_x: spawn_x, 
-        position_y: spawn_y, 
+        username: username.clone(),
+        position_x: spawn_x,
+        position_y: spawn_y,
         color,
-        direction: "down".to_string(), 
-        last_update: ctx.timestamp,
-        jump_start_time_ms: 0, 
+        direction: "down".to_string(),
+        last_update: ctx.timestamp, // Set initial timestamp
+        jump_start_time_ms: 0,
         health: 100.0,
         stamina: 100.0,
         thirst: 100.0,
@@ -329,16 +347,16 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         warmth: 100.0,
         is_sprinting: false,
         is_dead: false,
-        respawn_at: ctx.timestamp,
+        respawn_at: ctx.timestamp, // Set initial respawn time (not dead yet)
         last_hit_time: None,
     };
-    
+
     // Insert the new player
     match players.try_insert(player) {
         Ok(_) => {
             log::info!("Player registered: {}. Granting starting items...", username);
 
-            // --- Grant Starting Items --- 
+            // --- Grant Starting Items ---
             // Call the dedicated function from the starting_items module
             match crate::starting_items::grant_starting_items(ctx, sender_id, &username) {
                 Ok(_) => { /* Items granted (or individual errors logged) */ },
@@ -346,7 +364,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
                     // This function currently always returns Ok, but handle error just in case
                     log::error!("Unexpected error during grant_starting_items for player {}: {}", username, e);
                     // Potentially return the error from register_player if item grant failure is critical
-                    // return Err(format!("Failed to grant starting items: {}", e)); 
+                    // return Err(format!("Failed to grant starting items: {}", e));
                 }
             }
             // --- End Grant Starting Items ---
@@ -373,7 +391,29 @@ pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32,
         sender_id, item_instance_id, world_x, world_y
     );
 
-    // --- 1. Check Collision / Placement Rules --- 
+    // --- 1. Validate Player and Placement Rules ---
+    let player = players.identity().find(sender_id)
+        .ok_or_else(|| "Player not found".to_string())?;
+
+    // Check distance from player
+    let dx_place = world_x - player.position_x;
+    let dy_place = world_y - player.position_y;
+    let dist_sq_place = dx_place * dx_place + dy_place * dy_place;
+    if dist_sq_place > CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED {
+        return Err(format!("Cannot place campfire too far away ({} > {}).",
+                dist_sq_place.sqrt(), CAMPFIRE_PLACEMENT_MAX_DISTANCE));
+    }
+
+    // Check collision with other campfires
+    for other_fire in campfires.iter() {
+        let dx_fire = world_x - other_fire.pos_x;
+        let dy_fire = world_y - other_fire.pos_y;
+        let dist_sq_fire = dx_fire * dx_fire + dy_fire * dy_fire;
+        if dist_sq_fire < CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED {
+            return Err("Cannot place campfire too close to another campfire.".to_string());
+        }
+    }
+    // Add more collision checks here if needed (e.g., vs trees, stones)
 
     // --- 2. Find the "Camp Fire" item definition ---
     let campfire_def_id = item_defs.iter()
@@ -381,47 +421,40 @@ pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32,
         .map(|def| def.id)
         .ok_or_else(|| "Item definition 'Camp Fire' not found.".to_string())?;
 
-    // --- 3. Find the specific item instance and validate --- 
+    // --- 3. Find the specific item instance and validate ---
     let item_to_consume = inventory_items.instance_id().find(item_instance_id)
         .ok_or_else(|| format!("Item instance {} not found.", item_instance_id))?;
-    
+
     // Validate ownership
     if item_to_consume.player_identity != sender_id {
         return Err(format!("Item instance {} not owned by player {:?}.", item_instance_id, sender_id));
     }
     // Validate item type
     if item_to_consume.item_def_id != campfire_def_id {
-        return Err(format!("Item instance {} is not a Camp Fire (expected def {}, got {}).", 
+        return Err(format!("Item instance {} is not a Camp Fire (expected def {}, got {}).",
                         item_instance_id, campfire_def_id, item_to_consume.item_def_id));
     }
     // Validate location (must be in inv or hotbar)
     if item_to_consume.inventory_slot.is_none() && item_to_consume.hotbar_slot.is_none() {
         return Err(format!("Item instance {} must be in inventory or hotbar to be placed.", item_instance_id));
     }
-    
+
     // Use the validated item_instance_id directly
     let item_instance_id_to_delete = item_instance_id;
 
-    // --- 4. Validate Placement Distance --- 
-    if let Some(player) = players.identity().find(sender_id) {
-        // ... existing code ...
-    } else {
-        return Err("Player not found".to_string());
-    }
-
-    // --- 5. Consume the Item --- 
+    // --- 4. Consume the Item ---
     log::info!(
         "[PlaceCampfire] Consuming item instance {} (Def ID: {}) from player {:?}",
         item_instance_id_to_delete, campfire_def_id, sender_id
     );
     inventory_items.instance_id().delete(item_instance_id_to_delete);
 
-    // --- 6. Create Campfire Entity ---
-    // --- 6a. Create Initial Fuel Item (Wood) --- 
+    // --- 5. Create Campfire Entity ---
+    // --- 5a. Create Initial Fuel Item (Wood) ---
     let wood_def = item_defs.iter()
         .find(|def| def.name == "Wood")
         .ok_or_else(|| "Wood item definition not found for initial fuel".to_string())?;
-        
+
     let initial_fuel_item = crate::items::InventoryItem {
         instance_id: 0, // Auto-inc
         player_identity: sender_id, // Belongs to the placer initially (needed? maybe not)
@@ -431,14 +464,16 @@ pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32,
         inventory_slot: None, // Not in inventory (it's "in" the campfire slot 0)
     };
     // Insert the fuel item and get its generated instance ID
-    let inserted_fuel_item = inventory_items.insert(initial_fuel_item);
+    let inserted_fuel_item = inventory_items.try_insert(initial_fuel_item)
+        .map_err(|e| format!("Failed to insert initial fuel item: {}", e))?;
     let fuel_instance_id = inserted_fuel_item.instance_id;
     log::info!("[PlaceCampfire] Created initial fuel item (Wood, instance {}) for campfire.", fuel_instance_id);
 
-    // --- 6b. Initialize Campfire with Fuel and Burning --- 
+    // --- 5b. Initialize Campfire with Fuel and Burning ---
     let current_time = ctx.timestamp;
+    // Use constant from campfire module
     let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS).into();
-    
+
     // Initialize all fields explicitly
     let new_campfire = crate::campfire::Campfire {
         id: 0, // Auto-incremented
@@ -461,12 +496,10 @@ pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32,
         next_fuel_consume_at: Some(first_consumption_time), // Schedule consumption
     };
 
-    campfires.try_insert(new_campfire)?;
-    // Re-fetch player for username in log message
-    let player_for_log = players.identity().find(sender_id)
-        .ok_or_else(|| "Player disappeared during placement?".to_string())?;
-    log::info!("Player {} placed a campfire at ({:.1}, {:.1}) with initial fuel (Item {} in slot 0).", 
-             player_for_log.username, world_x, world_y, fuel_instance_id);
+    campfires.try_insert(new_campfire)
+        .map_err(|e| format!("Failed to insert campfire: {}", e))?;
+    log::info!("Player {} placed a campfire at ({:.1}, {:.1}) with initial fuel (Item {} in slot 0).",
+             player.username, world_x, world_y, fuel_instance_id);
 
     Ok(())
 }
@@ -481,7 +514,7 @@ pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String
         // Only update if the state is actually changing
         if player.is_sprinting != sprinting {
             player.is_sprinting = sprinting;
-            player.last_update = ctx.timestamp; 
+            player.last_update = ctx.timestamp; // Update timestamp when sprint state changes
             players.identity().update(player);
             log::debug!("Player {:?} set sprinting to {}", sender_id, sprinting);
         }
@@ -491,12 +524,12 @@ pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String
     }
 }
 
-// Update player movement, handle sprinting, stats, and collision
+// Update player movement, handle sprinting, and collision
 #[spacetimedb::reducer]
 pub fn update_player_position(
-    ctx: &ReducerContext, 
-    move_dx: f32, 
-    move_dy: f32,  
+    ctx: &ReducerContext,
+    move_dx: f32,
+    move_dy: f32,
     intended_direction: Option<String>
 ) -> Result<(), String> {
     let sender_id = ctx.sender;
@@ -505,13 +538,18 @@ pub fn update_player_position(
     let stones = ctx.db.stone();
     let campfires = ctx.db.campfire(); // Get campfire table
     let wooden_storage_boxes = ctx.db.wooden_storage_box(); // <<< ADDED
-    let world_states = ctx.db.world_state();
 
     let current_player = players.identity()
         .find(sender_id)
         .ok_or_else(|| "Player not found".to_string())?;
 
-    // --- Update Direction Immediately --- 
+    // --- If player is dead, prevent movement ---
+    if current_player.is_dead {
+        log::trace!("Ignoring movement input for dead player {:?}", sender_id);
+        return Ok(()); // Do nothing if dead
+    }
+
+    // --- Update Direction Immediately ---
     let mut new_direction = current_player.direction.clone(); // Start with current direction
     if let Some(dir_str) = intended_direction {
         // Validate the direction string using direct comparison
@@ -530,139 +568,69 @@ pub fn update_player_position(
         // keep the current direction. (This preserves facing direction when standing still).
     } else {
         // Fallback: Determine direction from movement delta if no explicit direction provided
-        // This handles cases where the client might not send the direction yet, 
-        // or if movement occurs without explicit direction keys (e.g., joystick diagonal)
         if move_dx.abs() > move_dy.abs() {
             new_direction = if move_dx > 0.0 { "right".to_string() } else { "left".to_string() };
         } else if move_dy != 0.0 {
             new_direction = if move_dy > 0.0 { "down".to_string() } else { "up".to_string() };
         }
-        // If move_dx and move_dy are both 0, and intended_direction was None,
-        // new_direction remains the original value from current_player.direction.clone()
         if current_player.direction != new_direction {
             log::trace!("Player {:?} direction inferred from movement: {}", sender_id, new_direction);
         }
     }
     // --- End Direction Update ---
 
-    let world_state = world_states.iter().next()
-        .ok_or_else(|| "WorldState not found".to_string())?;
-
     let now = ctx.timestamp;
-    let last_update_time = current_player.last_update;
-    let elapsed_micros = now.to_micros_since_unix_epoch().saturating_sub(last_update_time.to_micros_since_unix_epoch());
-    let elapsed_seconds = (elapsed_micros as f64 / 1_000_000.0) as f32;
-    let new_hunger = (current_player.hunger - (elapsed_seconds * HUNGER_DRAIN_PER_SECOND)).max(0.0);
-    let new_thirst = (current_player.thirst - (elapsed_seconds * THIRST_DRAIN_PER_SECOND)).max(0.0);
+    // REMOVED: Elapsed time calculation for stats (moved to player_stats.rs)
+    // REMOVED: Hunger/Thirst drain (moved to player_stats.rs)
+    // REMOVED: Warmth calculation (moved to player_stats.rs)
 
-    // --- Calculate new Warmth (Moved earlier) ---
-    let mut warmth_change_per_sec: f32 = 0.0;
-    // 1. Warmth Drain based on Time of Day
-    let drain_multiplier = match world_state.time_of_day {
-        TimeOfDay::Morning | TimeOfDay::Noon | TimeOfDay::Afternoon => 0.0, // No warmth drain during day
-        TimeOfDay::Dawn | TimeOfDay::Dusk => WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, // Keep transition drain
-        TimeOfDay::Night => WARMTH_DRAIN_MULTIPLIER_NIGHT * 1.25, // Increased night drain
-        TimeOfDay::Midnight => WARMTH_DRAIN_MULTIPLIER_MIDNIGHT * 1.33, // Increased midnight drain
-    };
-    warmth_change_per_sec -= BASE_WARMTH_DRAIN_PER_SECOND * drain_multiplier;
-    // 2. Warmth Gain from nearby Campfires
-    for fire in campfires.iter() {
-        let dx = current_player.position_x - fire.pos_x;
-        let dy = current_player.position_y - fire.pos_y;
-        if (dx * dx + dy * dy) < WARMTH_RADIUS_SQUARED {
-            warmth_change_per_sec += WARMTH_PER_SECOND;
-            log::trace!("Player {:?} gaining warmth from campfire {}", sender_id, fire.id);
-        }
-    }
-    let new_warmth = (current_player.warmth + (warmth_change_per_sec * elapsed_seconds))
-                     .max(0.0) // Clamp between 0 and 100
-                     .min(100.0);
-    let warmth_changed = (new_warmth - current_player.warmth).abs() > 0.01;
-    if warmth_changed {
-        log::debug!("Player {:?} warmth updated to {:.1}", sender_id, new_warmth);
-    }
-    // --- End Warmth Calculation ---
-
-    // --- Stamina and Base Speed Calculation ---
+    // --- Stamina Drain & Base Speed Calculation ---
     let mut new_stamina = current_player.stamina;
     let mut base_speed_multiplier = 1.0;
     let is_moving = move_dx != 0.0 || move_dy != 0.0;
     let mut current_sprinting_state = current_player.is_sprinting;
+
+    // Calculate elapsed time *only* for stamina drain calculation if sprinting
+    let mut elapsed_seconds_for_stamina: f32 = 0.0;
     if current_sprinting_state && is_moving && new_stamina > 0.0 {
-        new_stamina = (new_stamina - (elapsed_seconds * STAMINA_DRAIN_PER_SECOND)).max(0.0);
-        if new_stamina > 0.0 { 
-            base_speed_multiplier = SPRINT_SPEED_MULTIPLIER;
-        } else { 
-            current_sprinting_state = false;
-            log::debug!("Player {:?} ran out of stamina.", sender_id);
+        let last_update_time = current_player.last_update;
+        let elapsed_micros = now.to_micros_since_unix_epoch().saturating_sub(last_update_time.to_micros_since_unix_epoch());
+        elapsed_seconds_for_stamina = (elapsed_micros as f64 / 1_000_000.0) as f32;
+
+        // Only drain stamina if significant time has passed since last update
+        if elapsed_seconds_for_stamina > 0.01 { // Avoid drain on rapid calls
+            new_stamina = (new_stamina - (elapsed_seconds_for_stamina * STAMINA_DRAIN_PER_SECOND)).max(0.0);
+            if new_stamina <= 0.0 {
+                current_sprinting_state = false; // Stop sprinting if out of stamina
+                log::debug!("Player {:?} ran out of stamina.", sender_id);
+            }
         }
-    } else if !current_sprinting_state {
-        new_stamina = (new_stamina + (elapsed_seconds * STAMINA_RECOVERY_PER_SECOND)).min(100.0);
+        if new_stamina > 0.0 { // Check again after potential drain
+             base_speed_multiplier = SPRINT_SPEED_MULTIPLIER;
+        } else {
+             current_sprinting_state = false; // Ensure sprint is off if stamina is zero
+        }
     }
+    // REMOVED: Passive Stamina Recovery (moved to player_stats.rs)
+
+    // --- Calculate Final Speed Multiplier based on Current Stats ---
     let mut final_speed_multiplier = base_speed_multiplier;
-    if new_thirst < LOW_NEED_THRESHOLD {
+    // Use current player stats read at the beginning of the reducer
+    if current_player.thirst < LOW_NEED_THRESHOLD {
         final_speed_multiplier *= LOW_THIRST_SPEED_PENALTY;
-        if is_moving { 
-             log::debug!("Player {:?} has low thirst. Applying speed penalty.", sender_id);
+        if is_moving {
+            log::debug!("Player {:?} has low thirst. Applying speed penalty.", sender_id);
         }
     }
-    if new_warmth < LOW_NEED_THRESHOLD {
+    if current_player.warmth < LOW_NEED_THRESHOLD {
         final_speed_multiplier *= LOW_WARMTH_SPEED_PENALTY;
         if is_moving {
             log::debug!("Player {:?} is cold. Applying speed penalty.", sender_id);
         }
     }
 
-    // --- Health Update Calculation ---
-    let mut health_change_per_sec: f32 = 0.0;
-    if new_thirst <= 0.0 {
-        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_THIRST * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
-        log::debug!("Player {:?} health decreasing rapidly due to zero thirst.", sender_id);
-    } else if new_thirst < LOW_NEED_THRESHOLD {
-        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_THIRST;
-        log::debug!("Player {:?} health decreasing due to low thirst.", sender_id);
-    }
-    if new_hunger <= 0.0 {
-        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_HUNGER * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
-        log::debug!("Player {:?} health decreasing rapidly due to zero hunger.", sender_id);
-    } else if new_hunger < LOW_NEED_THRESHOLD {
-        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_HUNGER;
-        log::debug!("Player {:?} health decreasing due to low hunger.", sender_id);
-    }
-    if new_warmth <= 0.0 {
-        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_WARMTH * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
-        log::debug!("Player {:?} health decreasing rapidly due to freezing (zero warmth).", sender_id);
-    } else if new_warmth < LOW_NEED_THRESHOLD {
-        health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_WARMTH;
-        log::debug!("Player {:?} health decreasing due to low warmth.", sender_id);
-    }
-    if health_change_per_sec == 0.0 && 
-       new_hunger >= HEALTH_RECOVERY_THRESHOLD && 
-       new_thirst >= HEALTH_RECOVERY_THRESHOLD &&
-       new_warmth >= LOW_NEED_THRESHOLD { // Must not be freezing to recover health
-        health_change_per_sec += HEALTH_RECOVERY_PER_SEC;
-        log::debug!("Player {:?} health recovering.", sender_id);
-    }
-    let new_health = (current_player.health + (health_change_per_sec * elapsed_seconds))
-                     .max(0.0) // Allow health to reach zero
-                     .min(100.0);
-    let health_changed = (new_health - current_player.health).abs() > 0.01;
-
-    // --- Death Check ---
-    let mut player_died = false;
-    let mut calculated_respawn_at = current_player.respawn_at; // Keep existing value by default
-    if current_player.health > 0.0 && new_health <= 0.0 && !current_player.is_dead {
-        player_died = true;
-        calculated_respawn_at = ctx.timestamp + Duration::from_secs(5).into(); // Set respawn time
-        log::warn!("Player {} ({:?}) has died! Will be respawnable at {:?}", 
-                 current_player.username, sender_id, calculated_respawn_at);
-        
-        // Unequip item on death
-        match active_equipment::unequip_item(ctx) {
-            Ok(_) => log::info!("Unequipped item for dying player {:?}", sender_id),
-            Err(e) => log::error!("Failed to unequip item for dying player {:?}: {}", sender_id, e),
-        }
-    }
+    // REMOVED: Health Update Calculation (moved to player_stats.rs)
+    // REMOVED: Death Check (moved to player_stats.rs)
 
     // --- Movement Calculation ---
     let proposed_x = current_player.position_x + move_dx * final_speed_multiplier;
@@ -675,32 +643,28 @@ pub fn update_player_position(
     let mut final_y = clamped_y;
     let mut collision_handled = false;
 
-    // NEW: Use spatial grid for efficient collision detection
+    // --- Collision Detection (using spatial grid) ---
     let mut grid = spatial_grid::SpatialGrid::new();
     grid.populate_from_world(&ctx.db);
-
-    // Extract nearby entities for collision checks instead of checking all entities
     let nearby_entities = grid.get_entities_in_range(clamped_x, clamped_y);
 
-    // Check collisions with nearby entities
+    // Check collisions with nearby entities (Slide calculation)
     for entity in &nearby_entities {
         match entity {
             spatial_grid::EntityType::Player(other_identity) => {
-                // Skip self-collision
-                if *other_identity == sender_id {
-                    continue;
-                }
-                
-                // Find the player in the database
+                if *other_identity == sender_id { continue; } // Skip self
+                 // Find the player in the database
                 if let Some(other_player) = players.identity().find(other_identity) {
+                    // Don't collide with dead players
+                    if other_player.is_dead { continue; }
+
                     let dx = clamped_x - other_player.position_x;
                     let dy = clamped_y - other_player.position_y;
                     let dist_sq = dx * dx + dy * dy;
 
                     if dist_sq < PLAYER_DIAMETER_SQUARED {
                         log::debug!("Player-Player collision detected between {:?} and {:?}. Calculating slide.", sender_id, other_player.identity);
-
-                        // Calculate slide vector (same as before)
+                        // Slide calculation (same as before)
                         let intended_dx = clamped_x - current_player.position_x;
                         let intended_dy = clamped_y - current_player.position_y;
                         let collision_normal_x = dx;
@@ -711,59 +675,40 @@ pub fn update_player_position(
                             let normal_mag = normal_mag_sq.sqrt();
                             let norm_x = collision_normal_x / normal_mag;
                             let norm_y = collision_normal_y / normal_mag;
-
                             let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-
-                            // Project intended movement onto the normal
                             let projection_x = dot_product * norm_x;
                             let projection_y = dot_product * norm_y;
-
-                            // Subtract projection to get the slide vector (tangential movement)
                             let slide_dx = intended_dx - projection_x;
                             let slide_dy = intended_dy - projection_y;
-
-                            // Apply slide to the *original* position
                             final_x = current_player.position_x + slide_dx;
                             final_y = current_player.position_y + slide_dy;
-
-                            // Re-clamp to world boundaries after sliding
                             final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
                             final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
                         } else {
-                            // Fallback: If somehow distance is zero, just revert
                             final_x = current_player.position_x;
                             final_y = current_player.position_y;
                         }
                         collision_handled = true;
-                        break; // Handle first player collision
+                        break;
                     }
                 }
             },
-            
             spatial_grid::EntityType::Tree(tree_id) => {
-                if collision_handled {
-                    continue;
-                }
-                
-                // Find the tree in the database
-                if let Some(tree) = trees.id().find(tree_id) {
+                 if collision_handled { continue; }
+                 if let Some(tree) = trees.id().find(tree_id) {
                     if tree.health == 0 { continue; }
-
                     let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
                     let dx = clamped_x - tree.pos_x;
                     let dy = clamped_y - tree_collision_y;
                     let dist_sq = dx * dx + dy * dy;
-
                     if dist_sq < crate::tree::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
-                        log::debug!("Player-Tree collision detected between {:?} and tree {}. Calculating slide.", sender_id, tree.id);
-
-                        // Rest of tree collision handling (same as before)
+                         log::debug!("Player-Tree collision detected between {:?} and tree {}. Calculating slide.", sender_id, tree.id);
+                         // Slide calculation (same as before)
                         let intended_dx = clamped_x - current_player.position_x;
                         let intended_dy = clamped_y - current_player.position_y;
                         let collision_normal_x = dx;
                         let collision_normal_y = dy;
                         let normal_mag_sq = dist_sq;
-
                         if normal_mag_sq > 0.0 {
                             let normal_mag = normal_mag_sq.sqrt();
                             let norm_x = collision_normal_x / normal_mag;
@@ -785,31 +730,22 @@ pub fn update_player_position(
                     }
                 }
             },
-            
             spatial_grid::EntityType::Stone(stone_id) => {
-                if collision_handled {
-                    continue;
-                }
-                
-                // Find the stone in the database
-                if let Some(stone) = stones.id().find(stone_id) {
-                    if stone.health == 0 { continue; }
-
-                    let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
-                    let dx = clamped_x - stone.pos_x;
-                    let dy = clamped_y - stone_collision_y;
-                    let dist_sq = dx * dx + dy * dy;
-
-                    if dist_sq < crate::stone::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
-                        log::debug!("Player-Stone collision detected between {:?} and stone {}. Calculating slide.", sender_id, stone.id);
-
-                        // Rest of stone collision handling (same as before)
+                 if collision_handled { continue; }
+                 if let Some(stone) = stones.id().find(stone_id) {
+                     if stone.health == 0 { continue; }
+                     let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
+                     let dx = clamped_x - stone.pos_x;
+                     let dy = clamped_y - stone_collision_y;
+                     let dist_sq = dx * dx + dy * dy;
+                     if dist_sq < crate::stone::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
+                         log::debug!("Player-Stone collision detected between {:?} and stone {}. Calculating slide.", sender_id, stone.id);
+                         // Slide calculation (same as before)
                         let intended_dx = clamped_x - current_player.position_x;
                         let intended_dy = clamped_y - current_player.position_y;
                         let collision_normal_x = dx;
                         let collision_normal_y = dy;
                         let normal_mag_sq = dist_sq;
-
                         if normal_mag_sq > 0.0 {
                             let normal_mag = normal_mag_sq.sqrt();
                             let norm_x = collision_normal_x / normal_mag;
@@ -828,32 +764,24 @@ pub fn update_player_position(
                             final_y = current_player.position_y;
                         }
                         collision_handled = true;
-                    }
-                }
+                     }
+                 }
             },
-            
             spatial_grid::EntityType::WoodenStorageBox(box_id) => {
-                if collision_handled {
-                    continue;
-                }
-                
-                // Find the box in the database
+                if collision_handled { continue; }
                 if let Some(box_instance) = wooden_storage_boxes.id().find(box_id) {
                     let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
                     let dx = clamped_x - box_instance.pos_x;
                     let dy = clamped_y - box_collision_y;
                     let dist_sq = dx * dx + dy * dy;
-
                     if dist_sq < crate::wooden_storage_box::PLAYER_BOX_COLLISION_DISTANCE_SQUARED {
-                        log::debug!("Player-Box collision detected between {:?} and box {}. Calculating slide.", sender_id, box_instance.id);
-
-                        // Rest of box collision handling (same as before)
+                         log::debug!("Player-Box collision detected between {:?} and box {}. Calculating slide.", sender_id, box_instance.id);
+                         // Slide calculation (same as before)
                         let intended_dx = clamped_x - current_player.position_x;
                         let intended_dy = clamped_y - current_player.position_y;
                         let collision_normal_x = dx;
                         let collision_normal_y = dy;
                         let normal_mag_sq = dist_sq;
-
                         if normal_mag_sq > 0.0 {
                             let normal_mag = normal_mag_sq.sqrt();
                             let norm_x = collision_normal_x / normal_mag;
@@ -875,194 +803,171 @@ pub fn update_player_position(
                     }
                 }
             },
-            
-            spatial_grid::EntityType::Campfire(campfire_id) => {
-                // Remove campfire collision - players should walk over them
-                // Keeping this case but making it a no-op
-                // This comment explains why we're not checking collisions for campfires
-            },
-            
-            // For now, we don't need to handle collision with mushrooms or dropped items
-            _ => {}
+             spatial_grid::EntityType::Campfire(_) => {
+                // No collision with campfires
+             },
+            _ => {} // Ignore other types for collision
         }
     }
 
     // --- Iterative Collision Resolution (Push-out) ---
     let mut resolved_x = final_x;
     let mut resolved_y = final_y;
-    let resolution_iterations = 5; // Max iterations to prevent infinite loops
-    let epsilon = 0.01; // Tiny value to push slightly beyond contact
+    let resolution_iterations = 5;
+    let epsilon = 0.01;
 
     for _iter in 0..resolution_iterations {
         let mut overlap_found_in_iter = false;
-        
-        // Get entities near the resolved position
-        let nearby_entities = grid.get_entities_in_range(resolved_x, resolved_y);
-        
-        // Check overlaps with nearby entities
-        for entity in &nearby_entities {
-            match entity {
-                spatial_grid::EntityType::Player(other_identity) => {
+        let nearby_entities_resolve = grid.get_entities_in_range(resolved_x, resolved_y); // Re-query near resolved position
+
+        for entity in &nearby_entities_resolve {
+             match entity {
+                 spatial_grid::EntityType::Player(other_identity) => {
                     if *other_identity == sender_id { continue; }
-                    
                     if let Some(other_player) = players.identity().find(other_identity) {
-                        let dx = resolved_x - other_player.position_x;
-                        let dy = resolved_y - other_player.position_y;
-                        let dist_sq = dx * dx + dy * dy;
-                        let min_dist = PLAYER_RADIUS * 2.0;
-                        let min_dist_sq = min_dist * min_dist;
-
-                        if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                            overlap_found_in_iter = true;
-                            let distance = dist_sq.sqrt();
-                            let overlap = min_dist - distance;
-                            // Push each player half the overlap distance + epsilon
-                            let push_amount = (overlap / 2.0) + epsilon;
-                            let push_x = (dx / distance) * push_amount;
-                            let push_y = (dy / distance) * push_amount;
-                            resolved_x += push_x;
-                            resolved_y += push_y;
-                            log::trace!("Resolving player-player overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
-                        }
+                         if other_player.is_dead { continue; } // Don't resolve against dead players
+                         let dx = resolved_x - other_player.position_x;
+                         let dy = resolved_y - other_player.position_y;
+                         let dist_sq = dx * dx + dy * dy;
+                         let min_dist = PLAYER_RADIUS * 2.0;
+                         let min_dist_sq = min_dist * min_dist;
+                         if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                             overlap_found_in_iter = true;
+                             let distance = dist_sq.sqrt();
+                             let overlap = min_dist - distance;
+                             let push_amount = (overlap / 2.0) + epsilon;
+                             let push_x = (dx / distance) * push_amount;
+                             let push_y = (dy / distance) * push_amount;
+                             resolved_x += push_x;
+                             resolved_y += push_y;
+                         }
                     }
                 },
-                
-                spatial_grid::EntityType::Tree(tree_id) => {
-                    if let Some(tree) = trees.id().find(tree_id) {
-                        if tree.health == 0 { continue; }
-
-                        let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
-                        let dx = resolved_x - tree.pos_x;
-                        let dy = resolved_y - tree_collision_y;
-                        let dist_sq = dx * dx + dy * dy;
-                        let min_dist = PLAYER_RADIUS + crate::tree::TREE_TRUNK_RADIUS;
-                        let min_dist_sq = min_dist * min_dist;
-
-                        if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                            overlap_found_in_iter = true;
-                            let distance = dist_sq.sqrt();
-                            let overlap = (min_dist - distance) + epsilon;
-                            let push_x = (dx / distance) * overlap;
-                            let push_y = (dy / distance) * overlap;
-                            resolved_x += push_x;
-                            resolved_y += push_y;
-                            log::trace!("Resolving player-tree overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
-                        }
-                    }
+                 spatial_grid::EntityType::Tree(tree_id) => {
+                     if let Some(tree) = trees.id().find(tree_id) {
+                         if tree.health == 0 { continue; }
+                         let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
+                         let dx = resolved_x - tree.pos_x;
+                         let dy = resolved_y - tree_collision_y;
+                         let dist_sq = dx * dx + dy * dy;
+                         let min_dist = PLAYER_RADIUS + crate::tree::TREE_TRUNK_RADIUS;
+                         let min_dist_sq = min_dist * min_dist;
+                         if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                             overlap_found_in_iter = true;
+                             let distance = dist_sq.sqrt();
+                             let overlap = (min_dist - distance) + epsilon;
+                             let push_x = (dx / distance) * overlap;
+                             let push_y = (dy / distance) * overlap;
+                             resolved_x += push_x;
+                             resolved_y += push_y;
+                         }
+                     }
                 },
-                
-                spatial_grid::EntityType::Stone(stone_id) => {
+                 spatial_grid::EntityType::Stone(stone_id) => {
                     if let Some(stone) = stones.id().find(stone_id) {
                         if stone.health == 0 { continue; }
-
                         let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
                         let dx = resolved_x - stone.pos_x;
                         let dy = resolved_y - stone_collision_y;
                         let dist_sq = dx * dx + dy * dy;
                         let min_dist = PLAYER_RADIUS + crate::stone::STONE_RADIUS;
                         let min_dist_sq = min_dist * min_dist;
-
                         if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                            overlap_found_in_iter = true;
-                            let distance = dist_sq.sqrt();
-                            let overlap = (min_dist - distance) + epsilon;
-                            let push_x = (dx / distance) * overlap;
-                            let push_y = (dy / distance) * overlap;
-                            resolved_x += push_x;
-                            resolved_y += push_y;
-                            log::trace!("Resolving player-stone overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
+                             overlap_found_in_iter = true;
+                             let distance = dist_sq.sqrt();
+                             let overlap = (min_dist - distance) + epsilon;
+                             let push_x = (dx / distance) * overlap;
+                             let push_y = (dy / distance) * overlap;
+                             resolved_x += push_x;
+                             resolved_y += push_y;
                         }
                     }
                 },
-                
-                spatial_grid::EntityType::WoodenStorageBox(box_id) => {
-                    if let Some(box_instance) = wooden_storage_boxes.id().find(box_id) {
-                        let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
-                        let dx = resolved_x - box_instance.pos_x;
-                        let dy = resolved_y - box_collision_y;
-                        let dist_sq = dx * dx + dy * dy;
-                        let min_dist = PLAYER_RADIUS + crate::wooden_storage_box::BOX_COLLISION_RADIUS;
-                        let min_dist_sq = min_dist * min_dist;
-
-                        if dist_sq < min_dist_sq && dist_sq > 0.0 {
-                            overlap_found_in_iter = true;
-                            let distance = dist_sq.sqrt();
-                            let overlap = (min_dist - distance) + epsilon;
-                            let push_x = (dx / distance) * overlap;
-                            let push_y = (dy / distance) * overlap;
-                            resolved_x += push_x;
-                            resolved_y += push_y;
-                            log::trace!("Resolving player-box overlap iter {}. Push: ({}, {})", _iter, push_x, push_y);
-                        }
-                    }
+                 spatial_grid::EntityType::WoodenStorageBox(box_id) => {
+                     if let Some(box_instance) = wooden_storage_boxes.id().find(box_id) {
+                         let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
+                         let dx = resolved_x - box_instance.pos_x;
+                         let dy = resolved_y - box_collision_y;
+                         let dist_sq = dx * dx + dy * dy;
+                         let min_dist = PLAYER_RADIUS + crate::wooden_storage_box::BOX_COLLISION_RADIUS;
+                         let min_dist_sq = min_dist * min_dist;
+                         if dist_sq < min_dist_sq && dist_sq > 0.0 {
+                             overlap_found_in_iter = true;
+                             let distance = dist_sq.sqrt();
+                             let overlap = (min_dist - distance) + epsilon;
+                             let push_x = (dx / distance) * overlap;
+                             let push_y = (dy / distance) * overlap;
+                             resolved_x += push_x;
+                             resolved_y += push_y;
+                         }
+                     }
                 },
-                
-                spatial_grid::EntityType::Campfire(campfire_id) => {
-                    // Remove campfire collision - players should walk over them
-                    // Keeping this case but making it a no-op
-                    // This comment explains why we're not checking collisions for campfires
-                },
-                
-                // Skip other entity types for overlap resolution
+                 spatial_grid::EntityType::Campfire(_) => {
+                     // No overlap resolution with campfires
+                 },
                 _ => {}
-            }
+             }
         }
-        
-        // Re-clamp final resolved position to world boundaries after each iteration
+
         resolved_x = resolved_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
         resolved_y = resolved_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
 
         if !overlap_found_in_iter {
             log::trace!("Overlap resolution complete after {} iterations.", _iter + 1);
-            break; // Exit iterations if no overlaps were found in this pass
+            break;
         }
         if _iter == resolution_iterations - 1 {
             log::warn!("Overlap resolution reached max iterations ({}) for player {:?}. Position might still overlap slightly.", resolution_iterations, sender_id);
         }
     }
+    // --- End Collision ---
 
     // --- Final Update ---
-    // Determine final direction based on actual movement
-    let actual_dx = resolved_x - current_player.position_x;
-    let actual_dy = resolved_y - current_player.position_y;
-    let position_changed = actual_dx != 0.0 || actual_dy != 0.0;
-    // Update if position, health, or warmth changed, OR if player died, or if enough time passed
-    let should_update = player_died || position_changed || health_changed || warmth_changed || elapsed_seconds > 0.1;
+    let mut player_to_update = current_player; // Get a mutable copy from the initial read
+
+    // Check if position, direction, stamina, or sprint status actually changed
+    let position_changed = (resolved_x - player_to_update.position_x).abs() > 0.01 ||
+                           (resolved_y - player_to_update.position_y).abs() > 0.01;
+    let direction_changed = player_to_update.direction != new_direction;
+    let stamina_changed = (player_to_update.stamina - new_stamina).abs() > 0.01;
+    let sprint_status_changed = player_to_update.is_sprinting != current_sprinting_state;
+
+    let should_update = position_changed || direction_changed || stamina_changed || sprint_status_changed;
+
 
     if should_update {
-        let player = Player {
-            identity: sender_id,
-            position_x: resolved_x,
-            position_y: resolved_y,
-            direction: new_direction,
-            last_update: now,
-            hunger: new_hunger,
-            thirst: new_thirst,
-            stamina: new_stamina,
-            health: new_health,
-            warmth: new_warmth,
-            is_sprinting: current_sprinting_state,
-            is_dead: player_died,
-            respawn_at: calculated_respawn_at,
-            last_hit_time: None,
-            ..current_player
-        };
-        players.identity().update(player);
+        log::trace!("Updating player {:?} - PosChange: {}, DirChange: {}, StamChange: {}, SprintChange: {}",
+            sender_id, position_changed, direction_changed, stamina_changed, sprint_status_changed);
+
+        player_to_update.position_x = resolved_x;
+        player_to_update.position_y = resolved_y;
+        player_to_update.direction = new_direction;
+        player_to_update.last_update = now; // Update timestamp for movement processing
+        player_to_update.stamina = new_stamina; // Update stamina potentially drained by sprint
+        player_to_update.is_sprinting = current_sprinting_state; // Update sprint status
+        // last_hit_time is managed elsewhere (e.g., when taking damage)
+
+        players.identity().update(player_to_update); // Update the modified player struct
+    } else {
+         log::trace!("No movement-related changes detected for player {:?}, skipping update.", sender_id);
+         // Optionally update timestamp even if nothing changed?
+         // If the client sent movement (dx/dy != 0) but collision stopped it,
+         // or if sprint status changed but stamina drain was negligible,
+         // we might still want to update the timestamp to prevent large future drains?
+         // Let's update timestamp if *any* input was processed, even if result is no change.
+         // Check if there was *intended* movement or sprint state change attempt
+         let input_processed = move_dx != 0.0 || move_dy != 0.0 || sprint_status_changed;
+         if input_processed && !should_update {
+              // Update only the timestamp if input was processed but resulted in no state change
+              player_to_update.last_update = now;
+              players.identity().update(player_to_update);
+              log::trace!("Updated player {:?} timestamp due to processed input with no state change.", sender_id);
+         }
     }
 
-    // --- Tick World State --- using qualified path
-    // We pass the current context and its timestamp
-    match crate::world_state::tick_world_state(ctx, ctx.timestamp) {
-        Ok(_) => { /* Time ticked successfully (or no update needed) */ }
-        Err(e) => log::error!("Error ticking world state: {}", e),
-    }
+    // REMOVED: World State Tick (moved to global_tick.rs)
+    // REMOVED: Resource Respawn Check (moved to global_tick.rs)
 
-    // --- Check Resource Respawns --- using qualified path
-    match crate::environment::check_resource_respawns(ctx) {
-        Ok(_) => { /* Resources checked successfully */ }
-        Err(e) => log::error!("Error checking resource respawns: {}", e),
-    }
-    
     Ok(())
 }
 
@@ -1090,6 +995,11 @@ pub fn jump(ctx: &ReducerContext) -> Result<(), String> {
    let identity = ctx.sender;
    let players = ctx.db.player();
    if let Some(mut player) = players.identity().find(&identity) {
+       // Don't allow jumping if dead
+       if player.is_dead {
+           return Err("Cannot jump while dead.".to_string());
+       }
+
        let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
        let now_ms = (now_micros / 1000) as u64;
 
@@ -1100,20 +1010,20 @@ pub fn jump(ctx: &ReducerContext) -> Result<(), String> {
 
        // Proceed with the jump
        player.jump_start_time_ms = now_ms;
-       player.last_update = ctx.timestamp;
+       player.last_update = ctx.timestamp; // Update timestamp on jump
        players.identity().update(player);
        Ok(())
    } else {
        Err("Player not found".to_string())
    }
-} 
+}
 
 // --- Client-Requested Respawn Reducer ---
 #[spacetimedb::reducer]
 pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
-    let item_defs = ctx.db.item_definition(); // Keep for potential future use (e.g., dropping items)
+    let item_defs = ctx.db.item_definition();
     let inventory = ctx.db.inventory_item();
 
     // Find the player requesting respawn
@@ -1126,7 +1036,7 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
         return Err("You are not dead.".to_string());
     }
 
-    // Check if the respawn timer is up
+    // Check if the respawn timer is up (uses respawn_at set by player_stats reducer)
     if ctx.timestamp < player.respawn_at {
         log::warn!("Player {:?} requested respawn too early.", sender_id);
         let remaining_micros = player.respawn_at.to_micros_since_unix_epoch().saturating_sub(ctx.timestamp.to_micros_since_unix_epoch());
@@ -1148,9 +1058,9 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Cleared {} items from inventory for player {:?}.", delete_count, sender_id);
     // --- End Clear Inventory ---
 
-    // --- ADD: Clear Crafting Queue & Refund ---
+    // --- Clear Crafting Queue & Refund ---
     crate::crafting_queue::clear_player_crafting_queue(ctx, sender_id);
-    // --- END ADD ---
+    // --- END Clear Crafting Queue ---
 
     // --- Grant Starting Rock ---
     log::info!("Granting starting Rock to respawned player: {}", player.username);
@@ -1180,10 +1090,11 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     player.jump_start_time_ms = 0;
     player.is_sprinting = false;
     player.is_dead = false; // Mark as alive again
-    player.last_hit_time = None; 
+    player.last_hit_time = None;
 
-    // --- Reset Position ---
-    let spawn_x = 640.0; // Simple initial spawn point
+    // --- Reset Position (Consider finding a safe spawn instead of fixed coords) ---
+    // TODO: Implement safe spawn finding logic here, similar to register_player
+    let spawn_x = 640.0; // Simple initial spawn point for now
     let spawn_y = 480.0;
     player.position_x = spawn_x;
     player.position_y = spawn_y;
@@ -1196,8 +1107,8 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     players.identity().update(player);
     log::info!("Player {:?} respawned at ({:.1}, {:.1}).", sender_id, spawn_x, spawn_y);
 
-    // Unequip item on respawn (ensure clean state)
-    match active_equipment::unequip_item(ctx) {
+    // Ensure item is unequipped on respawn
+    match active_equipment::unequip_item(ctx, sender_id) {
         Ok(_) => log::info!("Ensured item is unequipped for respawned player {:?}", sender_id),
         Err(e) => log::error!("Failed to unequip item for respawned player {:?}: {}", sender_id, e),
     }

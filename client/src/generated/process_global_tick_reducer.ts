@@ -31,30 +31,32 @@ import {
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export type UnequipItem = {
-  playerIdentity: Identity,
+import { GlobalTickSchedule as __GlobalTickSchedule } from "./global_tick_schedule_type";
+
+export type ProcessGlobalTick = {
+  schedule: __GlobalTickSchedule,
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace UnequipItem {
+export namespace ProcessGlobalTick {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("playerIdentity", AlgebraicType.createIdentityType()),
+      new ProductTypeElement("schedule", __GlobalTickSchedule.getTypeScriptAlgebraicType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: UnequipItem): void {
-    UnequipItem.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: ProcessGlobalTick): void {
+    ProcessGlobalTick.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): UnequipItem {
-    return UnequipItem.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): ProcessGlobalTick {
+    return ProcessGlobalTick.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }

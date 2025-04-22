@@ -1,0 +1,204 @@
+use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
+use spacetimedb::spacetimedb_lib::ScheduleAt;
+use log;
+use std::time::Duration;
+
+// Import necessary items from the main lib module or other modules
+use crate::{
+    Player, // Player struct
+    world_state::{self, TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT},
+    campfire::{self, Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND},
+    active_equipment, // For unequipping on death
+    HUNGER_DRAIN_PER_SECOND, THIRST_DRAIN_PER_SECOND,
+    STAMINA_RECOVERY_PER_SECOND, LOW_NEED_THRESHOLD,
+    LOW_THIRST_SPEED_PENALTY, // Needed for context, though speed penalty applied in movement
+    HEALTH_LOSS_PER_SEC_LOW_THIRST, HEALTH_LOSS_PER_SEC_LOW_HUNGER,
+    HEALTH_LOSS_MULTIPLIER_AT_ZERO, HEALTH_RECOVERY_THRESHOLD,
+    HEALTH_RECOVERY_PER_SEC, HEALTH_LOSS_PER_SEC_LOW_WARMTH,
+    LOW_WARMTH_SPEED_PENALTY // Needed for context
+};
+
+// Import table traits
+use crate::Player as PlayerTableTrait;
+use crate::world_state::world_state as WorldStateTableTrait;
+use crate::campfire::campfire as CampfireTableTrait;
+use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait; // Needed for unequip on death
+use crate::player; // Added missing import for Player trait
+use crate::player_stats::PlayerStatSchedule as PlayerStatScheduleTableTrait; // Added Self trait import
+
+pub(crate) const PLAYER_STAT_UPDATE_INTERVAL_SECS: u64 = 1; // Update stats every second
+
+// --- Player Stat Schedule Table (Reverted to scheduled pattern) ---
+#[spacetimedb::table(name = player_stat_schedule, scheduled(process_player_stats))]
+#[derive(Clone)]
+pub struct PlayerStatSchedule {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64, // Changed PK name to id
+    pub scheduled_at: ScheduleAt, // Added scheduled_at field
+}
+
+// --- Function to Initialize the Stat Update Schedule ---
+pub fn init_player_stat_schedule(ctx: &ReducerContext) -> Result<(), String> {
+    let schedule_table = ctx.db.player_stat_schedule();
+    if schedule_table.iter().count() == 0 {
+        log::info!(
+            "Starting player stat update schedule (every {}s).",
+            PLAYER_STAT_UPDATE_INTERVAL_SECS
+        );
+        let interval = Duration::from_secs(PLAYER_STAT_UPDATE_INTERVAL_SECS);
+        // Use try_insert and handle potential errors (though unlikely for init schedule)
+        match schedule_table.try_insert(PlayerStatSchedule {
+            id: 0, // Auto-incremented
+            scheduled_at: ScheduleAt::Interval(interval.into()),
+        }) {
+            Ok(_) => log::info!("Player stat schedule inserted."),
+            Err(e) => log::error!("Failed to insert player stat schedule: {}", e),
+        };
+    } else {
+        log::debug!("Player stat schedule already exists.");
+    }
+    Ok(())
+}
+
+// --- Reducer to Process ALL Player Stat Updates (Scheduled) ---
+#[spacetimedb::reducer]
+pub fn process_player_stats(ctx: &ReducerContext, _schedule: PlayerStatSchedule) -> Result<(), String> {
+    log::trace!("Processing player stats via schedule...");
+    let current_time = ctx.timestamp;
+    let players = ctx.db.player();
+    let world_states = ctx.db.world_state();
+    let campfires = ctx.db.campfire();
+
+    let world_state = world_states.iter().next()
+        .ok_or_else(|| "WorldState not found during stat processing".to_string())?;
+
+    for player_ref in players.iter() {
+        let mut player = player_ref.clone();
+        let player_id = player.identity;
+
+        if player.is_dead {
+            continue;
+        }
+
+        let last_update_time = player.last_update;
+        let elapsed_micros = current_time.to_micros_since_unix_epoch().saturating_sub(last_update_time.to_micros_since_unix_epoch());
+
+        if elapsed_micros < 500_000 {
+             continue;
+        }
+
+        let elapsed_seconds = (elapsed_micros as f64 / 1_000_000.0) as f32;
+
+        // --- Calculate Stat Changes ---
+        let new_hunger = (player.hunger - (elapsed_seconds * HUNGER_DRAIN_PER_SECOND)).max(0.0);
+        let new_thirst = (player.thirst - (elapsed_seconds * THIRST_DRAIN_PER_SECOND)).max(0.0);
+
+        // Calculate Warmth
+        let mut warmth_change_per_sec: f32 = 0.0;
+        let drain_multiplier = match world_state.time_of_day {
+            TimeOfDay::Morning | TimeOfDay::Noon | TimeOfDay::Afternoon => 0.0,
+            TimeOfDay::Dawn | TimeOfDay::Dusk => WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK,
+            TimeOfDay::Night => WARMTH_DRAIN_MULTIPLIER_NIGHT * 1.25,
+            TimeOfDay::Midnight => WARMTH_DRAIN_MULTIPLIER_MIDNIGHT * 1.33,
+        };
+        warmth_change_per_sec -= BASE_WARMTH_DRAIN_PER_SECOND * drain_multiplier;
+
+        for fire in campfires.iter() {
+            // Only gain warmth from burning campfires
+            if fire.is_burning {
+                let dx = player.position_x - fire.pos_x;
+                let dy = player.position_y - fire.pos_y;
+                if (dx * dx + dy * dy) < WARMTH_RADIUS_SQUARED {
+                    warmth_change_per_sec += WARMTH_PER_SECOND;
+                    log::trace!("Player {:?} gaining warmth from campfire {}", player_id, fire.id);
+                }
+            }
+        }
+        let new_warmth = (player.warmth + (warmth_change_per_sec * elapsed_seconds))
+                         .max(0.0).min(100.0);
+
+        // Calculate Stamina (Recovery only, drain happens during sprint in movement)
+        let mut new_stamina = player.stamina;
+        if !player.is_sprinting {
+            new_stamina = (new_stamina + (elapsed_seconds * STAMINA_RECOVERY_PER_SECOND)).min(100.0);
+        }
+
+        // Calculate Health
+        let mut health_change_per_sec: f32 = 0.0;
+        if new_thirst <= 0.0 {
+            health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_THIRST * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
+        } else if new_thirst < LOW_NEED_THRESHOLD {
+            health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_THIRST;
+        }
+        if new_hunger <= 0.0 {
+            health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_HUNGER * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
+        } else if new_hunger < LOW_NEED_THRESHOLD {
+            health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_HUNGER;
+        }
+        if new_warmth <= 0.0 {
+            health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_WARMTH * HEALTH_LOSS_MULTIPLIER_AT_ZERO;
+        } else if new_warmth < LOW_NEED_THRESHOLD {
+            health_change_per_sec -= HEALTH_LOSS_PER_SEC_LOW_WARMTH;
+        }
+
+        // Health recovery only if needs are met and not taking damage
+        if health_change_per_sec == 0.0 &&
+           new_hunger >= HEALTH_RECOVERY_THRESHOLD &&
+           new_thirst >= HEALTH_RECOVERY_THRESHOLD &&
+           new_warmth >= LOW_NEED_THRESHOLD { // Must not be freezing
+            health_change_per_sec += HEALTH_RECOVERY_PER_SEC;
+        }
+
+        let new_health = (player.health + (health_change_per_sec * elapsed_seconds))
+                         .max(0.0).min(100.0);
+
+        // --- Death Check ---
+        let mut player_died = false;
+        let mut calculated_respawn_at = player.respawn_at; // Keep existing value by default
+        if player.health > 0.0 && new_health <= 0.0 {
+            player_died = true;
+            calculated_respawn_at = ctx.timestamp + Duration::from_secs(5).into(); // Set respawn time
+            log::warn!("Player {} ({:?}) has died due to stat drain! Will be respawnable at {:?}",
+                     player.username, player_id, calculated_respawn_at);
+
+            // Unequip item on death
+            // Call unequip using the context and the specific player's identity
+            match active_equipment::unequip_item(ctx, player_id) {
+                Ok(_) => log::info!("Unequipped item for dying player {:?}", player_id),
+                Err(e) => log::error!("Failed to unequip item for dying player {:?}: {}", player_id, e),
+            }
+        }
+
+        // --- Update Player Table ---
+        // Only update if something actually changed
+        let stats_changed = (player.health - new_health).abs() > 0.01 ||
+                            (player.hunger - new_hunger).abs() > 0.01 ||
+                            (player.thirst - new_thirst).abs() > 0.01 ||
+                            (player.warmth - new_warmth).abs() > 0.01 ||
+                            (player.stamina - new_stamina).abs() > 0.01 ||
+                            player_died; // Also update if the player just died
+
+        if stats_changed {
+            player.health = new_health;
+            player.hunger = new_hunger;
+            player.thirst = new_thirst;
+            player.warmth = new_warmth;
+            player.stamina = new_stamina;
+            player.last_update = current_time; // Update timestamp when stats change
+            player.is_dead = player_died;
+            player.respawn_at = calculated_respawn_at;
+            // Note: We don't update position, direction, sprinting status here
+
+            players.identity().update(player);
+            log::debug!("Updated stats for player {:?}", player_id);
+        } else {
+             log::trace!("No significant stat changes for player {:?}, skipping update.", player_id);
+             // Still update the timestamp if significant time passed but no stats changed?
+             // Maybe only if they moved recently? Let's only update timestamp if stats change.
+        }
+    }
+
+    // No rescheduling needed here, the table's ScheduleAt::Interval handles it
+    Ok(())
+} 

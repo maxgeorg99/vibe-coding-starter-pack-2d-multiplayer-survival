@@ -96,6 +96,10 @@ import { PlaceCampfire } from "./place_campfire_reducer.ts";
 export { PlaceCampfire };
 import { PlaceWoodenStorageBox } from "./place_wooden_storage_box_reducer.ts";
 export { PlaceWoodenStorageBox };
+import { ProcessGlobalTick } from "./process_global_tick_reducer.ts";
+export { ProcessGlobalTick };
+import { ProcessPlayerStats } from "./process_player_stats_reducer.ts";
+export { ProcessPlayerStats };
 import { QuickMoveFromBox } from "./quick_move_from_box_reducer.ts";
 export { QuickMoveFromBox };
 import { QuickMoveToBox } from "./quick_move_to_box_reducer.ts";
@@ -162,6 +166,8 @@ import { DroppedItemTableHandle } from "./dropped_item_table.ts";
 export { DroppedItemTableHandle };
 import { DroppedItemDespawnScheduleTableHandle } from "./dropped_item_despawn_schedule_table.ts";
 export { DroppedItemDespawnScheduleTableHandle };
+import { GlobalTickScheduleTableHandle } from "./global_tick_schedule_table.ts";
+export { GlobalTickScheduleTableHandle };
 import { InventoryItemTableHandle } from "./inventory_item_table.ts";
 export { InventoryItemTableHandle };
 import { ItemDefinitionTableHandle } from "./item_definition_table.ts";
@@ -170,6 +176,8 @@ import { MushroomTableHandle } from "./mushroom_table.ts";
 export { MushroomTableHandle };
 import { PlayerTableHandle } from "./player_table.ts";
 export { PlayerTableHandle };
+import { PlayerStatScheduleTableHandle } from "./player_stat_schedule_table.ts";
+export { PlayerStatScheduleTableHandle };
 import { RecipeTableHandle } from "./recipe_table.ts";
 export { RecipeTableHandle };
 import { StoneTableHandle } from "./stone_table.ts";
@@ -198,6 +206,8 @@ import { DroppedItemDespawnSchedule } from "./dropped_item_despawn_schedule_type
 export { DroppedItemDespawnSchedule };
 import { EquipmentSlot } from "./equipment_slot_type.ts";
 export { EquipmentSlot };
+import { GlobalTickSchedule } from "./global_tick_schedule_type.ts";
+export { GlobalTickSchedule };
 import { InventoryItem } from "./inventory_item_type.ts";
 export { InventoryItem };
 import { ItemCategory } from "./item_category_type.ts";
@@ -208,6 +218,8 @@ import { Mushroom } from "./mushroom_type.ts";
 export { Mushroom };
 import { Player } from "./player_type.ts";
 export { Player };
+import { PlayerStatSchedule } from "./player_stat_schedule_type.ts";
+export { PlayerStatSchedule };
 import { Recipe } from "./recipe_type.ts";
 export { Recipe };
 import { RecipeIngredient } from "./recipe_ingredient_type.ts";
@@ -262,6 +274,11 @@ const REMOTE_MODULE = {
       rowType: DroppedItemDespawnSchedule.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
+    global_tick_schedule: {
+      tableName: "global_tick_schedule",
+      rowType: GlobalTickSchedule.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
     inventory_item: {
       tableName: "inventory_item",
       rowType: InventoryItem.getTypeScriptAlgebraicType(),
@@ -281,6 +298,11 @@ const REMOTE_MODULE = {
       tableName: "player",
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
+    },
+    player_stat_schedule: {
+      tableName: "player_stat_schedule",
+      rowType: PlayerStatSchedule.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
     },
     recipe: {
       tableName: "recipe",
@@ -436,6 +458,14 @@ const REMOTE_MODULE = {
     place_wooden_storage_box: {
       reducerName: "place_wooden_storage_box",
       argsType: PlaceWoodenStorageBox.getTypeScriptAlgebraicType(),
+    },
+    process_global_tick: {
+      reducerName: "process_global_tick",
+      argsType: ProcessGlobalTick.getTypeScriptAlgebraicType(),
+    },
+    process_player_stats: {
+      reducerName: "process_player_stats",
+      argsType: ProcessPlayerStats.getTypeScriptAlgebraicType(),
     },
     quick_move_from_box: {
       reducerName: "quick_move_from_box",
@@ -596,6 +626,8 @@ export type Reducer = never
 | { name: "PickupStorageBox", args: PickupStorageBox }
 | { name: "PlaceCampfire", args: PlaceCampfire }
 | { name: "PlaceWoodenStorageBox", args: PlaceWoodenStorageBox }
+| { name: "ProcessGlobalTick", args: ProcessGlobalTick }
+| { name: "ProcessPlayerStats", args: ProcessPlayerStats }
 | { name: "QuickMoveFromBox", args: QuickMoveFromBox }
 | { name: "QuickMoveToBox", args: QuickMoveToBox }
 | { name: "QuickMoveToCampfire", args: QuickMoveToCampfire }
@@ -1114,6 +1146,38 @@ export class RemoteReducers {
     this.connection.offReducer("place_wooden_storage_box", callback);
   }
 
+  processGlobalTick(schedule: GlobalTickSchedule) {
+    const __args = { schedule };
+    let __writer = new BinaryWriter(1024);
+    ProcessGlobalTick.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("process_global_tick", __argsBuffer, this.setCallReducerFlags.processGlobalTickFlags);
+  }
+
+  onProcessGlobalTick(callback: (ctx: ReducerEventContext, schedule: GlobalTickSchedule) => void) {
+    this.connection.onReducer("process_global_tick", callback);
+  }
+
+  removeOnProcessGlobalTick(callback: (ctx: ReducerEventContext, schedule: GlobalTickSchedule) => void) {
+    this.connection.offReducer("process_global_tick", callback);
+  }
+
+  processPlayerStats(schedule: PlayerStatSchedule) {
+    const __args = { schedule };
+    let __writer = new BinaryWriter(1024);
+    ProcessPlayerStats.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("process_player_stats", __argsBuffer, this.setCallReducerFlags.processPlayerStatsFlags);
+  }
+
+  onProcessPlayerStats(callback: (ctx: ReducerEventContext, schedule: PlayerStatSchedule) => void) {
+    this.connection.onReducer("process_player_stats", callback);
+  }
+
+  removeOnProcessPlayerStats(callback: (ctx: ReducerEventContext, schedule: PlayerStatSchedule) => void) {
+    this.connection.offReducer("process_player_stats", callback);
+  }
+
   quickMoveFromBox(boxId: number, sourceSlotIndex: number) {
     const __args = { boxId, sourceSlotIndex };
     let __writer = new BinaryWriter(1024);
@@ -1446,15 +1510,19 @@ export class RemoteReducers {
     this.connection.offReducer("toggle_campfire_burning", callback);
   }
 
-  unequipItem() {
-    this.connection.callReducer("unequip_item", new Uint8Array(0), this.setCallReducerFlags.unequipItemFlags);
+  unequipItem(playerIdentity: Identity) {
+    const __args = { playerIdentity };
+    let __writer = new BinaryWriter(1024);
+    UnequipItem.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("unequip_item", __argsBuffer, this.setCallReducerFlags.unequipItemFlags);
   }
 
-  onUnequipItem(callback: (ctx: ReducerEventContext) => void) {
+  onUnequipItem(callback: (ctx: ReducerEventContext, playerIdentity: Identity) => void) {
     this.connection.onReducer("unequip_item", callback);
   }
 
-  removeOnUnequipItem(callback: (ctx: ReducerEventContext) => void) {
+  removeOnUnequipItem(callback: (ctx: ReducerEventContext, playerIdentity: Identity) => void) {
     this.connection.offReducer("unequip_item", callback);
   }
 
@@ -1639,6 +1707,16 @@ export class SetReducerFlags {
     this.placeWoodenStorageBoxFlags = flags;
   }
 
+  processGlobalTickFlags: CallReducerFlags = 'FullUpdate';
+  processGlobalTick(flags: CallReducerFlags) {
+    this.processGlobalTickFlags = flags;
+  }
+
+  processPlayerStatsFlags: CallReducerFlags = 'FullUpdate';
+  processPlayerStats(flags: CallReducerFlags) {
+    this.processPlayerStatsFlags = flags;
+  }
+
   quickMoveFromBoxFlags: CallReducerFlags = 'FullUpdate';
   quickMoveFromBox(flags: CallReducerFlags) {
     this.quickMoveFromBoxFlags = flags;
@@ -1797,6 +1875,10 @@ export class RemoteTables {
     return new DroppedItemDespawnScheduleTableHandle(this.connection.clientCache.getOrCreateTable<DroppedItemDespawnSchedule>(REMOTE_MODULE.tables.dropped_item_despawn_schedule));
   }
 
+  get globalTickSchedule(): GlobalTickScheduleTableHandle {
+    return new GlobalTickScheduleTableHandle(this.connection.clientCache.getOrCreateTable<GlobalTickSchedule>(REMOTE_MODULE.tables.global_tick_schedule));
+  }
+
   get inventoryItem(): InventoryItemTableHandle {
     return new InventoryItemTableHandle(this.connection.clientCache.getOrCreateTable<InventoryItem>(REMOTE_MODULE.tables.inventory_item));
   }
@@ -1811,6 +1893,10 @@ export class RemoteTables {
 
   get player(): PlayerTableHandle {
     return new PlayerTableHandle(this.connection.clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
+  }
+
+  get playerStatSchedule(): PlayerStatScheduleTableHandle {
+    return new PlayerStatScheduleTableHandle(this.connection.clientCache.getOrCreateTable<PlayerStatSchedule>(REMOTE_MODULE.tables.player_stat_schedule));
   }
 
   get recipe(): RecipeTableHandle {

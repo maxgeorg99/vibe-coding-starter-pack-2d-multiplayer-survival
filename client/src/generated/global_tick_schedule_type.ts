@@ -30,32 +30,34 @@ import {
   Timestamp,
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
-
-export type UnequipItem = {
-  playerIdentity: Identity,
+export type GlobalTickSchedule = {
+  id: bigint,
+  scheduledAt: { tag: "Interval", value: TimeDuration } | { tag: "Time", value: Timestamp },
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace UnequipItem {
+export namespace GlobalTickSchedule {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("playerIdentity", AlgebraicType.createIdentityType()),
+      new ProductTypeElement("id", AlgebraicType.createU64Type()),
+      new ProductTypeElement("scheduledAt", AlgebraicType.createScheduleAtType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: UnequipItem): void {
-    UnequipItem.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: GlobalTickSchedule): void {
+    GlobalTickSchedule.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): UnequipItem {
-    return UnequipItem.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): GlobalTickSchedule {
+    return GlobalTickSchedule.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
+
 
