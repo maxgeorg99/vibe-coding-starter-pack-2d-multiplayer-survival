@@ -24,9 +24,16 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 *   Inventory Management: Moving, swapping, stacking, stack splitting
 *   Item Equipping: Tools/Weapons (Hotbar), Armor (Slots)
 *   Placeables: Campfire (Multi-slot placement & interaction)
+*   Crafting System: Item recipes
+*   Storage Containers (Chests)
+*   Looting Mechanics (Containers)
 
 **In Progress (🚧):**
-*   Crafting System: Item recipes, crafting stations (initial setup)
+*   Performance Optimizations: Viewport culling, collision system improvements
+*   Code Refactoring: Breaking down large modules into smaller, more maintainable components
+*   Scaling Improvements: Optimizing data structures and algorithms for larger player counts
+*   Entity Component System: Laying groundwork for more efficient entity management
+*   Network Optimization: Reducing bandwidth usage through delta updates and prioritization
 
 **Planned (📓):** 
 *   **Core Systems & World:**
@@ -35,12 +42,10 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
     *   Terrain Autotiling: Edge detection, Wang tiles, seamless transitions between biomes
     *   Advanced AI: Enemy behaviors, pathfinding
     *   Team/Social Features
-    *   Storage Containers (Chests)
-    *   Looting Mechanics (Player/Container)
 *   **Gameplay Loops & Interaction:**
     *   Construction System: Base building (walls, floors, etc.)
     *   Farming System: Planting, growing, harvesting crops
-    *   Cooking System: Preparing food using campfire/stations
+    *   Cooking System: Preparing food using campfire
 *   **Combat & Items:**
     *   Combat Improvements: New weapon types (melee, hybrid, ranged), improved hit detection, PvP balancing
     *   Tool/Weapon Durability
