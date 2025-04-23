@@ -41,16 +41,23 @@ use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
 use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTableTrait;
 use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
+
 // Use struct names directly for trait aliases
 use crate::crafting::Recipe as RecipeTableTrait;
 use crate::crafting_queue::CraftingQueueItem as CraftingQueueItemTableTrait;
 use crate::crafting_queue::CraftingFinishSchedule as CraftingFinishScheduleTableTrait;
 use crate::global_tick::GlobalTickSchedule as GlobalTickScheduleTableTrait;
 
+// Import constants needed from player_stats
+use crate::player_stats::{
+    SPRINT_SPEED_MULTIPLIER,
+    JUMP_COOLDOWN_MS,
+    LOW_NEED_THRESHOLD,
+    LOW_THIRST_SPEED_PENALTY,
+    LOW_WARMTH_SPEED_PENALTY
+};
+
 // Use specific items needed globally (or use qualified paths)
-// use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait};
-// Remove world_state constants related to warmth drain, they are now used in player_stats.rs
-// use crate::world_state::{TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT};
 use crate::world_state::TimeOfDay; // Keep TimeOfDay if needed elsewhere, otherwise remove
 use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED, PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED };
 
@@ -62,27 +69,6 @@ pub(crate) const WORLD_WIDTH_PX: f32 = (WORLD_WIDTH_TILES * TILE_SIZE_PX) as f32
 pub(crate) const WORLD_HEIGHT_PX: f32 = (WORLD_HEIGHT_TILES * TILE_SIZE_PX) as f32;
 pub(crate) const PLAYER_RADIUS: f32 = 24.0;
 const PLAYER_DIAMETER_SQUARED: f32 = (PLAYER_RADIUS * 2.0) * (PLAYER_RADIUS * 2.0);
-
-// Passive Stat Drain Rates (Keep constants needed directly in lib.rs or move if only used in player_stats)
-pub(crate) const HUNGER_DRAIN_PER_SECOND: f32 = 100.0 / (30.0 * 60.0); // Moved usage to player_stats
-pub(crate) const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0); // Moved usage to player_stats
-const STAMINA_DRAIN_PER_SECOND: f32 = 20.0; // Keep for sprint drain calculation
-pub(crate) const STAMINA_RECOVERY_PER_SECOND: f32 = 5.0; // Moved usage to player_stats
-const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;
-const JUMP_COOLDOWN_MS: u64 = 500; // Prevent jumping again for 500ms
-
-// Status Effect Constants (Keep constants needed directly in lib.rs or move if only used in player_stats)
-pub(crate) const LOW_NEED_THRESHOLD: f32 = 20.0; // Keep for speed penalty check
-pub(crate) const LOW_THIRST_SPEED_PENALTY: f32 = 0.75; // Keep for speed penalty check
-pub(crate) const HEALTH_LOSS_PER_SEC_LOW_THIRST: f32 = 0.5; // Moved usage to player_stats
-pub(crate) const HEALTH_LOSS_PER_SEC_LOW_HUNGER: f32 = 0.4; // Moved usage to player_stats
-pub(crate) const HEALTH_LOSS_MULTIPLIER_AT_ZERO: f32 = 2.0; // Moved usage to player_stats
-pub(crate) const HEALTH_RECOVERY_THRESHOLD: f32 = 80.0; // Moved usage to player_stats
-pub(crate) const HEALTH_RECOVERY_PER_SEC: f32 = 1.0; // Moved usage to player_stats
-
-// New Warmth Penalties
-pub(crate) const HEALTH_LOSS_PER_SEC_LOW_WARMTH: f32 = 0.6; // Moved usage to player_stats
-pub(crate) const LOW_WARMTH_SPEED_PENALTY: f32 = 0.8; // Keep for speed penalty check
 
 // NEW: Campfire placement range constant
 const CAMPFIRE_PLACEMENT_MAX_DISTANCE: f32 = 96.0;
@@ -100,6 +86,7 @@ pub struct Player {
     pub color: String,
     pub direction: String,
     pub last_update: Timestamp, // Timestamp of the last update (movement or stats)
+    pub last_stat_update: Timestamp, // Timestamp of the last stat processing tick
     pub jump_start_time_ms: u64,
     pub health: f32,
     pub stamina: f32,
@@ -339,6 +326,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         color,
         direction: "down".to_string(),
         last_update: ctx.timestamp, // Set initial timestamp
+        last_stat_update: ctx.timestamp, // Initialize stat timestamp
         jump_start_time_ms: 0,
         health: 100.0,
         stamina: 100.0,
@@ -590,28 +578,15 @@ pub fn update_player_position(
     let is_moving = move_dx != 0.0 || move_dy != 0.0;
     let mut current_sprinting_state = current_player.is_sprinting;
 
-    // Calculate elapsed time *only* for stamina drain calculation if sprinting
-    let mut elapsed_seconds_for_stamina: f32 = 0.0;
-    if current_sprinting_state && is_moving && new_stamina > 0.0 {
-        let last_update_time = current_player.last_update;
-        let elapsed_micros = now.to_micros_since_unix_epoch().saturating_sub(last_update_time.to_micros_since_unix_epoch());
-        elapsed_seconds_for_stamina = (elapsed_micros as f64 / 1_000_000.0) as f32;
-
-        // Only drain stamina if significant time has passed since last update
-        if elapsed_seconds_for_stamina > 0.01 { // Avoid drain on rapid calls
-            new_stamina = (new_stamina - (elapsed_seconds_for_stamina * STAMINA_DRAIN_PER_SECOND)).max(0.0);
-            if new_stamina <= 0.0 {
-                current_sprinting_state = false; // Stop sprinting if out of stamina
-                log::debug!("Player {:?} ran out of stamina.", sender_id);
-            }
-        }
-        if new_stamina > 0.0 { // Check again after potential drain
-             base_speed_multiplier = SPRINT_SPEED_MULTIPLIER;
-        } else {
-             current_sprinting_state = false; // Ensure sprint is off if stamina is zero
-        }
+    // Determine speed multiplier based on current sprint state and stamina
+    if current_sprinting_state && new_stamina > 0.0 { // Check current stamina > 0
+        base_speed_multiplier = SPRINT_SPEED_MULTIPLIER;
+    } else if current_sprinting_state && new_stamina <= 0.0 {
+        // If trying to sprint but no stamina, force sprint state off for this tick's movement calc
+        current_sprinting_state = false;
+        base_speed_multiplier = 1.0; // Use base speed
+        // The actual player.is_sprinting state will be forced off in player_stats.rs
     }
-    // REMOVED: Passive Stamina Recovery (moved to player_stats.rs)
 
     // --- Calculate Final Speed Multiplier based on Current Stats ---
     let mut final_speed_multiplier = base_speed_multiplier;
@@ -934,6 +909,9 @@ pub fn update_player_position(
 
     let should_update = position_changed || direction_changed || stamina_changed || sprint_status_changed;
 
+    // --- Determine if timestamp needs updating --- 
+    // Update timestamp if state changed OR if there was movement input
+    let needs_timestamp_update = should_update || (move_dx != 0.0 || move_dy != 0.0);
 
     if should_update {
         log::trace!("Updating player {:?} - PosChange: {}, DirChange: {}, StamChange: {}, SprintChange: {}",
@@ -943,26 +921,20 @@ pub fn update_player_position(
         player_to_update.position_y = resolved_y;
         player_to_update.direction = new_direction;
         player_to_update.last_update = now; // Update timestamp for movement processing
-        player_to_update.stamina = new_stamina; // Update stamina potentially drained by sprint
-        player_to_update.is_sprinting = current_sprinting_state; // Update sprint status
+        // player_to_update.stamina = new_stamina; // DO NOT update stamina here
+        // player_to_update.is_sprinting = current_sprinting_state; // DO NOT update sprint state here (handled by player_stats)
         // last_hit_time is managed elsewhere (e.g., when taking damage)
 
         players.identity().update(player_to_update); // Update the modified player struct
+    } else if needs_timestamp_update { // If no state changed, but movement input occurred
+         log::trace!("No movement-related state changes detected for player {:?}, but updating timestamp due to movement input.", sender_id);
+         // Update only the timestamp
+         // Fetch the player again to avoid overwriting potential stat changes from other reducers? Or just update timestamp on the copy?
+         // Let's update the timestamp on the copy we already have.
+         player_to_update.last_update = now;
+         players.identity().update(player_to_update);
     } else {
-         log::trace!("No movement-related changes detected for player {:?}, skipping update.", sender_id);
-         // Optionally update timestamp even if nothing changed?
-         // If the client sent movement (dx/dy != 0) but collision stopped it,
-         // or if sprint status changed but stamina drain was negligible,
-         // we might still want to update the timestamp to prevent large future drains?
-         // Let's update timestamp if *any* input was processed, even if result is no change.
-         // Check if there was *intended* movement or sprint state change attempt
-         let input_processed = move_dx != 0.0 || move_dy != 0.0 || sprint_status_changed;
-         if input_processed && !should_update {
-              // Update only the timestamp if input was processed but resulted in no state change
-              player_to_update.last_update = now;
-              players.identity().update(player_to_update);
-              log::trace!("Updated player {:?} timestamp due to processed input with no state change.", sender_id);
-         }
+         log::trace!("No state changes or movement input detected for player {:?}, skipping update.", sender_id);
     }
 
     // REMOVED: World State Tick (moved to global_tick.rs)
@@ -1102,6 +1074,7 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
 
     // --- Update Timestamp ---
     player.last_update = ctx.timestamp;
+    player.last_stat_update = ctx.timestamp; // Reset stat timestamp on respawn
 
     // --- Apply Player Changes ---
     players.identity().update(player);

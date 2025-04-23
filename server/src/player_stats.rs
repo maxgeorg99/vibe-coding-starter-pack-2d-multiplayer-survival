@@ -3,19 +3,32 @@ use spacetimedb::spacetimedb_lib::ScheduleAt;
 use log;
 use std::time::Duration;
 
+// Define Constants locally
+const HUNGER_DRAIN_PER_SECOND: f32 = 100.0 / (30.0 * 60.0);
+const THIRST_DRAIN_PER_SECOND: f32 = 100.0 / (20.0 * 60.0);
+// Make stat constants pub(crate) as well for consistency, although not strictly needed if only used here
+pub(crate) const STAMINA_DRAIN_PER_SECOND: f32 = 5.0;
+pub(crate) const STAMINA_RECOVERY_PER_SECOND: f32 = 1.0;
+pub(crate) const HEALTH_LOSS_PER_SEC_LOW_THIRST: f32 = 0.5;
+pub(crate) const HEALTH_LOSS_PER_SEC_LOW_HUNGER: f32 = 0.4;
+pub(crate) const HEALTH_LOSS_MULTIPLIER_AT_ZERO: f32 = 2.0;
+pub(crate) const HEALTH_RECOVERY_THRESHOLD: f32 = 80.0;
+pub(crate) const HEALTH_RECOVERY_PER_SEC: f32 = 1.0;
+pub(crate) const HEALTH_LOSS_PER_SEC_LOW_WARMTH: f32 = 0.6;
+
+// Add the constants moved from lib.rs and make them pub(crate)
+pub(crate) const SPRINT_SPEED_MULTIPLIER: f32 = 1.5;
+pub(crate) const JUMP_COOLDOWN_MS: u64 = 500;
+pub(crate) const LOW_NEED_THRESHOLD: f32 = 20.0;
+pub(crate) const LOW_THIRST_SPEED_PENALTY: f32 = 0.75;
+pub(crate) const LOW_WARMTH_SPEED_PENALTY: f32 = 0.8;
+
 // Import necessary items from the main lib module or other modules
 use crate::{
     Player, // Player struct
     world_state::{self, TimeOfDay, BASE_WARMTH_DRAIN_PER_SECOND, WARMTH_DRAIN_MULTIPLIER_DAWN_DUSK, WARMTH_DRAIN_MULTIPLIER_NIGHT, WARMTH_DRAIN_MULTIPLIER_MIDNIGHT},
     campfire::{self, Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND},
     active_equipment, // For unequipping on death
-    HUNGER_DRAIN_PER_SECOND, THIRST_DRAIN_PER_SECOND,
-    STAMINA_RECOVERY_PER_SECOND, LOW_NEED_THRESHOLD,
-    LOW_THIRST_SPEED_PENALTY, // Needed for context, though speed penalty applied in movement
-    HEALTH_LOSS_PER_SEC_LOW_THIRST, HEALTH_LOSS_PER_SEC_LOW_HUNGER,
-    HEALTH_LOSS_MULTIPLIER_AT_ZERO, HEALTH_RECOVERY_THRESHOLD,
-    HEALTH_RECOVERY_PER_SEC, HEALTH_LOSS_PER_SEC_LOW_WARMTH,
-    LOW_WARMTH_SPEED_PENALTY // Needed for context
 };
 
 // Import table traits
@@ -81,12 +94,9 @@ pub fn process_player_stats(ctx: &ReducerContext, _schedule: PlayerStatSchedule)
             continue;
         }
 
-        let last_update_time = player.last_update;
-        let elapsed_micros = current_time.to_micros_since_unix_epoch().saturating_sub(last_update_time.to_micros_since_unix_epoch());
-
-        if elapsed_micros < 500_000 {
-             continue;
-        }
+        // Use the dedicated stat update timestamp
+        let last_stat_update_time = player.last_stat_update;
+        let elapsed_micros = current_time.to_micros_since_unix_epoch().saturating_sub(last_stat_update_time.to_micros_since_unix_epoch());
 
         let elapsed_seconds = (elapsed_micros as f64 / 1_000_000.0) as f32;
 
@@ -118,9 +128,22 @@ pub fn process_player_stats(ctx: &ReducerContext, _schedule: PlayerStatSchedule)
         let new_warmth = (player.warmth + (warmth_change_per_sec * elapsed_seconds))
                          .max(0.0).min(100.0);
 
-        // Calculate Stamina (Recovery only, drain happens during sprint in movement)
+        // Calculate Stamina (Drain happens first if sprinting+moving, then recovery if not sprinting)
         let mut new_stamina = player.stamina;
-        if !player.is_sprinting {
+        let mut new_sprinting_state = player.is_sprinting; // Start with current state
+
+        // Check if player likely moved since last stat update
+        let likely_moved = player.last_update > player.last_stat_update;
+
+        if new_sprinting_state && likely_moved {
+            // Apply drain if sprinting and likely moved
+            new_stamina = (new_stamina - (elapsed_seconds * STAMINA_DRAIN_PER_SECOND)).max(0.0);
+            if new_stamina <= 0.0 {
+                new_sprinting_state = false; // Force sprinting off if out of stamina
+                log::debug!("Player {:?} ran out of stamina (stat tick).", player_id);
+            }
+        } else if !new_sprinting_state {
+            // Apply recovery only if not sprinting (or just stopped sprinting this tick)
             new_stamina = (new_stamina + (elapsed_seconds * STAMINA_RECOVERY_PER_SECOND)).min(100.0);
         }
 
@@ -177,7 +200,8 @@ pub fn process_player_stats(ctx: &ReducerContext, _schedule: PlayerStatSchedule)
                             (player.thirst - new_thirst).abs() > 0.01 ||
                             (player.warmth - new_warmth).abs() > 0.01 ||
                             (player.stamina - new_stamina).abs() > 0.01 ||
-                            player_died; // Also update if the player just died
+                            (player.is_sprinting != new_sprinting_state) || // Check if sprint state changed
+                            player_died; // Also update if other stats changed OR if player died
 
         if stats_changed {
             player.health = new_health;
@@ -185,17 +209,22 @@ pub fn process_player_stats(ctx: &ReducerContext, _schedule: PlayerStatSchedule)
             player.thirst = new_thirst;
             player.warmth = new_warmth;
             player.stamina = new_stamina;
-            player.last_update = current_time; // Update timestamp when stats change
             player.is_dead = player_died;
             player.respawn_at = calculated_respawn_at;
-            // Note: We don't update position, direction, sprinting status here
+            player.is_sprinting = new_sprinting_state; // Update sprint state if changed
+            // Note: We don't update position, direction here
+
+            // ALWAYS update last_stat_update timestamp after processing
+            player.last_stat_update = current_time;
 
             players.identity().update(player);
             log::debug!("Updated stats for player {:?}", player_id);
         } else {
              log::trace!("No significant stat changes for player {:?}, skipping update.", player_id);
-             // Still update the timestamp if significant time passed but no stats changed?
-             // Maybe only if they moved recently? Let's only update timestamp if stats change.
+             // Still update the stat timestamp even if nothing changed, to prevent large future deltas
+             player.last_stat_update = current_time;
+             players.identity().update(player);
+             log::trace!("Updated player {:?} last_stat_update timestamp anyway.", player_id);
         }
     }
 

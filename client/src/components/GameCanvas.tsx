@@ -44,10 +44,11 @@ import { drawInteractionIndicator } from '../utils/interactionIndicator'; // Imp
 import { drawShadow } from '../utils/shadowUtils'; // Import shadow utility
 // NEW: Import placement types
 import { PlacementItemInfo, PlacementActions } from '../hooks/usePlacementManager';
+// Import the new hook
+import { useInputHandler } from '../hooks/useInputHandler';
 
 // Threshold for movement animation (position delta)
 const MOVEMENT_POSITION_THRESHOLD = 0.1; // Small threshold to account for float precision
-const ANIMATION_INTERVAL_MS = 150;
 
 // --- Jump Constants ---
 const JUMP_DURATION_MS = 400; // Total duration of the jump animation
@@ -68,7 +69,8 @@ const PLAYER_MUSHROOM_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches ser
 const PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // Matches server constant (64px)
 const PLAYER_BOX_INTERACTION_DISTANCE_SQUARED = 64.0 * 64.0; // <<< ADDED: Matches server constant
 
-const HOLD_INTERACTION_DURATION_MS = 250; // Time to hold E for inventory (halved)
+// Keep constant needed for rendering
+const HOLD_INTERACTION_DURATION_MS = 250;
 
 interface GameCanvasProps {
   players: Map<string, SpacetimeDBPlayer>;
@@ -84,13 +86,13 @@ interface GameCanvasProps {
   localPlayerId?: string;
   connection: any | null; 
   activeEquipments: Map<string, SpacetimeDBActiveEquipment>;
-  updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
-  callJumpReducer: () => void;
-  callSetSprintingReducer: (isSprinting: boolean) => void;
   placementInfo: PlacementItemInfo | null;
   placementActions: PlacementActions;
   placementError: string | null; 
   onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
+  updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
+  callJumpReducer: () => void;
+  callSetSprintingReducer: (isSprinting: boolean) => void;
 }
 
 // Type guard for Player
@@ -232,18 +234,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   localPlayerId,
   connection,
   activeEquipments,
-  updatePlayerPosition,
-  callJumpReducer,
-  callSetSprintingReducer,
   placementInfo,
   placementActions,
   placementError,
   onSetInteractingWith,
+  updatePlayerPosition,
+  callJumpReducer,
+  callSetSprintingReducer,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const keysPressed = useRef<Set<string>>(new Set());
   const requestIdRef = useRef<number>(0);
   const heroImageRef = useRef<HTMLImageElement | null>(null);
   const grassImageRef = useRef<HTMLImageElement | null>(null);
@@ -253,7 +254,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const worldMousePosRef = useRef<{x: number | null, y: number | null}>({ x: null, y: null });
   const [isMinimapOpen, setIsMinimapOpen] = useState(false); // State for minimap visibility
   const [isMouseOverMinimap, setIsMouseOverMinimap] = useState(false); // State for minimap hover
-  const isSprintingRef = useRef<boolean>(false); // Track current sprint state
   const lastPositionsRef = useRef<Map<string, {x: number, y: number}>>(new Map()); // Store last known positions
   const isInputDisabled = useRef<boolean>(false); // Ref to track input disable state
   const closestInteractableMushroomIdRef = useRef<bigint | null>(null); // Ref for nearby mushroom ID
@@ -261,23 +261,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const closestInteractableDroppedItemIdRef = useRef<bigint | null>(null); // Ref for closest interactable dropped item ID
   const closestInteractableBoxIdRef = useRef<number | null>(null); // <<< ADDED: Ref for nearby box ID (u32)
   const isClosestInteractableBoxEmptyRef = useRef<boolean>(false); // <<< NEW: Ref to track if the closest box is empty
-  const isEHeldDownRef = useRef<boolean>(false);
-  const isMouseDownRef = useRef<boolean>(false);
-  const lastClientSwingAttemptRef = useRef<number>(0); // Store timestamp of last attempt
-  const eKeyDownTimestampRef = useRef<number>(0);
-  const eKeyHoldTimerRef = useRef<number | null>(null);
-  const [interactionProgress, setInteractionProgress] = useState<{ targetId: number | bigint | null; startTime: number } | null>(null);
+  const isSprintingRef = useRef<boolean>(false); // Re-add ref needed for death state check effect
 
-  // --- Ref for Placement Actions Object --- 
+  // Ref for Placement Actions Object (keep this, might be needed by other effects)
   const placementActionsRef = useRef(placementActions);
 
   // Update ref when placement actions object prop changes
   useEffect(() => {
     placementActionsRef.current = placementActions;
   }, [placementActions]);
-  // --- End Refs --- 
 
-  const animationFrame = useAnimationCycle(ANIMATION_INTERVAL_MS, 4);
+  const animationFrame = useAnimationCycle(150, 4); // Keep animation frame logic here
 
   // Memoize the keyframes based on full moon state, anticipating the next cycle if needed
   const currentKeyframes = useMemo(() => {
@@ -337,12 +331,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const localPlayer = getLocalPlayer();
     isInputDisabled.current = !!localPlayer?.isDead;
     if (isInputDisabled.current) {
-      keysPressed.current.clear(); // Clear keys if player is dead
       // Ensure sprint state is reset if player dies while sprinting
       if (isSprintingRef.current) {
            isSprintingRef.current = false;
            // Optionally call reducer if needed, but player state reset on respawn might cover this
-           // callSetSprintingReducer(false);
+           // connection?.reducers?.setSprinting(false); // Example: Use connection directly if needed
       }
     }
   }, [players, localPlayerId, getLocalPlayer]);
@@ -357,378 +350,33 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return 0;
   }, [localPlayer?.isDead, localPlayer?.respawnAt]);
 
-  // --- NEW: Swing Attempt Helper (Moved Before useEffect) ---
-  const attemptSwing = useCallback(() => {
-    if (!connection?.reducers || !localPlayerId) return;
-    
-    const localEquipment = activeEquipments.get(localPlayerId);
-    if (!localEquipment || localEquipment.equippedItemDefId === null) {
-        return; 
-    }
-
-    const now = Date.now();
-    const SWING_COOLDOWN_MS = 500;
-
-    // Client-side cooldown
-    if (now - lastClientSwingAttemptRef.current < SWING_COOLDOWN_MS) {
-      return;
-    }
-    
-    // Server-side cooldown
-    if (now - Number(localEquipment.swingStartTimeMs) < SWING_COOLDOWN_MS) {
-       return; 
-    }
-
-    // Attempt the swing
-    try {
-        connection.reducers.useEquippedItem();
-        lastClientSwingAttemptRef.current = now;
-    } catch (err) {
-        console.error("[AttemptSwing] Error calling useEquippedItem reducer:", err);
-    }
-  }, [connection, localPlayerId, activeEquipments]); // Dependencies
-
-  // --- Input Handling useEffect --- 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isInputDisabled.current && e.key.toLowerCase() !== 'escape') return;
-      const key = e.key.toLowerCase();
-      if (key === 'escape' && placementInfo) { 
-        if (placementActionsRef.current) {
-             placementActionsRef.current.cancelPlacement();
-        }
-        return; 
-      }
-      if (isInputDisabled.current) return;
-
-      // Avoid processing modifier keys if they are the only key pressed initially
-      if (key === 'shift' || key === 'control' || key === 'alt' || key === 'meta') {
-        // Handle Shift for sprinting start
-        if (key === 'shift' && !isSprintingRef.current && !e.repeat) {
-            isSprintingRef.current = true;
-            callSetSprintingReducer(true);
-        }
-        // Don't add modifier keys themselves to keysPressed
-        return;
-      }
-
-      keysPressed.current.add(key);
-
-      // Handle jump on Spacebar press
-      if (key === ' ' && !e.repeat) {
-        const localPlayer = getLocalPlayer();
-        if (localPlayer) {
-          callJumpReducer();
-        }
-      }
-
-      // Toggle minimap on 'g' press
-      if (key === 'g' && !e.repeat) {
-        setIsMinimapOpen(prev => !prev);
-      }
-
-      // Handle interaction key ('e')
-      if (key === 'e' && !e.repeat && !isEHeldDownRef.current) {
-        const closestCampfireId = closestInteractableCampfireIdRef.current;
-        const closestMushroomId = closestInteractableMushroomIdRef.current;
-        const closestDroppedItemId = closestInteractableDroppedItemIdRef.current;
-        const closestBoxId = closestInteractableBoxIdRef.current;
-        const isClosestBoxEmpty = isClosestInteractableBoxEmptyRef.current; // Get emptiness state
-        
-        // Priority: DroppedItem > Empty Box > Mushroom > Open Box > Campfire
-        if (closestDroppedItemId !== null && connection?.reducers) {
-             try {
-                 connection.reducers.pickupDroppedItem(closestDroppedItemId);
-             } catch (err) {
-                 console.error("Error calling pickupDroppedItem reducer:", err);
-             }
-             return; // Handled dropped item
-        } else if (closestBoxId !== null && connection?.reducers) { // <<< Check for ANY closest box first
-            console.log(`[GameCanvas KeyDown E] Starting hold check for Box ID: ${closestBoxId}. Empty: ${isClosestBoxEmpty}`);
-            isEHeldDownRef.current = true;
-            eKeyDownTimestampRef.current = Date.now();
-            // Set interaction progress ONLY if box is empty (for pickup visual)
-            if (isClosestBoxEmpty) {
-                setInteractionProgress({ targetId: closestBoxId, startTime: Date.now() });
-            }
-
-            // Clear any existing timer
-            if (eKeyHoldTimerRef.current) {
-                clearTimeout(eKeyHoldTimerRef.current);
-            }
-
-            // Set timer for HOLD action (pickup ONLY if empty)
-            eKeyHoldTimerRef.current = setTimeout(() => {
-                // Check if still holding E when timer expires
-                if (isEHeldDownRef.current) {
-                    const stillClosestBoxId = closestInteractableBoxIdRef.current; // Re-check closest box
-                    const stillEmpty = isClosestInteractableBoxEmptyRef.current; // Re-check empty status
-
-                    // Only pickup if it's still the closest box AND it's empty
-                    if (stillClosestBoxId === closestBoxId && stillEmpty) {
-                        console.log(`[GameCanvas Hold Timer] Executing pickup for EMPTY Box ID: ${closestBoxId}`);
-                        try {
-                            connection.reducers.pickupStorageBox(closestBoxId);
-                            // Pickup successful, reset hold state
-                            isEHeldDownRef.current = false;
-                            setInteractionProgress(null);
-                            eKeyHoldTimerRef.current = null;
-                        } catch (err) { 
-                             console.error("[GameCanvas Hold Timer] Error calling pickupStorageBox reducer:", err);
-                             // Even if error, reset state? Maybe not, let keyup handle it?
-                             // Let's reset hold state on error too for now to prevent stuck state
-                             isEHeldDownRef.current = false;
-                             setInteractionProgress(null);
-                             eKeyHoldTimerRef.current = null;
-                        } 
-                    } else {
-                         console.log(`[GameCanvas Hold Timer] Hold expired, but box ${closestBoxId} is not empty or no longer closest. No pickup.`);
-                         // DO NOT reset isEHeldDownRef here - let handleKeyUp manage it
-                         setInteractionProgress(null); // Still clear visual if it was showing
-                         eKeyHoldTimerRef.current = null; // Clear timer ref
-                    }
-                }
-            }, HOLD_INTERACTION_DURATION_MS);
-            return; // Box interaction initiated (hold or press)
-        } else if (closestMushroomId !== null && connection?.reducers) {
-            try {
-                connection.reducers.interactWithMushroom(closestMushroomId);
-            } catch (err) {
-                console.error("Error calling interactWithMushroom reducer:", err);
-            }
-             return; // Prevent adding 'e' to keysPressed
-        } else if (closestCampfireId !== null) { // Handle Campfire last
-          console.log(`[GameCanvas KeyDown E] Starting hold check for Campfire ID: ${closestCampfireId}`);
-          isEHeldDownRef.current = true;
-          eKeyDownTimestampRef.current = Date.now();
-          setInteractionProgress({ targetId: closestCampfireId, startTime: Date.now() }); // Start visual indicator
-
-          // Clear any existing timer before setting a new one
-          if (eKeyHoldTimerRef.current) {
-            clearTimeout(eKeyHoldTimerRef.current);
-          }
-
-          // Set timer for hold action (NOW toggles burn)
-          eKeyHoldTimerRef.current = setTimeout(() => {
-            // Check if still holding E when timer expires
-            if (isEHeldDownRef.current) { 
-              const stillClosestCampfireId = closestInteractableCampfireIdRef.current; // Re-check
-              // Only toggle if it's still the closest campfire
-              if (stillClosestCampfireId === closestCampfireId) {
-                  console.log(`[GameCanvas Hold Timer - Campfire] Executing toggle for Campfire ID: ${closestCampfireId}`);
-                  try {
-                      if(connection?.reducers) {
-                           connection.reducers.toggleCampfireBurning(closestCampfireId);
-                      }
-                  } catch (err) { console.error("[GameCanvas Hold Timer - Campfire] Error calling toggleCampfireBurning reducer:", err); }
-              } else {
-                  console.log(`[GameCanvas Hold Timer - Campfire] Hold expired, but campfire ${closestCampfireId} is no longer closest. No toggle.`);
-              }
-              // Reset state AFTER timeout completes (or key is released)
-              isEHeldDownRef.current = false; 
-              setInteractionProgress(null); 
-              eKeyHoldTimerRef.current = null; 
-            }
-          }, HOLD_INTERACTION_DURATION_MS);
-          // Do NOT call other reducers here anymore
-          return; // Prevent adding 'e' to keysPressed for movement
-        }
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      // Always allow keyup processing to clear keysPressed, even if dead
-      const key = e.key.toLowerCase();
-      // Handle Shift key release for sprinting end
-      if (key === 'shift') {
-        if (isSprintingRef.current) {
-            isSprintingRef.current = false;
-            // Only call reducer if player isn't dead (respawn resets state anyway)
-            if (!isInputDisabled.current) {
-                 callSetSprintingReducer(false);
-            }
-        }
-      }
-      keysPressed.current.delete(key);
-
-      // --- 'E' Key Up Logic --- 
-      if (key === 'e') {
-          if (isEHeldDownRef.current) {
-              // Get the closest interactable IDs *before* clearing state
-              const closestBoxIdBeforeClear = closestInteractableBoxIdRef.current;
-              const closestCampfireIdBeforeClear = closestInteractableCampfireIdRef.current;
-              
-              // Store hold duration before clearing timer/state
-              const holdDuration = Date.now() - eKeyDownTimestampRef.current;
-
-              // Always reset hold state and clear timer/visual on key up
-              isEHeldDownRef.current = false;
-              if (eKeyHoldTimerRef.current) {
-                  clearTimeout(eKeyHoldTimerRef.current);
-                  eKeyHoldTimerRef.current = null;
-              }
-              setInteractionProgress(null); 
-              eKeyDownTimestampRef.current = 0; 
-              
-              // --- Determine Action Based on Short Press --- 
-              if (holdDuration < HOLD_INTERACTION_DURATION_MS) {
-                   // Prioritize Box if it was the closest target when key went down
-                  if (closestBoxIdBeforeClear !== null) {
-                       console.log(`[KeyUp E - Box] Short press detected for Box ID: ${closestBoxIdBeforeClear}. Opening UI.`);
-                       try {
-                           if (connection?.reducers) {
-                               connection.reducers.interactWithStorageBox(closestBoxIdBeforeClear);
-                               onSetInteractingWith({ type: 'wooden_storage_box', id: closestBoxIdBeforeClear });
-                           } else { /* warning */ }
-                       } catch (err) { /* error handling */ }
-                  } 
-                  // Else, check if it was a campfire
-                  else if (closestCampfireIdBeforeClear !== null) {
-                       console.log(`[KeyUp E - Campfire] Short press detected for Campfire ID: ${closestCampfireIdBeforeClear}. Opening UI.`);
-                       // Call interact reducer first for validation (e.g., distance)
-                       try {
-                            if (connection?.reducers) {
-                                connection.reducers.interactWithCampfire(closestCampfireIdBeforeClear);
-                                // If validation ok, open UI
-                                onSetInteractingWith({ type: 'campfire', id: closestCampfireIdBeforeClear });
-                            } else { console.warn("Cannot interact with campfire: Connection or reducers unavailable."); }
-                       } catch (err) {
-                           console.error("[KeyUp E - Campfire] Error validating campfire interaction:", err);
-                       }
-                  }
-                  // Add else if for other potential short-press interactions here if needed
-              }
-              // --- End Short Press Action --- 
-          }
-      }
-      // --- End 'E' Key Up Logic ---
-    };
-
-    const handleCanvasClick = (event: MouseEvent) => {
-        if (isInputDisabled.current) return;
-        if (placementInfo && worldMousePosRef.current.x !== null && worldMousePosRef.current.y !== null) {
-             if (event.button === 0) {
-                 if (typeof placementActionsRef.current?.attemptPlacement === 'function') {
-                    placementActionsRef.current.attemptPlacement(worldMousePosRef.current.x, worldMousePosRef.current.y);
-                 } else {
-                    console.error("[GameCanvas handleCanvasClick] attemptPlacement function missing on ref!");
-                 }
-                 return; 
-             }
-         }
-    };
-
-    const handleContextMenu = (event: MouseEvent) => {
-         if (isInputDisabled.current) return;
-        if (placementInfo) {
-            event.preventDefault(); 
-            if (placementActionsRef.current) {
-                placementActionsRef.current.cancelPlacement();
-            }
-        }
-    };
-
-    const handleWheel = (event: WheelEvent) => {
-        if (placementInfo) {
-            if (placementActionsRef.current) {
-               placementActionsRef.current.cancelPlacement(); 
-            }
-        }
-    };
-
-    // --- NEW: Mouse Down/Up Listeners for Swinging ---
-    const handleMouseDown = (event: MouseEvent) => {
-         if (isInputDisabled.current || event.button !== 0 || placementInfo) return; 
-        isMouseDownRef.current = true;
-        attemptSwing(); 
-    };
-
-    const handleMouseUp = (event: MouseEvent) => {
-        if (event.button === 0) {
-           isMouseDownRef.current = false;
-        }
-    };
-
-    // Add listeners
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('wheel', handleWheel, { passive: true });
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
-    const canvas = canvasRef.current;
-    if (canvas) {
-        canvas.addEventListener('click', handleCanvasClick);
-        canvas.addEventListener('contextmenu', handleContextMenu);
-    }
-
-    const handleBlur = () => {
-        if (isSprintingRef.current) {
-            isSprintingRef.current = false;
-            callSetSprintingReducer(false);
-        }
-        keysPressed.current.clear(); // Clear all keys on blur
-    };
-    window.addEventListener('blur', handleBlur);
-
-    // Remove listeners
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('wheel', handleWheel);
-      window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-       if (canvas) {
-        canvas.removeEventListener('click', handleCanvasClick);
-        canvas.removeEventListener('contextmenu', handleContextMenu);
-      }
-    };
-  }, [getLocalPlayer, callJumpReducer, callSetSprintingReducer, placementInfo, attemptSwing]);
-
-  const updatePlayerBasedOnInput = useCallback(() => {
-    if (isInputDisabled.current) return; // Skip input processing if dead
-
-    const localPlayer = getLocalPlayer();
-    if (!localPlayer) return;
-
-    let dx = 0;
-    let dy = 0;
-    const speed = 5; // Use base speed
-    let intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null; // Initialize intended direction
-
-    // Handle WASD movement to determine direction and base delta
-    // We send 1 or -1 to indicate direction, server calculates actual distance
-    if (keysPressed.current.has('w') || keysPressed.current.has('arrowup')) {
-      dy -= speed;
-      intendedDirection = 'up';
-    }
-    if (keysPressed.current.has('s') || keysPressed.current.has('arrowdown')) {
-      dy += speed;
-      intendedDirection = 'down';
-    }
-    if (keysPressed.current.has('a') || keysPressed.current.has('arrowleft')) {
-      dx -= speed;
-      intendedDirection = 'left';
-    }
-    if (keysPressed.current.has('d') || keysPressed.current.has('arrowright')) {
-      dx += speed;
-      intendedDirection = 'right';
-    }
-
-    // Normalize diagonal movement (optional but good practice)
-    if (dx !== 0 && dy !== 0) {
-        const magnitude = Math.sqrt(dx * dx + dy * dy);
-        dx = (dx / magnitude) * 5;
-        dy = (dy / magnitude) * 5;
-    }
-
-    // Always call updatePlayerPosition to allow server to process passive changes (like stamina regen) AND direction changes
-    // Pass intendedDirection as the third argument
-    // Send the normalized (or 0, +/-1) dx/dy values
-    updatePlayerPosition(dx, dy, intendedDirection);
-    // Client no longer calculates absolute position or checks boundaries
-
-  }, [getLocalPlayer, updatePlayerPosition]);
+  // --- Setup Input Handler Hook --- 
+  const {
+      interactionProgress, // Get interaction progress state from the hook
+      processInputsAndActions, // Get the processing function from the hook
+  } = useInputHandler({
+      canvasRef,
+      connection,
+      isInputDisabled: isInputDisabled.current,
+      localPlayerId,
+      localPlayer: localPlayer ?? null,
+      activeEquipments,
+      placementInfo,
+      placementActions,
+      worldMousePos: worldMousePosRef.current, // Pass current world mouse pos
+      // Pass closest interactable refs' current values
+      closestInteractableMushroomId: closestInteractableMushroomIdRef.current,
+      closestInteractableCampfireId: closestInteractableCampfireIdRef.current,
+      closestInteractableDroppedItemId: closestInteractableDroppedItemIdRef.current,
+      closestInteractableBoxId: closestInteractableBoxIdRef.current,
+      isClosestInteractableBoxEmpty: isClosestInteractableBoxEmptyRef.current,
+      // Pass callbacks
+      onSetInteractingWith,
+      // Pass reducer action wrappers directly from props
+      updatePlayerPosition: updatePlayerPosition, // Pass prop directly
+      callJumpReducer: callJumpReducer, // Pass prop directly
+      callSetSprintingReducer: callSetSprintingReducer, // Pass prop directly
+  });
 
   useEffect(() => {
     // Load Hero
@@ -1215,7 +863,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
     campfires.forEach(fire => {
          if (closestInteractableCampfireIdRef.current === fire.id) {
-            const text = "Press E to Use";
+            const text = "Press E to Open";
             const textX = fire.posX;
             const textY = fire.posY - (CAMPFIRE_HEIGHT / 2) - 10; // 10px above the sprite top
             ctx.fillStyle = "white";
@@ -1231,9 +879,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // <<< ADDED: Render Wooden Storage Box Interaction Label >>>
     woodenStorageBoxes.forEach(box => {
          if (closestInteractableBoxIdRef.current === box.id) {
-            // Determine text based on emptiness
+            // Restore conditional text based on emptiness
             const isEmpty = isClosestInteractableBoxEmptyRef.current;
-            const text = isEmpty ? "Press E to Pickup" : "Press E to Open";
+            const text = isEmpty ? "Hold E to Pick Up" : "Press E to Open"; // Show correct prompt
             const textX = box.posX;
             const textY = box.posY - (BOX_HEIGHT / 2) - 10; // Adjust Y offset as needed
             ctx.fillStyle = "white";
@@ -1376,7 +1024,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // 5. Draw UI (Minimap)
     if (isMinimapOpen) {
         drawMinimapOntoCanvas({
-            ctx, players, trees, stones, campfires, localPlayerId,
+            ctx, players, localPlayerId,
             canvasWidth: currentCanvasWidth, canvasHeight: currentCanvasHeight, isMouseOverMinimap
         });
     }
@@ -1405,19 +1053,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ]);
 
   const gameLoop = useCallback(() => {
-    // Only update player input if not dead
-    if (!isInputDisabled.current) {
-        updatePlayerBasedOnInput();
-        // --- NEW: Check for continuous swing --- 
-        if (isMouseDownRef.current) {
-            attemptSwing();
-        }
-        // --- END Check ---
-    }
-    // Always render the game world (or background behind death screen)
+    // Get the processing function from the hook
+    processInputsAndActions(); // Call the function from the hook
+
+    // Always render the game world
     renderGame();
     requestIdRef.current = requestAnimationFrame(gameLoop);
-  }, [updatePlayerBasedOnInput, renderGame, attemptSwing]); // Added attemptSwing dependency
+  }, [renderGame, processInputsAndActions]); // Add processInputsAndActions to dependencies
 
   useEffect(() => {
     requestIdRef.current = requestAnimationFrame(gameLoop);
