@@ -11,6 +11,20 @@ A lightweight 2D multiplayer survival game starter kit built with modern web tec
 
 ![Gameplay Preview](preview.png)
 
+## Table of Contents
+
+*   [🗺️ Roadmap](#️-roadmap)
+*   [🛠️ Tech Stack](#️-tech-stack)
+*   [📜 Cursor Rules & Code Maintainability](#-cursor-rules--code-maintainability)
+*   [⚙️ Client Configuration](#️-client-configuration)
+*   [🌍 World Configuration](#-world-configuration-tile-size--map-dimensions)
+*   [📁 Project Structure](#-project-structure)
+*   [🚀 Running the Project Locally](#-running-the-project-locally)
+*   [🔧 Troubleshooting Local Setup](#-troubleshooting-local-setup)
+*   [🔄 Development Workflow](#-development-workflow)
+*   [🤝 Contributing](#-contributing)
+*   [📜 License](#-license)
+
 ## 🗺️ Roadmap
 
 **Completed (✅):**
