@@ -1,0 +1,22 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Short-Term Goals:
+
+1) Separate stat calculations from movement and add a proper scheduler system:
+Implement a central game tick system rather than updating on player movement
+Create schedule tables specifically for player stat updates
+Similar to how the campfire fuel checks work in the code
+
+2) Database maintenance reducer:
+Create a periodic cleanup reducer that detects and removes orphaned entities
+Run it automatically every few minutes
+
+Long-Term Architectural Changes:
+
+1) Redesign movement system:
+Process player inputs and positions at a fixed rate
+Implement proper delta-time handling
+

@@ -20,9 +20,7 @@ const LOCAL_PLAYER_DOT_COLOR = '#FFFF00';
 // Unused constants removed
 const MINIMAP_WORLD_BG_COLOR = 'rgba(52, 88, 52, 0.2)';
 
-// Grid Constants
-const GRID_DIVISIONS_X = 2;
-const GRID_DIVISIONS_Y = 2;
+// Grid Constants - Divisions will be calculated dynamically
 const GRID_LINE_COLOR = 'rgba(200, 200, 200, 0.3)';
 const GRID_TEXT_COLOR = 'rgba(255, 255, 255, 0.5)';
 const GRID_TEXT_FONT = '10px Arial';
@@ -98,9 +96,15 @@ export function drawMinimapOntoCanvas({
   // Use drawOffsetX/Y and effective dimensions
   ctx.fillRect(drawOffsetX, drawOffsetY, effectiveMinimapDrawWidth, effectiveMinimapDrawHeight);
 
-  // --- Draw Grid --- 
-  const gridCellWidth = effectiveMinimapDrawWidth / GRID_DIVISIONS_X;
-  const gridCellHeight = effectiveMinimapDrawHeight / GRID_DIVISIONS_Y;
+  // --- Calculate Grid Divisions Dynamically ---
+  const gridCellSize = gameConfig.minimapGridCellSizePixels > 0 ? gameConfig.minimapGridCellSizePixels : 1; // Avoid division by zero
+
+  const gridDivisionsX = Math.max(1, Math.round(worldPixelWidth / gridCellSize)); // Ensure at least 1 division
+  const gridDivisionsY = Math.max(1, Math.round(worldPixelHeight / gridCellSize)); // Ensure at least 1 division
+
+  // --- Draw Grid ---
+  const gridCellWidth = effectiveMinimapDrawWidth / gridDivisionsX;
+  const gridCellHeight = effectiveMinimapDrawHeight / gridDivisionsY;
 
   ctx.strokeStyle = GRID_LINE_COLOR;
   ctx.lineWidth = 0.5;
@@ -110,7 +114,7 @@ export function drawMinimapOntoCanvas({
   ctx.textBaseline = 'top';
 
   // Draw Vertical Lines
-  for (let i = 0; i <= GRID_DIVISIONS_X; i++) {
+  for (let i = 0; i <= gridDivisionsX; i++) {
     const x = drawOffsetX + i * gridCellWidth;
     ctx.beginPath();
     ctx.moveTo(x, drawOffsetY);
@@ -119,7 +123,7 @@ export function drawMinimapOntoCanvas({
   }
 
   // Draw Horizontal Lines
-  for (let i = 0; i <= GRID_DIVISIONS_Y; i++) {
+  for (let i = 0; i <= gridDivisionsY; i++) {
     const y = drawOffsetY + i * gridCellHeight;
     ctx.beginPath();
     ctx.moveTo(drawOffsetX, y);
@@ -128,8 +132,8 @@ export function drawMinimapOntoCanvas({
   }
 
   // Draw Cell Labels (e.g., A1, B1, A2) in the top-left corner of each cell
-  for (let row = 0; row < GRID_DIVISIONS_Y; row++) {
-    for (let col = 0; col < GRID_DIVISIONS_X; col++) {
+  for (let row = 0; row < gridDivisionsY; row++) {
+    for (let col = 0; col < gridDivisionsX; col++) {
       const cellX = drawOffsetX + col * gridCellWidth;
       const cellY = drawOffsetY + row * gridCellHeight;
       

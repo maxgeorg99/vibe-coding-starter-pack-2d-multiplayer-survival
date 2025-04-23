@@ -61,18 +61,28 @@ use crate::player_stats::{
 use crate::world_state::TimeOfDay; // Keep TimeOfDay if needed elsewhere, otherwise remove
 use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFIRE_COLLISION_RADIUS, CAMPFIRE_CAMPFIRE_COLLISION_DISTANCE_SQUARED, CAMPFIRE_COLLISION_Y_OFFSET, PLAYER_CAMPFIRE_COLLISION_DISTANCE_SQUARED, PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED };
 
-// --- World/Player Constants ---
-pub(crate) const WORLD_WIDTH_TILES: u32 = 100;
-pub(crate) const WORLD_HEIGHT_TILES: u32 = 100;
-pub(crate) const TILE_SIZE_PX: u32 = 48;
-pub(crate) const WORLD_WIDTH_PX: f32 = (WORLD_WIDTH_TILES * TILE_SIZE_PX) as f32;
-pub(crate) const WORLD_HEIGHT_PX: f32 = (WORLD_HEIGHT_TILES * TILE_SIZE_PX) as f32;
-pub(crate) const PLAYER_RADIUS: f32 = 24.0;
-const PLAYER_DIAMETER_SQUARED: f32 = (PLAYER_RADIUS * 2.0) * (PLAYER_RADIUS * 2.0);
+// --- Global Constants ---
+pub const TILE_SIZE_PX: u32 = 48;
+pub const PLAYER_RADIUS: f32 = 32.0; // Player collision radius
+pub const PLAYER_SPEED: f32 = 300.0; // Speed in pixels per second
+pub const PLAYER_SPRINT_MULTIPLIER: f32 = 1.6;
 
-// NEW: Campfire placement range constant
-const CAMPFIRE_PLACEMENT_MAX_DISTANCE: f32 = 96.0;
-const CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED: f32 = CAMPFIRE_PLACEMENT_MAX_DISTANCE * CAMPFIRE_PLACEMENT_MAX_DISTANCE;
+// World Dimensions (example)
+pub const WORLD_WIDTH_TILES: u32 = 100;
+pub const WORLD_HEIGHT_TILES: u32 = 100;
+// Change back to f32 as they are used in float calculations
+pub const WORLD_WIDTH_PX: f32 = (WORLD_WIDTH_TILES * TILE_SIZE_PX) as f32;
+pub const WORLD_HEIGHT_PX: f32 = (WORLD_HEIGHT_TILES * TILE_SIZE_PX) as f32;
+
+// Campfire Placement Constants (Restored)
+pub const CAMPFIRE_PLACEMENT_MAX_DISTANCE: f32 = 96.0;
+pub const CAMPFIRE_PLACEMENT_MAX_DISTANCE_SQUARED: f32 = CAMPFIRE_PLACEMENT_MAX_DISTANCE * CAMPFIRE_PLACEMENT_MAX_DISTANCE;
+
+// Respawn Collision Check Constants
+pub const RESPAWN_CHECK_RADIUS: f32 = TILE_SIZE_PX as f32 * 0.8; // Check slightly less than a tile radius
+pub const RESPAWN_CHECK_RADIUS_SQ: f32 = RESPAWN_CHECK_RADIUS * RESPAWN_CHECK_RADIUS;
+pub const MAX_RESPAWN_OFFSET_ATTEMPTS: u32 = 8; // Max times to try offsetting
+pub const RESPAWN_OFFSET_DISTANCE: f32 = TILE_SIZE_PX as f32 * 0.5; // How far to offset each attempt
 
 // Player table to store position and color
 #[spacetimedb::table(name = player, public)]
@@ -221,7 +231,7 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
             if other_player.is_dead { continue; }
             let dx = spawn_x - other_player.position_x;
             let dy = spawn_y - other_player.position_y;
-            if (dx * dx + dy * dy) < PLAYER_DIAMETER_SQUARED {
+            if (dx * dx + dy * dy) < PLAYER_RADIUS * PLAYER_RADIUS {
                 collision = true;
                 break;
             }
@@ -637,7 +647,7 @@ pub fn update_player_position(
                     let dy = clamped_y - other_player.position_y;
                     let dist_sq = dx * dx + dy * dy;
 
-                    if dist_sq < PLAYER_DIAMETER_SQUARED {
+                    if dist_sq < PLAYER_RADIUS * PLAYER_RADIUS {
                         log::debug!("Player-Player collision detected between {:?} and {:?}. Calculating slide.", sender_id, other_player.identity);
                         // Slide calculation (same as before)
                         let intended_dx = clamped_x - current_player.position_x;

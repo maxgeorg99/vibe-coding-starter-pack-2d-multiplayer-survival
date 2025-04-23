@@ -13,14 +13,21 @@
  *   - `check_and_respawn_resource`: Macro for handling the logic of checking and respawning resources.
  */
 
-use spacetimedb::{ReducerContext, Table, SpacetimeType};
+use spacetimedb::{ReducerContext, Table, SpacetimeType, Timestamp};
 use noise::NoiseFn;
 use rand::{Rng, rngs::StdRng};
 use std::collections::HashSet;
 use log;
 
 // Assuming these are accessible from the crate root
-use crate::{WORLD_WIDTH_PX, WORLD_HEIGHT_PX, TILE_SIZE_PX};
+use crate::{WORLD_WIDTH_PX, WORLD_HEIGHT_PX, TILE_SIZE_PX, PLAYER_RADIUS};
+
+// Import table traits needed for collision checks
+use crate::{
+    player as PlayerTableTrait,
+    campfire::campfire as CampfireTableTrait,
+    wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait,
+};
 
 /// Calculates the valid min/max tile coordinates based on world dimensions and a margin.
 pub fn calculate_tile_bounds(world_width_tiles: u32, world_height_tiles: u32, margin: u32) -> (u32, u32, u32, u32) {
@@ -56,6 +63,46 @@ pub fn get_distance_squared(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     let dx = x1 - x2;
     let dy = y1 - y2;
     dx * dx + dy * dy
+}
+
+/// Checks if a target position is clear of players, campfires, and wooden storage boxes
+/// within a given squared radius. Returns true if clear, false otherwise.
+pub fn is_respawn_position_clear(ctx: &ReducerContext, target_x: f32, target_y: f32, check_radius_sq: f32) -> bool {
+    // Check players
+    let players = ctx.db.player();
+    for player in players.iter() {
+        if !player.is_dead {
+            let dist_sq = get_distance_squared(target_x, target_y, player.position_x, player.position_y);
+            // Use PLAYER_RADIUS and the global RESPAWN_CHECK_RADIUS for collision check against players
+            let player_check_radius_sq = (crate::PLAYER_RADIUS + crate::RESPAWN_CHECK_RADIUS) * (crate::PLAYER_RADIUS + crate::RESPAWN_CHECK_RADIUS);
+            if dist_sq < player_check_radius_sq {
+                log::trace!("Respawn blocked by player {:?} at ({}, {})", player.identity, player.position_x, player.position_y);
+                return false;
+            }
+        }
+    }
+
+    // Check campfires
+    let campfires = ctx.db.campfire();
+    for campfire in campfires.iter() {
+        let dist_sq = get_distance_squared(target_x, target_y, campfire.pos_x, campfire.pos_y);
+        if dist_sq < check_radius_sq { // Use the passed-in check_radius_sq (which will be crate::RESPAWN_CHECK_RADIUS_SQ)
+            log::trace!("Respawn blocked by campfire {} at ({}, {})", campfire.id, campfire.pos_x, campfire.pos_y);
+            return false;
+        }
+    }
+
+    // Check wooden storage boxes
+    let storage_boxes = ctx.db.wooden_storage_box();
+    for storage_box in storage_boxes.iter() {
+        let dist_sq = get_distance_squared(target_x, target_y, storage_box.pos_x, storage_box.pos_y);
+        if dist_sq < check_radius_sq { // Use the passed-in check_radius_sq
+            log::trace!("Respawn blocked by storage box {} at ({}, {})", storage_box.id, storage_box.pos_x, storage_box.pos_y);
+            return false;
+        }
+    }
+
+    true // Position is clear
 }
 
 /// Attempts one resource spawn at a random valid tile.
@@ -145,6 +192,7 @@ where
 /// Macro to handle the identification and respawning logic for a specific resource type.
 /// Takes the context, table trait name (symbol), entity type, resource name (string),
 /// a filter closure, and an update closure.
+/// Now includes collision checking and position offsetting using global constants.
 #[macro_export] // Export the macro for use in other modules
 macro_rules! check_and_respawn_resource {
     (
@@ -161,31 +209,90 @@ macro_rules! check_and_respawn_resource {
             let mut ids_to_respawn: Vec<u64> = Vec::new();
 
             // --- Identification Phase ---
+            // Assume entity has fields `id: u64`, `respawn_at: Option<Timestamp>`, `pos_x: f32`, `pos_y: f32`
             for entity in table_accessor.iter() {
                 let filter_passes = $filter_logic(&entity);
-                // Assuming all relevant entities have id and respawn_at fields
-                // This requires the entity structs to conform to a pattern.
-                // We access fields directly based on the assumed structure.
                 let respawn_at_opt = entity.respawn_at;
-                
+
                 if filter_passes && respawn_at_opt.is_some() {
                     if let Some(respawn_time) = respawn_at_opt {
                         if now_ts >= respawn_time {
-                            // Assuming primary key is `id: u64`
                             ids_to_respawn.push(entity.id);
                         }
                     }
                 }
             }
 
-            // --- Update Phase ---
+            // --- Update Phase with Collision Check & Offset ---
             for entity_id in ids_to_respawn {
                 // Re-fetch the table accessor as the previous borrow might have ended
                 let table_accessor_update = $ctx.db.$table_symbol();
                 if let Some(mut entity) = table_accessor_update.id().find(entity_id) {
-                    log::info!("Respawning {} {}", $resource_name, entity_id);
-                    $update_closure(&mut entity); // Apply the update logic closure
-                    table_accessor_update.id().update(entity);
+                    let original_pos_x = entity.pos_x;
+                    let original_pos_y = entity.pos_y;
+                    let mut current_pos_x = original_pos_x;
+                    let mut current_pos_y = original_pos_y;
+                    let mut position_clear = false;
+
+                    // Check initial position and attempt offsets
+                    // Use crate:: prefixed constants now
+                    for attempt in 0..=crate::MAX_RESPAWN_OFFSET_ATTEMPTS { // Include initial check (attempt 0)
+                        // Use the fully qualified path to the helper function and the global constant
+                        if crate::utils::is_respawn_position_clear($ctx, current_pos_x, current_pos_y, crate::RESPAWN_CHECK_RADIUS_SQ) {
+                            position_clear = true;
+                            if attempt > 0 {
+                                log::info!(
+                                    "Respawning {} {} at offset position ({:.1}, {:.1}) due to blockage at original ({:.1}, {:.1}). Attempt {}",
+                                    $resource_name, entity_id,
+                                    current_pos_x, current_pos_y,
+                                    original_pos_x, original_pos_y,
+                                    attempt
+                                );
+                                // Update position only if offset and a clear spot was found
+                                entity.pos_x = current_pos_x;
+                                entity.pos_y = current_pos_y;
+                            } else {
+                                 // Original position is clear, no offset needed, log respawn
+                                 log::info!("Respawning {} {} at original position ({:.1}, {:.1}).", $resource_name, entity_id, original_pos_x, original_pos_y);
+                            }
+                            break; // Found clear spot
+                        }
+
+                        // If not clear and more attempts left, calculate next offset position (simple spiral-like pattern)
+                        // Use crate:: prefixed constants now
+                        if attempt < crate::MAX_RESPAWN_OFFSET_ATTEMPTS {
+                            // Simple offset strategy: move outwards in cardinal/diagonal directions
+                            let (dx, dy) = match attempt % 8 {
+                                0 => (crate::RESPAWN_OFFSET_DISTANCE, 0.0), // Right
+                                1 => (0.0, crate::RESPAWN_OFFSET_DISTANCE), // Down
+                                2 => (-crate::RESPAWN_OFFSET_DISTANCE, 0.0), // Left
+                                3 => (0.0, -crate::RESPAWN_OFFSET_DISTANCE), // Up
+                                4 => (crate::RESPAWN_OFFSET_DISTANCE, crate::RESPAWN_OFFSET_DISTANCE), // Down-Right
+                                5 => (-crate::RESPAWN_OFFSET_DISTANCE, crate::RESPAWN_OFFSET_DISTANCE), // Down-Left
+                                6 => (-crate::RESPAWN_OFFSET_DISTANCE, -crate::RESPAWN_OFFSET_DISTANCE), // Up-Left
+                                _ => (crate::RESPAWN_OFFSET_DISTANCE, -crate::RESPAWN_OFFSET_DISTANCE), // Up-Right (7)
+                            };
+                            current_pos_x = original_pos_x + dx;
+                            current_pos_y = original_pos_y + dy;
+                            // Optional: Add bounds check here if needed
+                        } else {
+                            // Max attempts reached, log and skip respawn for this cycle
+                            // Use crate:: prefixed constant now
+                            log::warn!(
+                                "Could not find clear respawn position for {} {} near ({:.1}, {:.1}) after {} attempts. Skipping respawn.",
+                                $resource_name, entity_id, original_pos_x, original_pos_y, crate::MAX_RESPAWN_OFFSET_ATTEMPTS + 1 // +1 because we check 0..=MAX
+                            );
+                            // Ensure position_clear remains false
+                        }
+                    }
+
+                    // If a clear position was found (original or offset), apply updates
+                    if position_clear {
+                        $update_closure(&mut entity); // Apply the state reset logic (health, respawn_at=None, etc.)
+                        // Position was already set inside the loop if needed
+                        table_accessor_update.id().update(entity); // Update the entity in DB
+                    } // else: Skipped respawn, logged warning above
+
                 } else {
                     log::warn!("Could not find {} {} to respawn.", $resource_name, entity_id);
                 }

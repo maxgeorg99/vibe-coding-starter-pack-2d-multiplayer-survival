@@ -57,6 +57,7 @@ function App() {
     const [username, setUsername] = useState<string>('');
     const [isRegistering, setIsRegistering] = useState<boolean>(false); // Tracks registration attempt
     const [uiError, setUiError] = useState<string | null>(null); // For general UI errors not handled by hooks
+    const [isMinimapOpen, setIsMinimapOpen] = useState<boolean>(false); // Add minimap state here
 
     // --- Refs for Cross-Hook/Component Communication --- 
     // Ref for Placement cancellation needed by useSpacetimeTables callbacks
@@ -161,6 +162,8 @@ function App() {
                     updatePlayerPosition={updatePlayerPosition}
                     callJumpReducer={callJumpReducer}
                     callSetSprintingReducer={callSetSprintingReducer}
+                    isMinimapOpen={isMinimapOpen}
+                    setIsMinimapOpen={setIsMinimapOpen}
                 />
             )}
         </div>

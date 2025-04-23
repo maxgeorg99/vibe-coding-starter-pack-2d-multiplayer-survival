@@ -1,5 +1,32 @@
 import { gameConfig } from '../config/gameConfig';
-import { Player as SpacetimeDBPlayer } from '../generated';
+import {
+    Player as SpacetimeDBPlayer,
+    Tree as SpacetimeDBTree,
+    Stone as SpacetimeDBStone,
+    Campfire as SpacetimeDBCampfire,
+    Mushroom as SpacetimeDBMushroom,
+    DroppedItem as SpacetimeDBDroppedItem,
+    WoodenStorageBox as SpacetimeDBWoodenStorageBox,
+    ItemDefinition as SpacetimeDBItemDefinition,
+} from '../generated';
+import * as SpacetimeDB from '../generated';
+import {
+    isPlayer, isTree, isStone, isCampfire, isMushroom, isWoodenStorageBox, isDroppedItem
+} from './typeGuards';
+// Import individual rendering functions
+import { renderMushroom } from './mushroomRenderingUtils';
+import { renderDroppedItem } from './droppedItemRenderingUtils';
+import { renderCampfire } from './campfireRenderingUtils';
+import { renderTree } from './treeRenderingUtils';
+import { renderStone } from './stoneRenderingUtils';
+import { renderWoodenStorageBox } from './woodenStorageBoxRenderingUtils';
+import { renderEquippedItem } from './equippedItemRenderingUtils'; // Needed for player rendering logic
+// Import specific constants from gameConfig
+import {
+    MOVEMENT_POSITION_THRESHOLD,
+    JUMP_DURATION_MS,
+    JUMP_HEIGHT_PX,
+} from '../config/gameConfig';
 
 // --- Constants --- 
 const IDLE_FRAME_INDEX = 1; // Second frame is idle
@@ -173,4 +200,153 @@ export const renderPlayer = (
   if (isHovered && !player.isDead) { // Check !player.isDead
     drawNameTag(ctx, player, spriteDrawY, spriteBaseX + drawWidth / 2);
   }
+}; 
+
+// --- NEW: Rendering Loop Functions ---
+
+// Type alias for ground items for clarity
+type GroundEntity = SpacetimeDBMushroom | SpacetimeDBDroppedItem | SpacetimeDBCampfire;
+
+interface RenderGroundEntitiesProps {
+    ctx: CanvasRenderingContext2D;
+    groundItems: GroundEntity[];
+    itemDefinitions: Map<string, SpacetimeDBItemDefinition>;
+    itemImagesRef: React.MutableRefObject<Map<string, HTMLImageElement>>;
+    nowMs: number;
+}
+
+/**
+ * Renders entities that lie flat on the ground and don't require Y-sorting
+ * against taller entities (Mushrooms, Dropped Items, Campfires).
+ */
+export const renderGroundEntities = ({
+    ctx,
+    groundItems,
+    itemDefinitions,
+    itemImagesRef,
+    nowMs,
+}: RenderGroundEntitiesProps) => {
+    groundItems.forEach(entity => {
+        // Check for DroppedItem FIRST
+        if (isDroppedItem(entity)) {
+            const itemDef = itemDefinitions.get(entity.itemDefId.toString());
+            renderDroppedItem({ ctx, item: entity, itemDef, itemImagesRef });
+        // Check for Mushroom SECOND
+        } else if (isMushroom(entity)) {
+            renderMushroom(ctx, entity, nowMs);
+        // Check for Campfire THIRD
+        } else if (isCampfire(entity)) {
+            renderCampfire(ctx, entity.posX, entity.posY, entity.isBurning);
+        }
+    });
+};
+
+// Type alias for Y-sortable entities
+type YSortableEntity = SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBWoodenStorageBox;
+
+interface RenderYSortedEntitiesProps {
+    ctx: CanvasRenderingContext2D;
+    ySortedEntities: YSortableEntity[];
+    heroImageRef: React.RefObject<HTMLImageElement | null>;
+    lastPositionsRef: React.MutableRefObject<Map<string, { x: number; y: number; }>>;
+    activeEquipments: Map<string, SpacetimeDB.ActiveEquipment>;
+    itemDefinitions: Map<string, SpacetimeDBItemDefinition>;
+    itemImagesRef: React.MutableRefObject<Map<string, HTMLImageElement>>;
+    worldMouseX: number | null;
+    worldMouseY: number | null;
+    animationFrame: number;
+    nowMs: number;
+}
+
+/**
+ * Renders entities that need to be sorted by their Y-coordinate to create
+ * a sense of depth (Players, Trees, Stones, Storage Boxes).
+ * Assumes the `ySortedEntities` array is already sorted.
+ */
+export const renderYSortedEntities = ({
+    ctx,
+    ySortedEntities,
+    heroImageRef,
+    lastPositionsRef,
+    activeEquipments,
+    itemDefinitions,
+    itemImagesRef,
+    worldMouseX,
+    worldMouseY,
+    animationFrame,
+    nowMs,
+}: RenderYSortedEntitiesProps) => {
+    ySortedEntities.forEach(entity => {
+        if (isPlayer(entity)) {
+           // --- Player Rendering Logic (copied from GameCanvas, using passed refs/state) ---
+           const playerId = entity.identity.toHexString();
+           const lastPos = lastPositionsRef.current.get(playerId);
+           let isPlayerMoving = false;
+           if (lastPos) {
+             const dx = Math.abs(entity.positionX - lastPos.x);
+             const dy = Math.abs(entity.positionY - lastPos.y);
+             // Use imported constant
+             if (dx > MOVEMENT_POSITION_THRESHOLD || dy > MOVEMENT_POSITION_THRESHOLD) { 
+               isPlayerMoving = true;
+             }
+           } else {
+             isPlayerMoving = false;
+           }
+           lastPositionsRef.current.set(playerId, { x: entity.positionX, y: entity.positionY });
+
+           let jumpOffset = 0;
+           const jumpStartTime = entity.jumpStartTimeMs;
+           if (jumpStartTime > 0) {
+               const elapsedJumpTime = nowMs - Number(jumpStartTime);
+               // Use imported constants
+               if (elapsedJumpTime < JUMP_DURATION_MS) { 
+                   const d = JUMP_DURATION_MS;
+                   const h = JUMP_HEIGHT_PX;
+                   const x = elapsedJumpTime;
+                   jumpOffset = (-4 * h / (d * d)) * x * (x - d);
+               }
+           }
+           const hovered = isPlayerHovered(worldMouseX, worldMouseY, entity);
+           const heroImg = heroImageRef.current;
+
+           // --- Get Equipment Data ---
+           const equipment = activeEquipments.get(playerId);
+           let itemDef: SpacetimeDBItemDefinition | null = null;
+           let itemImg: HTMLImageElement | null = null;
+
+           if (equipment && equipment.equippedItemDefId) {
+             itemDef = itemDefinitions.get(equipment.equippedItemDefId.toString()) || null;
+             itemImg = (itemDef ? itemImagesRef.current.get(itemDef.iconAssetName) : null) || null;
+           }
+           const canRenderItem = itemDef && itemImg && itemImg.complete && itemImg.naturalHeight !== 0;
+
+           // --- Conditional Rendering Order ---
+           if (entity.direction === 'left' || entity.direction === 'up') {
+              // Draw Item BEHIND Player
+              if (canRenderItem && equipment) {
+                renderEquippedItem(ctx, entity, equipment, itemDef!, itemImg!, nowMs, jumpOffset);
+              }
+              // Draw Player
+              if (heroImg) {
+                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, nowMs, jumpOffset);
+              }
+           } else { // direction === 'right' or 'down'
+              // Draw Player FIRST
+              if (heroImg) {
+                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, nowMs, jumpOffset);
+              }
+              // Draw Item IN FRONT of Player
+              if (canRenderItem && equipment) {
+                 renderEquippedItem(ctx, entity, equipment, itemDef!, itemImg!, nowMs, jumpOffset);
+              }
+           }
+           // --- End Conditional Rendering Order ---
+        } else if (isTree(entity)) { 
+           renderTree(ctx, entity, nowMs);
+        } else if (isStone(entity)) { 
+           renderStone(ctx, entity, nowMs);
+        } else if (isWoodenStorageBox(entity)) {
+            renderWoodenStorageBox(ctx, entity.posX, entity.posY);
+        } 
+    });
 }; 

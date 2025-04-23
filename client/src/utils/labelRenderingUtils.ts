@@ -1,0 +1,105 @@
+import {
+    Mushroom as SpacetimeDBMushroom,
+    Campfire as SpacetimeDBCampfire,
+    DroppedItem as SpacetimeDBDroppedItem,
+    WoodenStorageBox as SpacetimeDBWoodenStorageBox,
+    ItemDefinition as SpacetimeDBItemDefinition
+} from '../generated';
+import { CAMPFIRE_HEIGHT, BOX_HEIGHT } from '../config/gameConfig';
+
+interface RenderLabelsParams {
+    ctx: CanvasRenderingContext2D;
+    mushrooms: Map<string, SpacetimeDBMushroom>;
+    campfires: Map<string, SpacetimeDBCampfire>;
+    droppedItems: Map<string, SpacetimeDBDroppedItem>;
+    woodenStorageBoxes: Map<string, SpacetimeDBWoodenStorageBox>;
+    itemDefinitions: Map<string, SpacetimeDBItemDefinition>; // Needed for dropped item names
+    closestInteractableMushroomId: bigint | null;
+    closestInteractableCampfireId: number | null;
+    closestInteractableDroppedItemId: bigint | null;
+    closestInteractableBoxId: number | null;
+    isClosestInteractableBoxEmpty: boolean;
+}
+
+const LABEL_FONT = '14px "Press Start 2P", cursive';
+const LABEL_FILL_STYLE = "white";
+const LABEL_STROKE_STYLE = "black";
+const LABEL_LINE_WIDTH = 2;
+const LABEL_TEXT_ALIGN = "center";
+
+/**
+ * Renders interaction labels ("Press E...") for the closest interactable objects.
+ */
+export function renderInteractionLabels({
+    ctx,
+    mushrooms,
+    campfires,
+    droppedItems,
+    woodenStorageBoxes,
+    itemDefinitions,
+    closestInteractableMushroomId,
+    closestInteractableCampfireId,
+    closestInteractableDroppedItemId,
+    closestInteractableBoxId,
+    isClosestInteractableBoxEmpty,
+}: RenderLabelsParams): void {
+    ctx.save(); // Save context state before changing styles
+
+    ctx.font = LABEL_FONT;
+    ctx.fillStyle = LABEL_FILL_STYLE;
+    ctx.strokeStyle = LABEL_STROKE_STYLE;
+    ctx.lineWidth = LABEL_LINE_WIDTH;
+    ctx.textAlign = LABEL_TEXT_ALIGN;
+
+    // Mushroom Label
+    if (closestInteractableMushroomId !== null) {
+        const mushroom = mushrooms.get(closestInteractableMushroomId.toString());
+        if (mushroom) {
+            const text = "Press E to Collect";
+            const textX = mushroom.posX;
+            const textY = mushroom.posY - 60; // Offset above mushroom
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+        }
+    }
+
+    // Dropped Item Label
+    if (closestInteractableDroppedItemId !== null) {
+        const item = droppedItems.get(closestInteractableDroppedItemId.toString());
+        if (item) {
+            const itemDef = itemDefinitions.get(item.itemDefId.toString());
+            const itemName = itemDef ? itemDef.name : 'Item';
+            const text = `Hold E to pick up ${itemName} (x${item.quantity})`;
+            const textX = item.posX;
+            const textY = item.posY - 25; // Offset above item
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+        }
+    }
+
+    // Campfire Label
+    if (closestInteractableCampfireId !== null) {
+        const fire = campfires.get(closestInteractableCampfireId.toString());
+        if (fire) {
+            const text = "Press E to Open";
+            const textX = fire.posX;
+            const textY = fire.posY - (CAMPFIRE_HEIGHT / 2) - 10; // Offset above campfire sprite
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+        }
+    }
+
+    // Wooden Storage Box Label
+    if (closestInteractableBoxId !== null) {
+        const box = woodenStorageBoxes.get(closestInteractableBoxId.toString());
+        if (box) {
+            const text = isClosestInteractableBoxEmpty ? "Hold E to Pick Up" : "Press E to Open";
+            const textX = box.posX;
+            const textY = box.posY - (BOX_HEIGHT / 2) - 10; // Offset above box sprite
+            ctx.strokeText(text, textX, textY);
+            ctx.fillText(text, textX, textY);
+        }
+    }
+
+    ctx.restore(); // Restore original context state
+} 

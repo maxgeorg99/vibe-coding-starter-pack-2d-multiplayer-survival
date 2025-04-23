@@ -81,6 +81,8 @@ interface GameScreenProps {
     updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
     callJumpReducer: () => void;
     callSetSprintingReducer: (isSprinting: boolean) => void;
+    isMinimapOpen: boolean;
+    setIsMinimapOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const GameScreen: React.FC<GameScreenProps> = (props) => {
@@ -92,7 +94,9 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
         placementInfo, placementActions, placementError, startPlacement, cancelPlacement,
         interactingWith, handleSetInteractingWith,
         draggedItemInfo, onItemDragStart, onItemDrop,
-        updatePlayerPosition, callJumpReducer, callSetSprintingReducer
+        updatePlayerPosition, callJumpReducer, callSetSprintingReducer,
+        isMinimapOpen,
+        setIsMinimapOpen
     } = props;
 
     return (
@@ -118,6 +122,8 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
                 updatePlayerPosition={updatePlayerPosition}
                 callJumpReducer={callJumpReducer}
                 callSetSprintingReducer={callSetSprintingReducer}
+                isMinimapOpen={isMinimapOpen}
+                setIsMinimapOpen={setIsMinimapOpen}
             />
             <PlayerUI
                 identity={playerIdentity}

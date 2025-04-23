@@ -95,6 +95,30 @@ const SPACETIME_DB_NAME = 'vibe-survival-game';
 *   **For Local Development:** Use the default values (`ws://localhost:3000` and your module name).
 *   **For Maincloud Deployment:** Replace `SPACETIME_DB_ADDRESS` with your Maincloud WebSocket URI (e.g., `wss://maincloud.spacetimedb.net`) and `SPACETIME_DB_NAME` with your Maincloud database name (e.g., `your-identity/your-database-name`).
 
+## 🌍 World Configuration (Tile Size & Map Dimensions)
+
+Changing the tile size or the overall world dimensions requires modifications in **both** the client and server code to ensure consistency between rendering, collision detection, and game logic.
+
+1.  **Client (`client/src/config/gameConfig.ts`):**
+    *   Modify the `TILE_SIZE` constant at the top of the file.
+    *   Modify the `worldWidth` and `worldHeight` properties within the exported `gameConfig` object (these define dimensions in *tiles*).
+    *   Other values like `minimapGridCellDiagonalTiles` might also need tuning depending on the new world size.
+
+2.  **Server (`server/src/lib.rs`):**
+    *   Modify the `TILE_SIZE_PX` constant.
+    *   Modify the `WORLD_WIDTH_TILES` constant.
+    *   Modify the `WORLD_HEIGHT_TILES` constant.
+
+**Important:** Ensure the `TILE_SIZE` / `TILE_SIZE_PX` and the `worldWidth`/`Height` / `WORLD_WIDTH`/`HEIGHT_TILES` values are kept consistent between the client and server configuration files.
+
+After making server-side changes, remember to **re-publish** the module:
+
+```bash
+# From the server/ directory
+spacetime publish vibe-survival-game
+# No need to regenerate client bindings for changing only these constants
+```
+
 ## 📁 Project Structure
 
 ```
