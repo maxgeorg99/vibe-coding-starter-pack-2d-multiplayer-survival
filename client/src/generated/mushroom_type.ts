@@ -34,6 +34,7 @@ export type Mushroom = {
   id: bigint,
   posX: number,
   posY: number,
+  chunkIndex: number,
   respawnAt: Timestamp | undefined,
 };
 
@@ -50,6 +51,7 @@ export namespace Mushroom {
       new ProductTypeElement("id", AlgebraicType.createU64Type()),
       new ProductTypeElement("posX", AlgebraicType.createF32Type()),
       new ProductTypeElement("posY", AlgebraicType.createF32Type()),
+      new ProductTypeElement("chunkIndex", AlgebraicType.createU32Type()),
       new ProductTypeElement("respawnAt", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
     ]);
   }

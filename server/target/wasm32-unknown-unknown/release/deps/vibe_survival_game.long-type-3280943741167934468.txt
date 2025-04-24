@@ -1,1 +1,0 @@
-for<'a, 'b> fn(&'a ReducerContext, &'b mut InventoryItem, u32) -> Result<u64, std::string::String> {items::split_stack}

@@ -8,9 +8,21 @@
 
 // Define base values first
 const TILE_SIZE = 48;
-const MINIMAP_GRID_DIAGONAL_TILES = 50; // Use the user's desired value (tunable)
+const MINIMAP_GRID_DIAGONAL_TILES = 150; // Use the user's desired value (tunable)
+
+// --- Server World & Chunk Configuration (Client-Side Assumption - TODO: Make Server-Driven) ---
+// These values MUST match the server's current world generation settings.
+const SERVER_WORLD_WIDTH_TILES = 500; // Assumed width of the server world in tiles (matches lib.rs)
+const SERVER_WORLD_HEIGHT_TILES = 500; // Assumed height of the server world in tiles (matches lib.rs)
+const CHUNK_SIZE_TILES = 20;         // Number of tiles along one edge of a square chunk
 
 // Calculate derived values
+const CHUNK_SIZE_PX = CHUNK_SIZE_TILES * TILE_SIZE; // Size of a chunk in pixels (960)
+const WORLD_WIDTH_CHUNKS = Math.ceil(SERVER_WORLD_WIDTH_TILES / CHUNK_SIZE_TILES); // Width of the world in chunks (25)
+const WORLD_HEIGHT_CHUNKS = Math.ceil(SERVER_WORLD_HEIGHT_TILES / CHUNK_SIZE_TILES); // Height of the world in chunks (25)
+// --- End Server World & Chunk Config ---
+
+// Calculate derived values for minimap
 const MINIMAP_GRID_CELL_SIZE_PIXELS = Math.round((MINIMAP_GRID_DIAGONAL_TILES / Math.SQRT2) * TILE_SIZE);
 
 export const gameConfig = {
@@ -18,10 +30,17 @@ export const gameConfig = {
   // Used for drawing the background grid and scaling visual elements.
   tileSize: TILE_SIZE,
 
-  // Visual dimensions of the game world in tiles.
-  // Used for rendering the background area and minimap calculations.
-  worldWidth: 100,
-  worldHeight: 100,
+  // --- World & Chunk Configuration ---
+  // Values below are based on server config assumptions - should ideally be server-driven.
+  serverWorldWidthTiles: SERVER_WORLD_WIDTH_TILES,
+  serverWorldHeightTiles: SERVER_WORLD_HEIGHT_TILES,
+  chunkSizeTiles: CHUNK_SIZE_TILES,
+  chunkSizePx: CHUNK_SIZE_PX,
+  worldWidthChunks: WORLD_WIDTH_CHUNKS,
+  worldHeightChunks: WORLD_HEIGHT_CHUNKS,
+  worldWidth: 500,
+  worldHeight: 500,
+  // --- End World & Chunk Config ---
 
   // Intrinsic pixel dimensions of a single frame within player/entity spritesheets.
   // Essential for selecting and drawing the correct sprite visuals.
@@ -102,4 +121,4 @@ export const baseKeyframes: Record<number, ColorPoint> = {
   0.95: defaultTransitionNightColor,
   // Use default peak midnight color as the base for 0.00/1.00
   1.00: defaultPeakMidnightColor,
-}; 
+};

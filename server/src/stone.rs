@@ -27,6 +27,8 @@ pub struct Stone {
     pub pos_x: f32,
     pub pos_y: f32,
     pub health: u32, // Stones just disappear when health is 0
+    #[index(btree)]
+    pub chunk_index: u32, // Added for spatial filtering/queries
     pub last_hit_time: Option<Timestamp>, // Added for shake effect
     pub respawn_at: Option<Timestamp>, // Added for respawn timer
 }

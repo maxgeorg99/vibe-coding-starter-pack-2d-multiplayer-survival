@@ -1,1 +1,0 @@
-&wooden_storage_box::wooden_storage_box__TableHandle

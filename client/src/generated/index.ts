@@ -148,6 +148,8 @@ import { UnequipItem } from "./unequip_item_reducer.ts";
 export { UnequipItem };
 import { UpdatePlayerPosition } from "./update_player_position_reducer.ts";
 export { UpdatePlayerPosition };
+import { UpdateViewport } from "./update_viewport_reducer.ts";
+export { UpdateViewport };
 import { UseEquippedItem } from "./use_equipped_item_reducer.ts";
 export { UseEquippedItem };
 
@@ -158,6 +160,8 @@ import { CampfireTableHandle } from "./campfire_table.ts";
 export { CampfireTableHandle };
 import { CampfireFuelCheckScheduleTableHandle } from "./campfire_fuel_check_schedule_table.ts";
 export { CampfireFuelCheckScheduleTableHandle };
+import { ClientViewportTableHandle } from "./client_viewport_table.ts";
+export { ClientViewportTableHandle };
 import { CraftingFinishScheduleTableHandle } from "./crafting_finish_schedule_table.ts";
 export { CraftingFinishScheduleTableHandle };
 import { CraftingQueueItemTableHandle } from "./crafting_queue_item_table.ts";
@@ -196,6 +200,8 @@ import { Campfire } from "./campfire_type.ts";
 export { Campfire };
 import { CampfireFuelCheckSchedule } from "./campfire_fuel_check_schedule_type.ts";
 export { CampfireFuelCheckSchedule };
+import { ClientViewport } from "./client_viewport_type.ts";
+export { ClientViewport };
 import { CraftingFinishSchedule } from "./crafting_finish_schedule_type.ts";
 export { CraftingFinishSchedule };
 import { CraftingQueueItem } from "./crafting_queue_item_type.ts";
@@ -253,6 +259,11 @@ const REMOTE_MODULE = {
       tableName: "campfire_fuel_check_schedule",
       rowType: CampfireFuelCheckSchedule.getTypeScriptAlgebraicType(),
       primaryKey: "id",
+    },
+    client_viewport: {
+      tableName: "client_viewport",
+      rowType: ClientViewport.getTypeScriptAlgebraicType(),
+      primaryKey: "clientIdentity",
     },
     crafting_finish_schedule: {
       tableName: "crafting_finish_schedule",
@@ -563,6 +574,10 @@ const REMOTE_MODULE = {
       reducerName: "update_player_position",
       argsType: UpdatePlayerPosition.getTypeScriptAlgebraicType(),
     },
+    update_viewport: {
+      reducerName: "update_viewport",
+      argsType: UpdateViewport.getTypeScriptAlgebraicType(),
+    },
     use_equipped_item: {
       reducerName: "use_equipped_item",
       argsType: UseEquippedItem.getTypeScriptAlgebraicType(),
@@ -652,6 +667,7 @@ export type Reducer = never
 | { name: "ToggleCampfireBurning", args: ToggleCampfireBurning }
 | { name: "UnequipItem", args: UnequipItem }
 | { name: "UpdatePlayerPosition", args: UpdatePlayerPosition }
+| { name: "UpdateViewport", args: UpdateViewport }
 | { name: "UseEquippedItem", args: UseEquippedItem }
 ;
 
@@ -1526,20 +1542,36 @@ export class RemoteReducers {
     this.connection.offReducer("unequip_item", callback);
   }
 
-  updatePlayerPosition(moveDx: number, moveDy: number, intendedDirection: string | undefined) {
-    const __args = { moveDx, moveDy, intendedDirection };
+  updatePlayerPosition(moveX: number, moveY: number) {
+    const __args = { moveX, moveY };
     let __writer = new BinaryWriter(1024);
     UpdatePlayerPosition.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("update_player_position", __argsBuffer, this.setCallReducerFlags.updatePlayerPositionFlags);
   }
 
-  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number, intendedDirection: string | undefined) => void) {
+  onUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveX: number, moveY: number) => void) {
     this.connection.onReducer("update_player_position", callback);
   }
 
-  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveDx: number, moveDy: number, intendedDirection: string | undefined) => void) {
+  removeOnUpdatePlayerPosition(callback: (ctx: ReducerEventContext, moveX: number, moveY: number) => void) {
     this.connection.offReducer("update_player_position", callback);
+  }
+
+  updateViewport(minX: number, minY: number, maxX: number, maxY: number) {
+    const __args = { minX, minY, maxX, maxY };
+    let __writer = new BinaryWriter(1024);
+    UpdateViewport.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("update_viewport", __argsBuffer, this.setCallReducerFlags.updateViewportFlags);
+  }
+
+  onUpdateViewport(callback: (ctx: ReducerEventContext, minX: number, minY: number, maxX: number, maxY: number) => void) {
+    this.connection.onReducer("update_viewport", callback);
+  }
+
+  removeOnUpdateViewport(callback: (ctx: ReducerEventContext, minX: number, minY: number, maxX: number, maxY: number) => void) {
+    this.connection.offReducer("update_viewport", callback);
   }
 
   useEquippedItem() {
@@ -1837,6 +1869,11 @@ export class SetReducerFlags {
     this.updatePlayerPositionFlags = flags;
   }
 
+  updateViewportFlags: CallReducerFlags = 'FullUpdate';
+  updateViewport(flags: CallReducerFlags) {
+    this.updateViewportFlags = flags;
+  }
+
   useEquippedItemFlags: CallReducerFlags = 'FullUpdate';
   useEquippedItem(flags: CallReducerFlags) {
     this.useEquippedItemFlags = flags;
@@ -1857,6 +1894,10 @@ export class RemoteTables {
 
   get campfireFuelCheckSchedule(): CampfireFuelCheckScheduleTableHandle {
     return new CampfireFuelCheckScheduleTableHandle(this.connection.clientCache.getOrCreateTable<CampfireFuelCheckSchedule>(REMOTE_MODULE.tables.campfire_fuel_check_schedule));
+  }
+
+  get clientViewport(): ClientViewportTableHandle {
+    return new ClientViewportTableHandle(this.connection.clientCache.getOrCreateTable<ClientViewport>(REMOTE_MODULE.tables.client_viewport));
   }
 
   get craftingFinishSchedule(): CraftingFinishScheduleTableHandle {

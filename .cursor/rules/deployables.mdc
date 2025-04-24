@@ -1,8 +1,9 @@
 ---
 description: Guide for adding new deployable items (e.g., structures, placeables) to the world.
-globs: 
+globs: []
 alwaysApply: false
 ---
+
 # Guide: Adding New Deployable Items
 
 This guide outlines the steps required to add new items that players can place in the game world, such as structures, crafting stations, or containers. Refer to the implementation of `Campfire` (@/server/src/campfire.rs, @/client/src/utils/campfireRenderingUtils.ts) and `WoodenStorageBox` (@/server/src/wooden_storage_box.rs, @/client/src/utils/woodenStorageBoxRenderingUtils.ts) as examples.
@@ -22,7 +23,7 @@ Adding a deployable involves server-side logic (defining the item, the placed en
         *   Use snake_case for the `name`.
         *   Include `public` if clients need to see it directly.
     *   Add `#[derive(Clone)]`.
-    *   Define fields: `#[primary_key] #[auto_inc] pub id: u32`, `pub pos_x: f32`, `pub pos_y: f32`, and any other state.
+    *   Define fields: `#[primary_key] #[auto_inc] pub id: u32`, `pub pos_x: f32`, `pub pos_y: f32`, `pub placed_by: Identity`, and any other state.
     *   **Collision (Optional):** If the item should have collision:
         *   Define `pub(crate)` constants within the module (e.g., `DEPLOYABLE_COLLISION_RADIUS`, `DEPLOYABLE_COLLISION_Y_OFFSET`, `PLAYER_DEPLOYABLE_COLLISION_DISTANCE_SQUARED`). See `wooden_storage_box.rs` for examples.
 
@@ -115,4 +116,3 @@ Adding a deployable involves server-side logic (defining the item, the placed en
 
 1.  **Server:** Create `large_wooden_box.rs`, define the `LargeWoodenBox` table struct (like `WoodenStorageBox` but maybe different dimensions later) with collision constants (Radius 24, Y-Offset 12). Implement the `place_large_wooden_box` reducer. Add the 'Large Wooden Box' `ItemDefinition` in `items.rs` (icon: `large_wooden_box.png`). Modify `lib.rs` to add the module and collision checks.
 2.  **Client:** Add `large_wooden_box.png` to `assets/items` and `large_wooden_box_sprite.png` to `assets/doodads`. Update `itemIconUtils.ts`. Create `largeWoodenBoxRenderingUtils.ts` (render size 80x80). Update `usePlacementManager.ts` to call the new reducer. Update `GameCanvas.tsx` to import, preload, define type guard, render as a Y-Sorted item, and accept the prop. Update `App.tsx` to manage state and subscribe to the `large_wooden_box` table, passing the prop to `GameCanvas`."
-""

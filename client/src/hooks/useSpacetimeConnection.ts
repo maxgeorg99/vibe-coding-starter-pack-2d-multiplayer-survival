@@ -13,9 +13,10 @@ interface SpacetimeConnectionState {
     isLoading: boolean;
     error: string | null;
     registerPlayer: (username: string) => void;
-    updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
+    updatePlayerPosition: (moveX: number, moveY: number) => void;
     callSetSprintingReducer: (isSprinting: boolean) => void;
     callJumpReducer: () => void;
+    callUpdateViewportReducer: (minX: number, minY: number, maxX: number, maxY: number) => void;
 }
 
 export const useSpacetimeConnection = (): SpacetimeConnectionState => {
@@ -112,16 +113,17 @@ export const useSpacetimeConnection = (): SpacetimeConnectionState => {
         }
     }, [connection]);
 
-    const updatePlayerPosition = useCallback((dx: number, dy: number, intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null) => {
+    // --- Update Player Position --- (Modified Signature)
+    const updatePlayerPosition = useCallback((moveX: number, moveY: number) => {
         if (!connection?.reducers) {
-            // console.warn("[useSpacetimeConnection] updatePlayerPosition: No connection/reducers.");
+            console.warn("Connection not ready for updatePlayerPosition");
             return;
         }
         try {
-            connection.reducers.updatePlayerPosition(dx, dy, intendedDirection ?? undefined);
-        } catch (error: any) {
-            console.error("[useSpacetimeConnection] Error calling updatePlayerPosition reducer:", error);
-            // setError(`Move failed: ${error.message || error}`); // Maybe too noisy for movement errors
+            connection.reducers.updatePlayerPosition(moveX, moveY);
+        } catch (err) {
+            console.error("Error calling updatePlayerPosition reducer:", err);
+            // Consider setting an error state
         }
     }, [connection]);
 
@@ -147,6 +149,17 @@ export const useSpacetimeConnection = (): SpacetimeConnectionState => {
         }
     }, [connection]);
 
+    const callUpdateViewportReducer = useCallback((minX: number, minY: number, maxX: number, maxY: number) => {
+        if (connection?.reducers) {
+            try {
+                connection.reducers.updateViewport(minX, minY, maxX, maxY);
+            } catch (err: any) {
+                console.error('[useSpacetimeConnection] Failed to call updateViewport reducer:', err);
+                // setError(`Viewport update failed: ${err.message || err}`);
+            }
+        }
+    }, [connection]);
+
     return {
         connection,
         isConnected, // App.tsx will manage the final value of this based on registration
@@ -156,5 +169,6 @@ export const useSpacetimeConnection = (): SpacetimeConnectionState => {
         updatePlayerPosition,
         callSetSprintingReducer,
         callJumpReducer,
+        callUpdateViewportReducer,
     };
 }; 

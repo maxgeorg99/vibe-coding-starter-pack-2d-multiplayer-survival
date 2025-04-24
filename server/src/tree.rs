@@ -38,6 +38,8 @@ pub struct Tree {
     pub pos_y: f32,
     pub health: u32,
     pub tree_type: TreeType,
+    #[index(btree)]
+    pub chunk_index: u32,
     pub last_hit_time: Option<Timestamp>,
     pub respawn_at: Option<Timestamp>,
 }

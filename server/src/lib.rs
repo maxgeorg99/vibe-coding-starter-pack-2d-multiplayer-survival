@@ -64,12 +64,12 @@ use crate::campfire::{Campfire, WARMTH_RADIUS_SQUARED, WARMTH_PER_SECOND, CAMPFI
 // --- Global Constants ---
 pub const TILE_SIZE_PX: u32 = 48;
 pub const PLAYER_RADIUS: f32 = 32.0; // Player collision radius
-pub const PLAYER_SPEED: f32 = 300.0; // Speed in pixels per second
+pub const PLAYER_SPEED: f32 = 600.0; // Speed in pixels per second
 pub const PLAYER_SPRINT_MULTIPLIER: f32 = 1.6;
 
 // World Dimensions (example)
-pub const WORLD_WIDTH_TILES: u32 = 100;
-pub const WORLD_HEIGHT_TILES: u32 = 100;
+pub const WORLD_WIDTH_TILES: u32 = 500;
+pub const WORLD_HEIGHT_TILES: u32 = 500;
 // Change back to f32 as they are used in float calculations
 pub const WORLD_WIDTH_PX: f32 = (WORLD_WIDTH_TILES * TILE_SIZE_PX) as f32;
 pub const WORLD_HEIGHT_PX: f32 = (WORLD_HEIGHT_TILES * TILE_SIZE_PX) as f32;
@@ -85,7 +85,12 @@ pub const MAX_RESPAWN_OFFSET_ATTEMPTS: u32 = 8; // Max times to try offsetting
 pub const RESPAWN_OFFSET_DISTANCE: f32 = TILE_SIZE_PX as f32 * 0.5; // How far to offset each attempt
 
 // Player table to store position and color
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(
+    name = player,
+    public,
+    // Add spatial index
+    index(name = idx_player_pos, btree(columns = [position_x, position_y]))
+)]
 #[derive(Clone)]
 pub struct Player {
     #[primary_key]
@@ -107,6 +112,28 @@ pub struct Player {
     pub is_dead: bool,
     pub respawn_at: Timestamp,
     pub last_hit_time: Option<Timestamp>,
+}
+
+// --- TEMPORARILY COMMENT OUT Player Visibility Filter --- 
+/*
+#[spacetimedb::client_visibility_filter]
+const fn filter_player_self(ctx: ReducerContext, _table: &Player, row: &Player) -> bool { 
+    ctx.sender == row.identity
+}
+*/
+// We will later add spatial visibility for other players.
+
+// --- NEW: Define ClientViewport Table ---
+#[spacetimedb::table(name = client_viewport)]
+#[derive(Clone, Debug)]
+pub struct ClientViewport {
+    #[primary_key]
+    client_identity: Identity,
+    min_x: f32,
+    min_y: f32,
+    max_x: f32,
+    max_y: f32,
+    last_update: Timestamp,
 }
 
 // --- Lifecycle Reducers ---
@@ -183,6 +210,14 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
 
         // 4. Clear player's crafting queue and refund resources
         crate::crafting_queue::clear_player_crafting_queue(ctx, sender_id);
+
+        // --- NEW: Delete ClientViewport entry ---
+        let viewports = ctx.db.client_viewport();
+        if viewports.client_identity().find(&sender_id).is_some() {
+            viewports.client_identity().delete(sender_id);
+            log::info!("Deleted client viewport for player {:?}", sender_id);
+        }
+        // --- End NEW ---
 
     } else {
         log::warn!("Disconnected identity {:?} did not have a registered player entity. No cleanup needed.", sender_id);
@@ -526,9 +561,9 @@ pub fn set_sprinting(ctx: &ReducerContext, sprinting: bool) -> Result<(), String
 #[spacetimedb::reducer]
 pub fn update_player_position(
     ctx: &ReducerContext,
-    move_dx: f32,
-    move_dy: f32,
-    intended_direction: Option<String>
+    // Renamed parameters to represent normalized direction vector from client
+    move_x: f32,
+    move_y: f32,
 ) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
@@ -547,45 +582,36 @@ pub fn update_player_position(
         return Ok(()); // Do nothing if dead
     }
 
-    // --- Update Direction Immediately ---
-    let mut new_direction = current_player.direction.clone(); // Start with current direction
-    if let Some(dir_str) = intended_direction {
-        // Validate the direction string using direct comparison
-        let dir_slice = dir_str.as_str();
-        if dir_slice == "up" || dir_slice == "down" || dir_slice == "left" || dir_slice == "right" {
-            if new_direction != dir_str { // Log only if direction actually changes
-                log::trace!("Player {:?} intended direction set to: {}", sender_id, dir_str);
-                new_direction = dir_str; // Assign the original String
-            }
+    // --- Determine Animation Direction from Input Vector ---
+    let mut final_anim_direction = current_player.direction.clone();
+    // Basic check: If there's significant movement
+    if move_x.abs() > 0.01 || move_y.abs() > 0.01 {
+        // Prioritize horizontal or vertical based on magnitude
+        if move_x.abs() > move_y.abs() {
+            final_anim_direction = if move_x > 0.0 { "right".to_string() } else { "left".to_string() };
         } else {
-            log::warn!("Player {:?} sent invalid direction: {}", sender_id, dir_str);
-            // Keep the existing direction if the new one is invalid
-        }
-    } else if move_dx == 0.0 && move_dy == 0.0 {
-        // If no direction is explicitly sent AND no movement is attempted,
-        // keep the current direction. (This preserves facing direction when standing still).
-    } else {
-        // Fallback: Determine direction from movement delta if no explicit direction provided
-        if move_dx.abs() > move_dy.abs() {
-            new_direction = if move_dx > 0.0 { "right".to_string() } else { "left".to_string() };
-        } else if move_dy != 0.0 {
-            new_direction = if move_dy > 0.0 { "down".to_string() } else { "up".to_string() };
-        }
-        if current_player.direction != new_direction {
-            log::trace!("Player {:?} direction inferred from movement: {}", sender_id, new_direction);
+            final_anim_direction = if move_y > 0.0 { "down".to_string() } else { "up".to_string() };
         }
     }
-    // --- End Direction Update ---
+    // If input is (0,0), keep the previous direction
+
+    if final_anim_direction != current_player.direction {
+        log::trace!("Player {:?} animation direction set to: {}", sender_id, final_anim_direction);
+    }
+    // --- End Animation Direction ---
 
     let now = ctx.timestamp;
-    // REMOVED: Elapsed time calculation for stats (moved to player_stats.rs)
-    // REMOVED: Hunger/Thirst drain (moved to player_stats.rs)
-    // REMOVED: Warmth calculation (moved to player_stats.rs)
+
+    // --- Calculate Delta Time ---
+    let elapsed_micros = now.to_micros_since_unix_epoch().saturating_sub(current_player.last_update.to_micros_since_unix_epoch());
+    // Clamp max delta time to avoid huge jumps on first update or after lag spikes (e.g., 100ms)
+    let delta_time_secs = (elapsed_micros as f32 / 1_000_000.0).min(0.1); // Clamp max delta time
 
     // --- Stamina Drain & Base Speed Calculation ---
-    let mut new_stamina = current_player.stamina;
+    let mut new_stamina = current_player.stamina; // Base this on current_player for speed calc
     let mut base_speed_multiplier = 1.0;
-    let is_moving = move_dx != 0.0 || move_dy != 0.0;
+    // Movement now depends only on having a direction input from the client
+    let is_moving = move_x.abs() > 0.01 || move_y.abs() > 0.01;
     let mut current_sprinting_state = current_player.is_sprinting;
 
     // Determine speed multiplier based on current sprint state and stamina
@@ -602,24 +628,32 @@ pub fn update_player_position(
     let mut final_speed_multiplier = base_speed_multiplier;
     // Use current player stats read at the beginning of the reducer
     if current_player.thirst < LOW_NEED_THRESHOLD {
-        final_speed_multiplier *= LOW_THIRST_SPEED_PENALTY;
-        if is_moving {
+        if is_moving { // Only apply penalty if trying to move
+            final_speed_multiplier *= LOW_THIRST_SPEED_PENALTY;
             log::debug!("Player {:?} has low thirst. Applying speed penalty.", sender_id);
         }
     }
     if current_player.warmth < LOW_NEED_THRESHOLD {
-        final_speed_multiplier *= LOW_WARMTH_SPEED_PENALTY;
-        if is_moving {
+        if is_moving { // Only apply penalty if trying to move
+            final_speed_multiplier *= LOW_WARMTH_SPEED_PENALTY;
             log::debug!("Player {:?} is cold. Applying speed penalty.", sender_id);
         }
     }
 
-    // REMOVED: Health Update Calculation (moved to player_stats.rs)
-    // REMOVED: Death Check (moved to player_stats.rs)
+    // --- Calculate Target Velocity & Server Displacement ---
+    let target_speed = PLAYER_SPEED * final_speed_multiplier;
+    // Velocity is the normalized direction vector scaled by target speed
+    let velocity_x = move_x * target_speed;
+    let velocity_y = move_y * target_speed;
+
+    let server_dx = velocity_x * delta_time_secs;
+    let server_dy = velocity_y * delta_time_secs;
+
 
     // --- Movement Calculation ---
-    let proposed_x = current_player.position_x + move_dx * final_speed_multiplier;
-    let proposed_y = current_player.position_y + move_dy * final_speed_multiplier;
+    // Use server-calculated displacement
+    let proposed_x = current_player.position_x + server_dx;
+    let proposed_y = current_player.position_y + server_dy;
 
     let clamped_x = proposed_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
     let clamped_y = proposed_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
@@ -646,12 +680,12 @@ pub fn update_player_position(
                     let dx = clamped_x - other_player.position_x;
                     let dy = clamped_y - other_player.position_y;
                     let dist_sq = dx * dx + dy * dy;
+                    let min_dist = PLAYER_RADIUS * 2.0; // Player-Player collision distance
+                    let min_dist_sq = min_dist * min_dist;
 
-                    if dist_sq < PLAYER_RADIUS * PLAYER_RADIUS {
+                    if dist_sq < min_dist_sq {
                         log::debug!("Player-Player collision detected between {:?} and {:?}. Calculating slide.", sender_id, other_player.identity);
-                        // Slide calculation (same as before)
-                        let intended_dx = clamped_x - current_player.position_x;
-                        let intended_dy = clamped_y - current_player.position_y;
+                        // Slide calculation
                         let collision_normal_x = dx;
                         let collision_normal_y = dy;
                         let normal_mag_sq = dist_sq;
@@ -660,26 +694,29 @@ pub fn update_player_position(
                             let normal_mag = normal_mag_sq.sqrt();
                             let norm_x = collision_normal_x / normal_mag;
                             let norm_y = collision_normal_y / normal_mag;
-                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                            // Use server_dx/dy for slide calculation
+                            let dot_product = server_dx * norm_x + server_dy * norm_y;
                             let projection_x = dot_product * norm_x;
                             let projection_y = dot_product * norm_y;
-                            let slide_dx = intended_dx - projection_x;
-                            let slide_dy = intended_dy - projection_y;
+                            let slide_dx = server_dx - projection_x;
+                            let slide_dy = server_dy - projection_y;
                             final_x = current_player.position_x + slide_dx;
                             final_y = current_player.position_y + slide_dy;
+                            // Clamp after slide application
                             final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
                             final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
                         } else {
+                            // If directly overlapping (dist_sq == 0), just stay put relative to this collision
                             final_x = current_player.position_x;
                             final_y = current_player.position_y;
                         }
                         collision_handled = true;
-                        break;
+                        // break; // Handle one collision at a time for simplicity? Or continue checking? Continuing check for now.
                     }
                 }
             },
             spatial_grid::EntityType::Tree(tree_id) => {
-                 if collision_handled { continue; }
+                 // if collision_handled { continue; } // Allow checking multiple collisions?
                  if let Some(tree) = trees.id().find(tree_id) {
                     if tree.health == 0 { continue; }
                     let tree_collision_y = tree.pos_y - crate::tree::TREE_COLLISION_Y_OFFSET;
@@ -688,35 +725,35 @@ pub fn update_player_position(
                     let dist_sq = dx * dx + dy * dy;
                     if dist_sq < crate::tree::PLAYER_TREE_COLLISION_DISTANCE_SQUARED {
                          log::debug!("Player-Tree collision detected between {:?} and tree {}. Calculating slide.", sender_id, tree.id);
-                         // Slide calculation (same as before)
-                        let intended_dx = clamped_x - current_player.position_x;
-                        let intended_dy = clamped_y - current_player.position_y;
-                        let collision_normal_x = dx;
-                        let collision_normal_y = dy;
-                        let normal_mag_sq = dist_sq;
-                        if normal_mag_sq > 0.0 {
+                         // Slide calculation
+                         let collision_normal_x = dx;
+                         let collision_normal_y = dy;
+                         let normal_mag_sq = dist_sq;
+                         if normal_mag_sq > 0.0 {
                             let normal_mag = normal_mag_sq.sqrt();
                             let norm_x = collision_normal_x / normal_mag;
                             let norm_y = collision_normal_y / normal_mag;
-                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
+                            // Use server_dx/dy for slide calculation
+                            let dot_product = server_dx * norm_x + server_dy * norm_y;
                             let projection_x = dot_product * norm_x;
                             let projection_y = dot_product * norm_y;
-                            let slide_dx = intended_dx - projection_x;
-                            let slide_dy = intended_dy - projection_y;
+                            let slide_dx = server_dx - projection_x;
+                            let slide_dy = server_dy - projection_y;
                             final_x = current_player.position_x + slide_dx;
                             final_y = current_player.position_y + slide_dy;
+                             // Clamp after slide application
                             final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
                             final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
                         } else {
                             final_x = current_player.position_x;
                             final_y = current_player.position_y;
                         }
-                        collision_handled = true;
+                        collision_handled = true; // Mark collision handled for this type
                     }
                 }
             },
             spatial_grid::EntityType::Stone(stone_id) => {
-                 if collision_handled { continue; }
+                 // if collision_handled { continue; }
                  if let Some(stone) = stones.id().find(stone_id) {
                      if stone.health == 0 { continue; }
                      let stone_collision_y = stone.pos_y - crate::stone::STONE_COLLISION_Y_OFFSET;
@@ -725,35 +762,35 @@ pub fn update_player_position(
                      let dist_sq = dx * dx + dy * dy;
                      if dist_sq < crate::stone::PLAYER_STONE_COLLISION_DISTANCE_SQUARED {
                          log::debug!("Player-Stone collision detected between {:?} and stone {}. Calculating slide.", sender_id, stone.id);
-                         // Slide calculation (same as before)
-                        let intended_dx = clamped_x - current_player.position_x;
-                        let intended_dy = clamped_y - current_player.position_y;
-                        let collision_normal_x = dx;
-                        let collision_normal_y = dy;
-                        let normal_mag_sq = dist_sq;
-                        if normal_mag_sq > 0.0 {
-                            let normal_mag = normal_mag_sq.sqrt();
-                            let norm_x = collision_normal_x / normal_mag;
-                            let norm_y = collision_normal_y / normal_mag;
-                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-                            let projection_x = dot_product * norm_x;
-                            let projection_y = dot_product * norm_y;
-                            let slide_dx = intended_dx - projection_x;
-                            let slide_dy = intended_dy - projection_y;
-                            final_x = current_player.position_x + slide_dx;
-                            final_y = current_player.position_y + slide_dy;
-                            final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
-                            final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
-                        } else {
-                            final_x = current_player.position_x;
-                            final_y = current_player.position_y;
-                        }
-                        collision_handled = true;
+                         // Slide calculation
+                         let collision_normal_x = dx;
+                         let collision_normal_y = dy;
+                         let normal_mag_sq = dist_sq;
+                         if normal_mag_sq > 0.0 {
+                             let normal_mag = normal_mag_sq.sqrt();
+                             let norm_x = collision_normal_x / normal_mag;
+                             let norm_y = collision_normal_y / normal_mag;
+                             // Use server_dx/dy for slide calculation
+                             let dot_product = server_dx * norm_x + server_dy * norm_y;
+                             let projection_x = dot_product * norm_x;
+                             let projection_y = dot_product * norm_y;
+                             let slide_dx = server_dx - projection_x;
+                             let slide_dy = server_dy - projection_y;
+                             final_x = current_player.position_x + slide_dx;
+                             final_y = current_player.position_y + slide_dy;
+                             // Clamp after slide application
+                             final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                             final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                         } else {
+                             final_x = current_player.position_x;
+                             final_y = current_player.position_y;
+                         }
+                         collision_handled = true; // Mark collision handled
                      }
                  }
             },
             spatial_grid::EntityType::WoodenStorageBox(box_id) => {
-                if collision_handled { continue; }
+                // if collision_handled { continue; }
                 if let Some(box_instance) = wooden_storage_boxes.id().find(box_id) {
                     let box_collision_y = box_instance.pos_y - crate::wooden_storage_box::BOX_COLLISION_Y_OFFSET;
                     let dx = clamped_x - box_instance.pos_x;
@@ -761,30 +798,30 @@ pub fn update_player_position(
                     let dist_sq = dx * dx + dy * dy;
                     if dist_sq < crate::wooden_storage_box::PLAYER_BOX_COLLISION_DISTANCE_SQUARED {
                          log::debug!("Player-Box collision detected between {:?} and box {}. Calculating slide.", sender_id, box_instance.id);
-                         // Slide calculation (same as before)
-                        let intended_dx = clamped_x - current_player.position_x;
-                        let intended_dy = clamped_y - current_player.position_y;
-                        let collision_normal_x = dx;
-                        let collision_normal_y = dy;
-                        let normal_mag_sq = dist_sq;
-                        if normal_mag_sq > 0.0 {
-                            let normal_mag = normal_mag_sq.sqrt();
-                            let norm_x = collision_normal_x / normal_mag;
-                            let norm_y = collision_normal_y / normal_mag;
-                            let dot_product = intended_dx * norm_x + intended_dy * norm_y;
-                            let projection_x = dot_product * norm_x;
-                            let projection_y = dot_product * norm_y;
-                            let slide_dx = intended_dx - projection_x;
-                            let slide_dy = intended_dy - projection_y;
-                            final_x = current_player.position_x + slide_dx;
-                            final_y = current_player.position_y + slide_dy;
-                            final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
-                            final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
-                        } else {
-                            final_x = current_player.position_x;
-                            final_y = current_player.position_y;
-                        }
-                        collision_handled = true;
+                         // Slide calculation
+                         let collision_normal_x = dx;
+                         let collision_normal_y = dy;
+                         let normal_mag_sq = dist_sq;
+                         if normal_mag_sq > 0.0 {
+                             let normal_mag = normal_mag_sq.sqrt();
+                             let norm_x = collision_normal_x / normal_mag;
+                             let norm_y = collision_normal_y / normal_mag;
+                             // Use server_dx/dy for slide calculation
+                             let dot_product = server_dx * norm_x + server_dy * norm_y;
+                             let projection_x = dot_product * norm_x;
+                             let projection_y = dot_product * norm_y;
+                             let slide_dx = server_dx - projection_x;
+                             let slide_dy = server_dy - projection_y;
+                             final_x = current_player.position_x + slide_dx;
+                             final_y = current_player.position_y + slide_dy;
+                             // Clamp after slide application
+                             final_x = final_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
+                             final_y = final_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
+                         } else {
+                             final_x = current_player.position_x;
+                             final_y = current_player.position_y;
+                         }
+                         collision_handled = true; // Mark collision handled
                     }
                 }
             },
@@ -793,9 +830,16 @@ pub fn update_player_position(
              },
             _ => {} // Ignore other types for collision
         }
+        // If a slide occurred, the 'clamped_x/y' used for subsequent checks in this loop iteration
+        // won't reflect the slide. This might lead to missed secondary collisions after sliding.
+        // For simplicity, we keep it this way for now. A more robust solution would re-check
+        // collisions after each slide within the loop, or use the push-out method below.
     }
+    // --- End Initial Collision Check ---
+
 
     // --- Iterative Collision Resolution (Push-out) ---
+    // Apply push-out based on the potentially slid final_x/final_y
     let mut resolved_x = final_x;
     let mut resolved_y = final_y;
     let resolution_iterations = 5;
@@ -803,7 +847,8 @@ pub fn update_player_position(
 
     for _iter in 0..resolution_iterations {
         let mut overlap_found_in_iter = false;
-        let nearby_entities_resolve = grid.get_entities_in_range(resolved_x, resolved_y); // Re-query near resolved position
+        // Re-query near the currently resolved position for this iteration
+        let nearby_entities_resolve = grid.get_entities_in_range(resolved_x, resolved_y);
 
         for entity in &nearby_entities_resolve {
              match entity {
@@ -820,11 +865,13 @@ pub fn update_player_position(
                              overlap_found_in_iter = true;
                              let distance = dist_sq.sqrt();
                              let overlap = min_dist - distance;
-                             let push_amount = (overlap / 2.0) + epsilon;
+                             let push_amount = (overlap / 2.0) + epsilon; // Push each player half the overlap
                              let push_x = (dx / distance) * push_amount;
                              let push_y = (dy / distance) * push_amount;
                              resolved_x += push_x;
                              resolved_y += push_y;
+                             // Note: This only pushes the current player. Ideally, both would be pushed.
+                             // Full resolution is complex. This provides basic separation.
                          }
                     }
                 },
@@ -840,8 +887,8 @@ pub fn update_player_position(
                          if dist_sq < min_dist_sq && dist_sq > 0.0 {
                              overlap_found_in_iter = true;
                              let distance = dist_sq.sqrt();
-                             let overlap = (min_dist - distance) + epsilon;
-                             let push_x = (dx / distance) * overlap;
+                             let overlap = (min_dist - distance) + epsilon; // Calculate overlap
+                             let push_x = (dx / distance) * overlap; // Push player away by full overlap
                              let push_y = (dy / distance) * overlap;
                              resolved_x += push_x;
                              resolved_y += push_y;
@@ -894,61 +941,56 @@ pub fn update_player_position(
              }
         }
 
+        // Clamp position after each iteration's adjustments
         resolved_x = resolved_x.max(PLAYER_RADIUS).min(WORLD_WIDTH_PX - PLAYER_RADIUS);
         resolved_y = resolved_y.max(PLAYER_RADIUS).min(WORLD_HEIGHT_PX - PLAYER_RADIUS);
 
         if !overlap_found_in_iter {
-            log::trace!("Overlap resolution complete after {} iterations.", _iter + 1);
+            // log::trace!("Overlap resolution complete after {} iterations.", _iter + 1);
             break;
         }
         if _iter == resolution_iterations - 1 {
             log::warn!("Overlap resolution reached max iterations ({}) for player {:?}. Position might still overlap slightly.", resolution_iterations, sender_id);
         }
     }
-    // --- End Collision ---
+    // --- End Collision Resolution ---
+
 
     // --- Final Update ---
     let mut player_to_update = current_player; // Get a mutable copy from the initial read
 
-    // Check if position, direction, stamina, or sprint status actually changed
+    // Check if position or direction actually changed
     let position_changed = (resolved_x - player_to_update.position_x).abs() > 0.01 ||
                            (resolved_y - player_to_update.position_y).abs() > 0.01;
-    let direction_changed = player_to_update.direction != new_direction;
-    let stamina_changed = (player_to_update.stamina - new_stamina).abs() > 0.01;
-    let sprint_status_changed = player_to_update.is_sprinting != current_sprinting_state;
+    // Check against the animation direction determined earlier
+    let direction_changed = player_to_update.direction != final_anim_direction;
+    // Don't check stamina/sprint changes here, they are handled by player_stats
+    let should_update_state = position_changed || direction_changed;
 
-    let should_update = position_changed || direction_changed || stamina_changed || sprint_status_changed;
+    // Always update timestamp if delta_time > 0 to prevent accumulation on next tick
+    // This ensures last_update reflects the time this reducer processed movement,
+    // even if the final position/direction didn't change due to collision or no input.
+    let needs_timestamp_update = delta_time_secs > 0.0;
 
-    // --- Determine if timestamp needs updating --- 
-    // Update timestamp if state changed OR if there was movement input
-    let needs_timestamp_update = should_update || (move_dx != 0.0 || move_dy != 0.0);
-
-    if should_update {
-        log::trace!("Updating player {:?} - PosChange: {}, DirChange: {}, StamChange: {}, SprintChange: {}",
-            sender_id, position_changed, direction_changed, stamina_changed, sprint_status_changed);
+    if should_update_state {
+        log::trace!("Updating player {:?} - PosChange: {}, DirChange: {}",
+            sender_id, position_changed, direction_changed);
 
         player_to_update.position_x = resolved_x;
         player_to_update.position_y = resolved_y;
-        player_to_update.direction = new_direction;
-        player_to_update.last_update = now; // Update timestamp for movement processing
-        // player_to_update.stamina = new_stamina; // DO NOT update stamina here
-        // player_to_update.is_sprinting = current_sprinting_state; // DO NOT update sprint state here (handled by player_stats)
-        // last_hit_time is managed elsewhere (e.g., when taking damage)
+        player_to_update.direction = final_anim_direction; // Update animation direction
+        player_to_update.last_update = now; // Update timestamp because state changed
 
         players.identity().update(player_to_update); // Update the modified player struct
-    } else if needs_timestamp_update { // If no state changed, but movement input occurred
-         log::trace!("No movement-related state changes detected for player {:?}, but updating timestamp due to movement input.", sender_id);
-         // Update only the timestamp
-         // Fetch the player again to avoid overwriting potential stat changes from other reducers? Or just update timestamp on the copy?
-         // Let's update the timestamp on the copy we already have.
+    } else if needs_timestamp_update { // If no state changed, but time passed
+         log::trace!("No movement state changes detected for player {:?}, but updating timestamp due to elapsed time.", sender_id);
+         // Update only the timestamp on the existing player data
          player_to_update.last_update = now;
          players.identity().update(player_to_update);
     } else {
-         log::trace!("No state changes or movement input detected for player {:?}, skipping update.", sender_id);
+         // This case should be rare (delta_time <= 0.0)
+         log::trace!("No state changes and no time elapsed for player {:?}, skipping update.", sender_id);
     }
-
-    // REMOVED: World State Tick (moved to global_tick.rs)
-    // REMOVED: Resource Respawn Check (moved to global_tick.rs)
 
     Ok(())
 }
@@ -1096,5 +1138,40 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
         Err(e) => log::error!("Failed to unequip item for respawned player {:?}: {}", sender_id, e),
     }
 
+    Ok(())
+}
+
+// --- NEW: Reducer to Update Viewport ---
+#[spacetimedb::reducer]
+pub fn update_viewport(ctx: &ReducerContext, min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> Result<(), String> {
+    let client_id = ctx.sender;
+    let viewports = ctx.db.client_viewport();
+    log::trace!("Reducer update_viewport called by {:?} with bounds: ({}, {}), ({}, {})",
+             client_id, min_x, min_y, max_x, max_y);
+
+    let viewport_data = ClientViewport {
+        client_identity: client_id,
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+        last_update: ctx.timestamp,
+    };
+
+    // Use insert_or_update logic
+    if viewports.client_identity().find(&client_id).is_some() {
+        viewports.client_identity().update(viewport_data);
+        log::trace!("Updated viewport for client {:?}", client_id);
+    } else {
+        match viewports.try_insert(viewport_data) {
+            Ok(_) => {
+                log::trace!("Inserted new viewport for client {:?}", client_id);
+            },
+            Err(e) => {
+                 log::error!("Failed to insert viewport for client {:?}: {}", client_id, e);
+                 return Err(format!("Failed to insert viewport: {}", e));
+            }
+        }
+    }
     Ok(())
 } 

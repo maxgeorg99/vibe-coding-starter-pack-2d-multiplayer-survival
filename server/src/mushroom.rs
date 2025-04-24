@@ -31,6 +31,8 @@ pub struct Mushroom {
     pub id: u64,
     pub pos_x: f32,
     pub pos_y: f32,
+    #[index(btree)]
+    pub chunk_index: u32, // Added for spatial filtering/queries
     pub respawn_at: Option<Timestamp>,
 }
 

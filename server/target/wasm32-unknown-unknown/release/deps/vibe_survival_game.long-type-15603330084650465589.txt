@@ -1,1 +1,0 @@
-for<'a> fn(&'a ReducerContext) -> Result<(), std::string::String> {check_finished_crafting}

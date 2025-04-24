@@ -1,1 +1,0 @@
-for<'a> fn(&'a ReducerContext, {type error}) -> Result<(), std::string::String> {consume_campfire_fuel}

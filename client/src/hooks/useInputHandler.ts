@@ -26,7 +26,7 @@ interface UseInputHandlerProps {
     isClosestInteractableBoxEmpty: boolean;
     // Callbacks for actions
     onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
-    updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
+    updatePlayerPosition: (moveX: number, moveY: number) => void;
     callJumpReducer: () => void;
     callSetSprintingReducer: (isSprinting: boolean) => void;
     // Note: attemptSwing logic will be internal to the hook
@@ -459,24 +459,26 @@ export const useInputHandler = ({
         // --- Movement --- 
         let dx = 0;
         let dy = 0;
-        const speed = 5; // Base speed, server calculates actual distance
-        let intendedDirection: 'up' | 'down' | 'left' | 'right' | null = null;
 
         const pressed = keysPressed.current;
-        if (pressed.has('w') || pressed.has('arrowup')) { dy = -speed; intendedDirection = 'up'; }
-        if (pressed.has('s') || pressed.has('arrowdown')) { dy = speed; intendedDirection = 'down'; }
-        if (pressed.has('a') || pressed.has('arrowleft')) { dx = -speed; intendedDirection = 'left'; }
-        if (pressed.has('d') || pressed.has('arrowright')) { dx = speed; intendedDirection = 'right'; }
+        // Determine raw direction vector components (-1, 0, or 1)
+        if (pressed.has('w') || pressed.has('arrowup')) { dy -= 1; }
+        if (pressed.has('s') || pressed.has('arrowdown')) { dy += 1; }
+        if (pressed.has('a') || pressed.has('arrowleft')) { dx -= 1; }
+        if (pressed.has('d') || pressed.has('arrowright')) { dx += 1; }
 
-        // Simple override: last direction pressed wins if multiple are held
-        if (dx !== 0 && dy !== 0) {
-            const magnitude = Math.sqrt(dx * dx + dy * dy);
-            dx = (dx / magnitude) * speed;
-            dy = (dy / magnitude) * speed;
+        // Normalize the direction vector
+        let normX = 0;
+        let normY = 0;
+        const magnitude = Math.sqrt(dx * dx + dy * dy);
+
+        if (magnitude > 0) {
+            normX = dx / magnitude;
+            normY = dy / magnitude;
         }
 
         // Call updatePlayerPosition (passed as prop)
-        updatePlayerPosition(dx, dy, intendedDirection);
+        updatePlayerPosition(normX, normY);
 
         // Handle continuous swing check
         if (isMouseDownRef.current && !placementInfo) { // Only swing if not placing

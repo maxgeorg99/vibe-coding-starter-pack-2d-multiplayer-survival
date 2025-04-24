@@ -78,7 +78,7 @@ interface GameScreenProps {
     onItemDrop: (targetSlotInfo: any | null) => void; // Use appropriate type if known
 
     // Reducer Actions (from useSpacetimeConnection)
-    updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
+    updatePlayerPosition: (moveX: number, moveY: number) => void;
     callJumpReducer: () => void;
     callSetSprintingReducer: (isSprinting: boolean) => void;
     isMinimapOpen: boolean;

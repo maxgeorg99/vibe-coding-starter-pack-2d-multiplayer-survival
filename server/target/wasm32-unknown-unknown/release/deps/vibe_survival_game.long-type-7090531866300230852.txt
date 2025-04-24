@@ -1,2 +1,0 @@
-spacetimedb_lib::identity::Identity
-u64: From<spacetimedb::Identity>

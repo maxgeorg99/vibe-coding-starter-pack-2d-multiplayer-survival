@@ -25,6 +25,14 @@ import { useInteractionManager } from './hooks/useInteractionManager';
 
 // Assets & Styles
 import './App.css';
+import { useDebouncedCallback } from 'use-debounce'; // Import debounce helper
+
+// Viewport constants
+const VIEWPORT_WIDTH = 1200; // Example: Base viewport width
+const VIEWPORT_HEIGHT = 800; // Example: Base viewport height
+const VIEWPORT_BUFFER = 1200; // Increased buffer (was 600) to create larger "chunks" of visible area
+const VIEWPORT_UPDATE_THRESHOLD_SQ = (VIEWPORT_WIDTH / 2) ** 2; // Increased threshold (was WIDTH/4), so updates happen less frequently
+const VIEWPORT_UPDATE_DEBOUNCE_MS = 750; // Increased debounce time (was 250ms) to reduce update frequency
 
 function App() {
     // --- Core Hooks --- 
@@ -36,6 +44,7 @@ function App() {
         updatePlayerPosition,
         callSetSprintingReducer,
         callJumpReducer,
+        callUpdateViewportReducer, // Get the new reducer function
     } = useSpacetimeConnection();
 
     const [placementState, placementActions] = usePlacementManager(connection);
@@ -46,18 +55,24 @@ function App() {
 
     const { draggedItemInfo, dropError, handleItemDragStart, handleItemDrop } = useDragDropManager({ connection, interactingWith });
 
-    const { 
-      players, trees, stones, campfires, mushrooms, itemDefinitions, 
-      inventoryItems, worldState, activeEquipments, droppedItems, 
-      woodenStorageBoxes, recipes, craftingQueueItems, localPlayerRegistered 
-    } = useSpacetimeTables({ connection, cancelPlacement }); // Pass cancelPlacement needed by table callbacks
-
     // --- App-Level State --- 
     const [appIsConnected, setAppIsConnected] = useState<boolean>(false); // Tracks if player is registered & game ready
     const [username, setUsername] = useState<string>('');
     const [isRegistering, setIsRegistering] = useState<boolean>(false); // Tracks registration attempt
     const [uiError, setUiError] = useState<string | null>(null); // For general UI errors not handled by hooks
-    const [isMinimapOpen, setIsMinimapOpen] = useState<boolean>(false); // Add minimap state here
+    const [isMinimapOpen, setIsMinimapOpen] = useState<boolean>(false);
+
+    // --- Viewport State & Refs ---
+    const [currentViewport, setCurrentViewport] = useState<{ minX: number, minY: number, maxX: number, maxY: number } | null>(null);
+    const lastSentViewportCenterRef = useRef<{ x: number, y: number } | null>(null);
+    const localPlayerRef = useRef<any>(null); // Ref to hold local player data
+
+    // --- Pass viewport state to useSpacetimeTables ---
+    const { 
+      players, trees, stones, campfires, mushrooms, itemDefinitions, 
+      inventoryItems, worldState, activeEquipments, droppedItems, 
+      woodenStorageBoxes, recipes, craftingQueueItems, localPlayerRegistered 
+    } = useSpacetimeTables({ connection, cancelPlacement, viewport: currentViewport }); // Pass currentViewport
 
     // --- Refs for Cross-Hook/Component Communication --- 
     // Ref for Placement cancellation needed by useSpacetimeTables callbacks
@@ -71,18 +86,69 @@ function App() {
         placementInfoRef.current = placementInfo;
     }, [placementInfo]);
 
+    // --- Debounced Viewport Update ---
+    const debouncedUpdateViewport = useDebouncedCallback(
+        (vp: { minX: number, minY: number, maxX: number, maxY: number }) => {
+            console.log(`[App] Calling debounced server viewport update: ${JSON.stringify(vp)}`);
+            callUpdateViewportReducer(vp.minX, vp.minY, vp.maxX, vp.maxY);
+            lastSentViewportCenterRef.current = { x: (vp.minX + vp.maxX) / 2, y: (vp.minY + vp.maxY) / 2 };
+        },
+        VIEWPORT_UPDATE_DEBOUNCE_MS
+    );
+
+    // --- Effect to Update Viewport Based on Player Position ---
+    useEffect(() => {
+        const localPlayer = connection?.identity ? players.get(connection.identity.toHexString()) : undefined;
+        localPlayerRef.current = localPlayer; // Update ref whenever local player changes
+
+        // If player is gone, dead, or not fully connected yet, clear viewport
+        if (!localPlayer || localPlayer.isDead) {
+             if (currentViewport) setCurrentViewport(null);
+             // Consider if we need to tell the server the viewport is invalid?
+             // Server might time out old viewports anyway.
+             return;
+        }
+
+        const playerCenterX = localPlayer.positionX;
+        const playerCenterY = localPlayer.positionY;
+
+        // Check if viewport center moved significantly enough
+        const lastSentCenter = lastSentViewportCenterRef.current;
+        const shouldUpdate = !lastSentCenter ||
+            (playerCenterX - lastSentCenter.x)**2 + (playerCenterY - lastSentCenter.y)**2 > VIEWPORT_UPDATE_THRESHOLD_SQ;
+
+        if (shouldUpdate) {
+            const newMinX = playerCenterX - (VIEWPORT_WIDTH / 2) - VIEWPORT_BUFFER;
+            const newMaxX = playerCenterX + (VIEWPORT_WIDTH / 2) + VIEWPORT_BUFFER;
+            const newMinY = playerCenterY - (VIEWPORT_HEIGHT / 2) - VIEWPORT_BUFFER;
+            const newMaxY = playerCenterY + (VIEWPORT_HEIGHT / 2) + VIEWPORT_BUFFER;
+            const newViewport = { minX: newMinX, minY: newMinY, maxX: newMaxX, maxY: newMaxY };
+
+            console.log(`[App] Viewport needs update. Triggering debounced call.`);
+            setCurrentViewport(newViewport); // Update local state immediately for useSpacetimeTables
+            debouncedUpdateViewport(newViewport); // Call debounced server update
+        }
+    // Depend on the players map (specifically the local player's position), connection identity, and app connected status.
+    }, [players, connection?.identity, debouncedUpdateViewport]); // Removed currentViewport dependency to avoid loops
+
     // --- Effect to Sync App Connection State with Table Hook Registration State ---
     useEffect(() => {
+        console.log(`[App Sync Effect] Running. localPlayerRegistered: ${localPlayerRegistered}, appIsConnected: ${appIsConnected}, isRegistering: ${isRegistering}`);
         if (localPlayerRegistered) {
-            // console.log("[App Sync Effect] Local player registered, setting app connected.");
-            if (!appIsConnected) setAppIsConnected(true); // Set connected only if not already
+            if (!appIsConnected) {
+                console.log("[App Sync Effect] Setting appIsConnected = true");
+                setAppIsConnected(true);
+            }
             if (isRegistering) setIsRegistering(false); // Stop registering if registration confirmed
         } else {
             if (appIsConnected) { // Only change if previously connected
-                // console.log("[App Sync Effect] Local player unregistered, setting app disconnected.");
+                console.log("[App Sync Effect] Local player unregistered, setting app disconnected.");
                 setAppIsConnected(false);
                 // Player is gone, ensure registering state is also false
                 if (isRegistering) setIsRegistering(false);
+                // When disconnected/unregistered, clear the viewport state
+                setCurrentViewport(null);
+                lastSentViewportCenterRef.current = null;
             }
         }
         // Depend only on the flag from the hook and the app's own states
@@ -131,40 +197,43 @@ function App() {
                 />
             ) : (
                 // --- Render Game Screen Component --- 
-                <GameScreen 
-                    // Pass all necessary state and actions down as props
-                    players={players}
-                    trees={trees}
-                    stones={stones}
-                    campfires={campfires}
-                    mushrooms={mushrooms}
-                    droppedItems={droppedItems}
-                    woodenStorageBoxes={woodenStorageBoxes}
-                    inventoryItems={inventoryItems}
-                    itemDefinitions={itemDefinitions}
-                    worldState={worldState}
-                    activeEquipments={activeEquipments}
-                    recipes={recipes}
-                    craftingQueueItems={craftingQueueItems}
-                    localPlayerId={connection?.identity?.toHexString() ?? undefined}
-                    playerIdentity={connection?.identity || null}
-                    connection={connection}
-                    placementInfo={placementInfo}
-                    placementActions={placementActions}
-                    placementError={placementError}
-                    startPlacement={startPlacement}
-                    cancelPlacement={cancelPlacement}
-                    interactingWith={interactingWith}
-                    handleSetInteractingWith={handleSetInteractingWith}
-                    draggedItemInfo={draggedItemInfo}
-                    onItemDragStart={handleItemDragStart}
-                    onItemDrop={handleItemDrop}
-                    updatePlayerPosition={updatePlayerPosition}
-                    callJumpReducer={callJumpReducer}
-                    callSetSprintingReducer={callSetSprintingReducer}
-                    isMinimapOpen={isMinimapOpen}
-                    setIsMinimapOpen={setIsMinimapOpen}
-                />
+                // Only render GameScreen if viewport is calculated (ensures tables hook gets initial bounds)
+                currentViewport && (
+                  <GameScreen 
+                      // Pass all necessary state and actions down as props
+                      players={players}
+                      trees={trees}
+                      stones={stones}
+                      campfires={campfires}
+                      mushrooms={mushrooms}
+                      droppedItems={droppedItems}
+                      woodenStorageBoxes={woodenStorageBoxes}
+                      inventoryItems={inventoryItems}
+                      itemDefinitions={itemDefinitions}
+                      worldState={worldState}
+                      activeEquipments={activeEquipments}
+                      recipes={recipes}
+                      craftingQueueItems={craftingQueueItems}
+                      localPlayerId={connection?.identity?.toHexString() ?? undefined}
+                      playerIdentity={connection?.identity || null}
+                      connection={connection}
+                      placementInfo={placementInfo}
+                      placementActions={placementActions}
+                      placementError={placementError}
+                      startPlacement={startPlacement}
+                      cancelPlacement={cancelPlacement}
+                      interactingWith={interactingWith}
+                      handleSetInteractingWith={handleSetInteractingWith}
+                      draggedItemInfo={draggedItemInfo}
+                      onItemDragStart={handleItemDragStart}
+                      onItemDrop={handleItemDrop}
+                      updatePlayerPosition={updatePlayerPosition}
+                      callJumpReducer={callJumpReducer}
+                      callSetSprintingReducer={callSetSprintingReducer}
+                      isMinimapOpen={isMinimapOpen}
+                      setIsMinimapOpen={setIsMinimapOpen}
+                  />
+                )
             )}
         </div>
     );

@@ -32,9 +32,8 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type UpdatePlayerPosition = {
-  moveDx: number,
-  moveDy: number,
-  intendedDirection: string | undefined,
+  moveX: number,
+  moveY: number,
 };
 
 /**
@@ -47,9 +46,8 @@ export namespace UpdatePlayerPosition {
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("moveDx", AlgebraicType.createF32Type()),
-      new ProductTypeElement("moveDy", AlgebraicType.createF32Type()),
-      new ProductTypeElement("intendedDirection", AlgebraicType.createOptionType(AlgebraicType.createStringType())),
+      new ProductTypeElement("moveX", AlgebraicType.createF32Type()),
+      new ProductTypeElement("moveY", AlgebraicType.createF32Type()),
     ]);
   }
 

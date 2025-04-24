@@ -319,4 +319,4 @@ const Hotbar: React.FC<HotbarProps> = ({
   );
 };
 
-export default Hotbar; 
+export default React.memo(Hotbar); 

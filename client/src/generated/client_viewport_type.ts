@@ -30,42 +30,40 @@ import {
   Timestamp,
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
-export type Stone = {
-  id: bigint,
-  posX: number,
-  posY: number,
-  health: number,
-  chunkIndex: number,
-  lastHitTime: Timestamp | undefined,
-  respawnAt: Timestamp | undefined,
+export type ClientViewport = {
+  clientIdentity: Identity,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+  lastUpdate: Timestamp,
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace Stone {
+export namespace ClientViewport {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("id", AlgebraicType.createU64Type()),
-      new ProductTypeElement("posX", AlgebraicType.createF32Type()),
-      new ProductTypeElement("posY", AlgebraicType.createF32Type()),
-      new ProductTypeElement("health", AlgebraicType.createU32Type()),
-      new ProductTypeElement("chunkIndex", AlgebraicType.createU32Type()),
-      new ProductTypeElement("lastHitTime", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
-      new ProductTypeElement("respawnAt", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
+      new ProductTypeElement("clientIdentity", AlgebraicType.createIdentityType()),
+      new ProductTypeElement("minX", AlgebraicType.createF32Type()),
+      new ProductTypeElement("minY", AlgebraicType.createF32Type()),
+      new ProductTypeElement("maxX", AlgebraicType.createF32Type()),
+      new ProductTypeElement("maxY", AlgebraicType.createF32Type()),
+      new ProductTypeElement("lastUpdate", AlgebraicType.createTimestampType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: Stone): void {
-    Stone.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: ClientViewport): void {
+    ClientViewport.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): Stone {
-    return Stone.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): ClientViewport {
+    return ClientViewport.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }

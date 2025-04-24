@@ -36,6 +36,7 @@ import DeathScreen from './DeathScreen.tsx';
 import { itemIcons } from '../utils/itemIconUtils';
 import { PlacementItemInfo, PlacementActions } from '../hooks/usePlacementManager';
 import {
+    gameConfig, // Import gameConfig
     CAMPFIRE_LIGHT_RADIUS_BASE,
     CAMPFIRE_FLICKER_AMOUNT,
     HOLD_INTERACTION_DURATION_MS,
@@ -46,7 +47,7 @@ import {
     PLAYER_BOX_INTERACTION_DISTANCE_SQUARED
 } from '../config/gameConfig';
 import {
-    isPlayer, isWoodenStorageBox
+    isPlayer, isWoodenStorageBox, isTree, isStone, isCampfire, isMushroom, isDroppedItem // Import type guards
 } from '../utils/typeGuards';
 
 // --- Prop Interface ---
@@ -68,7 +69,7 @@ interface GameCanvasProps {
   placementActions: PlacementActions;
   placementError: string | null;
   onSetInteractingWith: (target: { type: string; id: number | bigint } | null) => void;
-  updatePlayerPosition: (dx: number, dy: number, intendedDirection?: 'up' | 'down' | 'left' | 'right' | null) => void;
+  updatePlayerPosition: (moveX: number, moveY: number) => void;
   callJumpReducer: () => void;
   callSetSprintingReducer: (isSprinting: boolean) => void;
   isMinimapOpen: boolean;
@@ -170,6 +171,136 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
   }, [itemDefinitions]);
 
+  // --- Viewport Calculation (added helper) ---
+  const getViewportBounds = useCallback(() => {
+    const buffer = gameConfig.tileSize * 2; // Use gameConfig.tileSize
+    const viewMinX = -cameraOffsetX - buffer;
+    const viewMaxX = -cameraOffsetX + canvasSize.width + buffer;
+    const viewMinY = -cameraOffsetY - buffer;
+    const viewMaxY = -cameraOffsetY + canvasSize.height + buffer;
+    return { viewMinX, viewMaxX, viewMinY, viewMaxY };
+  }, [cameraOffsetX, cameraOffsetY, canvasSize.width, canvasSize.height]);
+
+  // --- Entity Filtering (added helper) ---
+  const isEntityInView = useCallback((entity: any, bounds: { viewMinX: number, viewMaxX: number, viewMinY: number, viewMaxY: number }) => {
+    let x: number | undefined;
+    let y: number | undefined;
+    let width: number = gameConfig.tileSize; // Use gameConfig.tileSize
+    let height: number = gameConfig.tileSize; // Use gameConfig.tileSize
+
+    if (isPlayer(entity)) {
+        x = entity.positionX;
+        y = entity.positionY;
+        width = 64; // Approx player size
+        height = 64;
+    } else if (isTree(entity)) {
+        x = entity.posX;
+        y = entity.posY;
+        width = 96; // Approx tree size
+        height = 128;
+    } else if (isStone(entity)) {
+        x = entity.posX;
+        y = entity.posY;
+        width = 64;
+        height = 64;
+    } else if (isCampfire(entity)) {
+        x = entity.posX;
+        y = entity.posY;
+        width = 64;
+        height = 64;
+    } else if (isMushroom(entity)) {
+        x = entity.posX;
+        y = entity.posY;
+        width = 32;
+        height = 32;
+    } else if (isDroppedItem(entity)) {
+        x = entity.posX;
+        y = entity.posY;
+        width = 32;
+        height = 32;
+    } else if (isWoodenStorageBox(entity)) {
+        x = entity.posX;
+        y = entity.posY;
+        width = 64;
+        height = 64;
+    } else {
+        // Fallback for unknown types or if position is missing
+        console.warn("Unknown entity type for viewport culling:", entity);
+        return false; // Cannot determine position
+    }
+
+    if (x === undefined || y === undefined) return false;
+
+    // Simple Axis-Aligned Bounding Box (AABB) overlap check
+    return (
+        x + width / 2 > bounds.viewMinX &&
+        x - width / 2 < bounds.viewMaxX &&
+        y + height / 2 > bounds.viewMinY && // Check bottom edge against top view
+        y - height / 2 < bounds.viewMaxY  // Check top edge against bottom view
+    );
+  }, []); // Depends only on type guards
+
+  // --- Memoized Filtered Entities (Moved outside renderGame) ---
+  const viewBounds = useMemo(() => getViewportBounds(), [getViewportBounds]);
+
+  const visibleMushrooms = useMemo(() => 
+    Array.from(mushrooms.values()).filter(e => (e.respawnAt === null || e.respawnAt === undefined) && isEntityInView(e, viewBounds)),
+    [mushrooms, isEntityInView, viewBounds]
+  );
+  const visibleDroppedItems = useMemo(() => 
+    Array.from(droppedItems.values()).filter(e => isEntityInView(e, viewBounds)),
+    [droppedItems, isEntityInView, viewBounds]
+  );
+  const visibleCampfires = useMemo(() => 
+    Array.from(campfires.values()).filter(e => isEntityInView(e, viewBounds)),
+    [campfires, isEntityInView, viewBounds]
+  );
+  const visiblePlayers = useMemo(() => 
+    Array.from(players.values()).filter(e => isEntityInView(e, viewBounds)),
+    [players, isEntityInView, viewBounds]
+  );
+  const visibleTrees = useMemo(() => 
+    Array.from(trees.values()).filter(e => e.health > 0 && isEntityInView(e, viewBounds)),
+    [trees, isEntityInView, viewBounds]
+  );
+  const visibleStones = useMemo(() => 
+    Array.from(stones.values()).filter(e => e.health > 0 && isEntityInView(e, viewBounds)),
+    [stones, isEntityInView, viewBounds]
+  );
+  const visibleWoodenStorageBoxes = useMemo(() => 
+    Array.from(woodenStorageBoxes.values()).filter(e => isEntityInView(e, viewBounds)),
+    [woodenStorageBoxes, isEntityInView, viewBounds]
+  );
+
+  // Filtered Maps (dependent on filtered arrays)
+  const visibleMushroomsMap = useMemo(() => new Map(visibleMushrooms.map(m => [m.id.toString(), m])), [visibleMushrooms]);
+  const visibleCampfiresMap = useMemo(() => new Map(visibleCampfires.map(c => [c.id.toString(), c])), [visibleCampfires]);
+  const visibleDroppedItemsMap = useMemo(() => new Map(visibleDroppedItems.map(i => [i.id.toString(), i])), [visibleDroppedItems]);
+  const visibleBoxesMap = useMemo(() => new Map(visibleWoodenStorageBoxes.map(b => [b.id.toString(), b])), [visibleWoodenStorageBoxes]);
+
+  // Memoized list for ground items
+  const groundItems = useMemo(() => [
+    ...visibleMushrooms,
+    ...visibleDroppedItems,
+    ...visibleCampfires
+  ], [visibleMushrooms, visibleDroppedItems, visibleCampfires]);
+
+  // Memoized and sorted list for Y-sorted entities (Addresses part of Step 2 early)
+  const ySortedEntities = useMemo(() => {
+    const entities = [
+        ...visiblePlayers,
+        ...visibleTrees,
+        ...visibleStones,
+        ...visibleWoodenStorageBoxes
+    ];
+    entities.sort((a, b) => {
+        const yA = isPlayer(a) ? a.positionY : (isWoodenStorageBox(a) ? a.posY : a.posY);
+        const yB = isPlayer(b) ? b.positionY : (isWoodenStorageBox(b) ? b.posY : b.posY);
+        return yA - yB;
+    });
+    return entities;
+  }, [visiblePlayers, visibleTrees, visibleStones, visibleWoodenStorageBoxes]);
+
   const renderGame = useCallback(() => {
     const canvas = canvasRef.current;
     const maskCanvas = maskCanvasRef.current;
@@ -183,31 +314,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const currentCanvasWidth = canvasSize.width;
     const currentCanvasHeight = canvasSize.height;
 
+    // --- LOGGING: Entity counts before rendering ---
+    // console.log(`[Render Counts] Ground: ${groundItems.length}, Y-Sorted: ${ySortedEntities.length} (Players: ${visiblePlayers.length}, Trees: ${visibleTrees.length}, Stones: ${visibleStones.length}, Boxes: ${visibleWoodenStorageBoxes.length}, Mushrooms: ${visibleMushrooms.length}, Campfires: ${visibleCampfires.length}, Dropped Items: ${visibleDroppedItems.length})`);
+    // --- END LOGGING ---
+
+    // --- Rendering ---
     ctx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight);
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, currentCanvasWidth, currentCanvasHeight);
 
     ctx.save();
     ctx.translate(cameraOffsetX, cameraOffsetY);
-    renderWorldBackground(ctx, grassImageRef);
+    // Pass the necessary viewport parameters to the optimized background renderer
+    renderWorldBackground(ctx, grassImageRef, cameraOffsetX, cameraOffsetY, currentCanvasWidth, currentCanvasHeight);
 
-    const groundItems: (SpacetimeDBMushroom | SpacetimeDBDroppedItem | SpacetimeDBCampfire)[] = [];
-    const ySortedEntities: (SpacetimeDBPlayer | SpacetimeDBTree | SpacetimeDBStone | SpacetimeDBWoodenStorageBox)[] = [];
-
-    mushrooms.forEach(m => { if (m.respawnAt === null || m.respawnAt === undefined) groundItems.push(m); });
-    droppedItems.forEach(i => groundItems.push(i));
-    campfires.forEach(c => groundItems.push(c));
-
-    players.forEach(p => ySortedEntities.push(p));
-    trees.forEach(t => { if (t.health > 0) ySortedEntities.push(t); });
-    stones.forEach(s => { if (s.health > 0) ySortedEntities.push(s); });
-    woodenStorageBoxes.forEach(b => ySortedEntities.push(b));
-
-    ySortedEntities.sort((a, b) => {
-        const yA = isPlayer(a) ? a.positionY : (isWoodenStorageBox(a) ? a.posY : a.posY);
-        const yB = isPlayer(b) ? b.positionY : (isWoodenStorageBox(b) ? b.posY : b.posY);
-        return yA - yB;
-    });
 
     let isPlacementTooFar = false;
     if (placementInfo && localPlayer && currentWorldMouseX !== null && currentWorldMouseY !== null) {
@@ -218,6 +338,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
          }
     }
 
+    // Pass filtered lists to rendering functions
     renderGroundEntities({ ctx, groundItems, itemDefinitions, itemImagesRef, nowMs: now_ms });
     renderYSortedEntities({
         ctx, ySortedEntities, heroImageRef, lastPositionsRef, activeEquipments,
@@ -226,7 +347,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
 
     renderInteractionLabels({
-        ctx, mushrooms, campfires, droppedItems, woodenStorageBoxes, itemDefinitions,
+        ctx,
+        mushrooms: visibleMushroomsMap,         // Pass filtered Map
+        campfires: visibleCampfiresMap,         // Pass filtered Map
+        droppedItems: visibleDroppedItemsMap,    // Pass filtered Map
+        woodenStorageBoxes: visibleBoxesMap, // Pass filtered Map
+        itemDefinitions,
         closestInteractableMushroomId, closestInteractableCampfireId,
         closestInteractableDroppedItemId, closestInteractableBoxId, isClosestInteractableBoxEmpty,
     });
@@ -237,11 +363,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     ctx.restore();
 
+    // --- Post-Processing (Day/Night, Indicators, Lights, Minimap) ---
+    // Day/Night mask overlay
     if (overlayRgba !== 'transparent' && overlayRgba !== 'rgba(0,0,0,0.00)') {
          ctx.drawImage(maskCanvas, 0, 0);
     }
 
-    const drawIndicatorIfNeeded = (entityType: 'campfire' | 'wooden_storage_box', entityId: number, entityPosX: number, entityPosY: number, entityHeight: number) => {
+    // Interaction indicators - Draw only for visible entities that are interactable
+    const drawIndicatorIfNeeded = (entityType: 'campfire' | 'wooden_storage_box', entityId: number, entityPosX: number, entityPosY: number, entityHeight: number, isInView: boolean) => {
+        if (!isInView) return; // Don't draw indicator if entity isn't visible
         if (interactionProgress && interactionProgress.targetId === entityId && interactionProgress.targetType === entityType) {
             const screenX = entityPosX + cameraOffsetX;
             const screenY = entityPosY + cameraOffsetY;
@@ -251,12 +381,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
     };
 
-    campfires.forEach(fire => { drawIndicatorIfNeeded('campfire', fire.id, fire.posX, fire.posY, CAMPFIRE_HEIGHT); });
-    woodenStorageBoxes.forEach(box => { if (interactionProgress && interactionProgress.targetId === box.id && isClosestInteractableBoxEmpty) { drawIndicatorIfNeeded('wooden_storage_box', box.id, box.posX, box.posY, BOX_HEIGHT); } });
+    // Iterate through visible entities for indicators
+    visibleCampfires.forEach(fire => { drawIndicatorIfNeeded('campfire', fire.id, fire.posX, fire.posY, CAMPFIRE_HEIGHT, true); });
+    visibleWoodenStorageBoxes.forEach(box => { if (interactionProgress && interactionProgress.targetId === box.id && isClosestInteractableBoxEmpty) { drawIndicatorIfNeeded('wooden_storage_box', box.id, box.posX, box.posY, BOX_HEIGHT, true); } });
 
+    // Campfire Lights - Only draw for visible campfires
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    campfires.forEach(fire => {
+    visibleCampfires.forEach(fire => { // Use visibleCampfires
         if (fire.isBurning) {
             const lightScreenX = fire.posX + cameraOffsetX;
             const lightScreenY = fire.posY + cameraOffsetY;
@@ -273,12 +405,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
     ctx.restore();
 
+    // Minimap (only if open)
     if (isMinimapOpen) {
+        // Pass the original player map, minimap might show players outside main view
         drawMinimapOntoCanvas({ ctx, players, localPlayerId, canvasWidth: currentCanvasWidth, canvasHeight: currentCanvasHeight, isMouseOverMinimap });
     }
   }, [
-      players, trees, stones, campfires, mushrooms, droppedItems, woodenStorageBoxes,
-      worldState, localPlayerId, localPlayer, activeEquipments, itemDefinitions,
+      // Dependencies: Include new helper functions and filtered lists' sources
+      getViewportBounds, isEntityInView, // New helper functions
+      // Use memoized lists/maps as dependencies now
+      groundItems, ySortedEntities, visibleMushroomsMap, visibleCampfiresMap, visibleDroppedItemsMap, visibleBoxesMap, // Memoized data
+      players, itemDefinitions, // Still need raw players map for minimap, itemDefs for rendering
+      worldState, localPlayerId, localPlayer, activeEquipments,
       itemImagesRef, heroImageRef, grassImageRef, cameraOffsetX, cameraOffsetY,
       canvasSize.width, canvasSize.height, worldMousePos.x, worldMousePos.y,
       animationFrame, placementInfo, placementError, overlayRgba, maskCanvasRef,
@@ -330,4 +468,4 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   );
 };
 
-export default GameCanvas; 
+export default React.memo(GameCanvas);

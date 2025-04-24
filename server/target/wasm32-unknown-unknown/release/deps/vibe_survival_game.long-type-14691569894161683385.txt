@@ -1,2 +1,0 @@
-[std::option::Option<u64>; 5]
-[std::option::Option<u64>; 5]: SpacetimeType

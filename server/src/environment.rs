@@ -38,6 +38,26 @@ use rand::rngs::StdRng;
 use std::collections::HashSet;
 use log;
 
+// --- Constants for Chunk Calculation ---
+// Size of a chunk in tiles (e.g., 20x20 tiles per chunk)
+pub const CHUNK_SIZE_TILES: u32 = 20;
+// World width in chunks
+pub const WORLD_WIDTH_CHUNKS: u32 = (WORLD_WIDTH_TILES + CHUNK_SIZE_TILES - 1) / CHUNK_SIZE_TILES;
+
+// --- Helper function to calculate chunk index ---
+pub fn calculate_chunk_index(pos_x: f32, pos_y: f32) -> u32 {
+    // Convert position to tile coordinates
+    let tile_x = (pos_x / TILE_SIZE_PX as f32).floor() as u32;
+    let tile_y = (pos_y / TILE_SIZE_PX as f32).floor() as u32;
+    
+    // Calculate chunk coordinates (which chunk the tile is in)
+    let chunk_x = (tile_x / CHUNK_SIZE_TILES).min(WORLD_WIDTH_CHUNKS - 1);
+    let chunk_y = (tile_y / CHUNK_SIZE_TILES).min(WORLD_WIDTH_CHUNKS - 1);
+    
+    // Calculate 1D chunk index (row-major ordering)
+    chunk_y * WORLD_WIDTH_CHUNKS + chunk_x
+}
+
 // --- Environment Seeding ---
 
 #[spacetimedb::reducer]
@@ -107,14 +127,20 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             crate::tree::MIN_TREE_DISTANCE_SQ,
             0.0,
             0.0,
-            |pos_x, pos_y| crate::tree::Tree {
-                id: 0,
-                pos_x,
-                pos_y,
-                health: crate::tree::TREE_INITIAL_HEALTH,
-                tree_type: crate::tree::TreeType::Oak,
-                last_hit_time: None,
-                respawn_at: None,
+            |pos_x, pos_y| {
+                // Calculate chunk index for the tree
+                let chunk_idx = calculate_chunk_index(pos_x, pos_y);
+                
+                crate::tree::Tree {
+                    id: 0,
+                    pos_x,
+                    pos_y,
+                    health: crate::tree::TREE_INITIAL_HEALTH,
+                    tree_type: crate::tree::TreeType::Oak,
+                    chunk_index: chunk_idx, // Set the chunk index
+                    last_hit_time: None,
+                    respawn_at: None,
+                }
             },
             trees,
         ) {
@@ -145,13 +171,19 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             crate::stone::MIN_STONE_DISTANCE_SQ,
             crate::stone::MIN_STONE_TREE_DISTANCE_SQ,
             0.0,
-            |pos_x, pos_y| crate::stone::Stone {
-                id: 0,
-                pos_x,
-                pos_y,
-                health: crate::stone::STONE_INITIAL_HEALTH,
-                last_hit_time: None,
-                respawn_at: None,
+            |pos_x, pos_y| {
+                // Calculate chunk index for the stone
+                let chunk_idx = calculate_chunk_index(pos_x, pos_y);
+                
+                crate::stone::Stone {
+                    id: 0,
+                    pos_x,
+                    pos_y,
+                    health: crate::stone::STONE_INITIAL_HEALTH,
+                    chunk_index: chunk_idx, // Set the chunk index
+                    last_hit_time: None,
+                    respawn_at: None,
+                }
             },
             stones,
         ) {
@@ -183,11 +215,17 @@ pub fn seed_environment(ctx: &ReducerContext) -> Result<(), String> {
             crate::mushroom::MIN_MUSHROOM_DISTANCE_SQ,
             crate::mushroom::MIN_MUSHROOM_TREE_DISTANCE_SQ,
             crate::mushroom::MIN_MUSHROOM_STONE_DISTANCE_SQ,
-            |pos_x, pos_y| crate::mushroom::Mushroom {
-                id: 0,
-                pos_x,
-                pos_y,
-                respawn_at: None,
+            |pos_x, pos_y| {
+                // Calculate chunk index for the mushroom
+                let chunk_idx = calculate_chunk_index(pos_x, pos_y);
+                
+                crate::mushroom::Mushroom {
+                    id: 0,
+                    pos_x,
+                    pos_y,
+                    chunk_index: chunk_idx, // Set the chunk index
+                    respawn_at: None,
+                }
             },
             mushrooms,
         ) {
@@ -235,6 +273,7 @@ pub fn check_resource_respawns(ctx: &ReducerContext) -> Result<(), String> {
             t.health = crate::tree::TREE_INITIAL_HEALTH;
             t.respawn_at = None;
             t.last_hit_time = None;
+            // Position doesn't change during respawn, so chunk_index stays the same
         }
     );
 

@@ -243,4 +243,4 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
     );
 };
 
-export default PlayerUI;
+export default React.memo(PlayerUI);

@@ -1,1 +1,0 @@
-&dropped_item::dropped_item__TableHandle

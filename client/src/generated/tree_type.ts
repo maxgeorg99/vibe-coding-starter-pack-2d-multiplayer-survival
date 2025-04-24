@@ -38,6 +38,7 @@ export type Tree = {
   posY: number,
   health: number,
   treeType: __TreeType,
+  chunkIndex: number,
   lastHitTime: Timestamp | undefined,
   respawnAt: Timestamp | undefined,
 };
@@ -57,6 +58,7 @@ export namespace Tree {
       new ProductTypeElement("posY", AlgebraicType.createF32Type()),
       new ProductTypeElement("health", AlgebraicType.createU32Type()),
       new ProductTypeElement("treeType", __TreeType.getTypeScriptAlgebraicType()),
+      new ProductTypeElement("chunkIndex", AlgebraicType.createU32Type()),
       new ProductTypeElement("lastHitTime", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
       new ProductTypeElement("respawnAt", AlgebraicType.createOptionType(AlgebraicType.createTimestampType())),
     ]);
