@@ -16,6 +16,8 @@ pub(crate) const BOX_COLLISION_Y_OFFSET: f32 = 10.0; // Similar to campfire
 pub(crate) const PLAYER_BOX_COLLISION_DISTANCE_SQUARED: f32 = (super::PLAYER_RADIUS + BOX_COLLISION_RADIUS) * (super::PLAYER_RADIUS + BOX_COLLISION_RADIUS);
 const BOX_INTERACTION_DISTANCE_SQUARED: f32 = 64.0 * 64.0; // Similar to campfire interaction
 pub const NUM_BOX_SLOTS: usize = 18;
+// Add new constant for box-to-box collision
+pub(crate) const BOX_BOX_COLLISION_DISTANCE_SQUARED: f32 = (BOX_COLLISION_RADIUS * 2.0) * (BOX_COLLISION_RADIUS * 2.0);
 
 // Import InventoryItem and ItemDefinition tables/traits AND STRUCTS for item finding/checking
 use crate::items::{InventoryItem, inventory_item as InventoryItemTableTrait, ItemDefinition, item_definition as ItemDefinitionTableTrait};
@@ -399,6 +401,16 @@ pub fn place_wooden_storage_box(ctx: &ReducerContext, item_instance_id: u64, wor
         }
     } else {
         return Err("Could not find player data to validate placement distance.".to_string());
+    }
+
+    // Check collision with other storage boxes
+    for other_box in wooden_storage_boxes.iter() {
+        let dx = world_x - other_box.pos_x;
+        let dy = world_y - other_box.pos_y;
+        let dist_sq = dx * dx + dy * dy;
+        if dist_sq < BOX_BOX_COLLISION_DISTANCE_SQUARED {
+            return Err("Cannot place storage box too close to another storage box.".to_string());
+        }
     }
 
     // TODO: Add collision checks? Ensure not placing inside another object?
