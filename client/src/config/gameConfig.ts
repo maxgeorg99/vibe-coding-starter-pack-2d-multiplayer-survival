@@ -8,7 +8,7 @@
 
 // Define base values first
 const TILE_SIZE = 48;
-const MINIMAP_GRID_DIAGONAL_TILES = 150; // Use the user's desired value (tunable)
+const MINIMAP_GRID_DIAGONAL_TILES = 101; // Use the user's desired value (tunable)
 
 // --- Server World & Chunk Configuration (Client-Side Assumption - TODO: Make Server-Driven) ---
 // These values MUST match the server's current world generation settings.

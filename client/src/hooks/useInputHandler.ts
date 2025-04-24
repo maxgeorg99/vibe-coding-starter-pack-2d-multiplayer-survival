@@ -33,7 +33,6 @@ interface UseInputHandlerProps {
     // Add minimap state and setter
     isMinimapOpen: boolean;
     setIsMinimapOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    isChatting: boolean;
 }
 
 // --- Hook Return Value Interface ---
@@ -71,7 +70,6 @@ export const useInputHandler = ({
     callSetSprintingReducer,
     isMinimapOpen,
     setIsMinimapOpen,
-    isChatting,
 }: UseInputHandlerProps): InputHandlerState => {
     // --- Internal State and Refs ---
     const keysPressed = useRef<Set<string>>(new Set());
@@ -98,8 +96,8 @@ export const useInputHandler = ({
     const onSetInteractingWithRef = useRef(onSetInteractingWith);
     const worldMousePosRefInternal = useRef(worldMousePos); // Shadow prop name
 
-    // --- Derive input disabled state based ONLY on player death --- 
-    const isPlayerDead = localPlayer?.isDead ?? false;
+    // --- Derive input disabled state --- 
+    const isInputEffectivelyDisabled = localPlayer?.isDead ?? false;
 
     // --- Effect to reset sprint state if player dies --- 
     useEffect(() => {
@@ -138,9 +136,7 @@ export const useInputHandler = ({
     // --- Swing Logic --- 
     const attemptSwing = useCallback(() => {
         const currentConnection = connectionRef.current;
-        // Check focus IN ADDITION to player death
-        const chatInputIsFocused = document.activeElement?.matches('[data-is-chat-input="true"]');
-        if (!currentConnection?.reducers || !localPlayerId || isPlayerDead || chatInputIsFocused) return; 
+        if (!currentConnection?.reducers || !localPlayerId || isInputEffectivelyDisabled) return; // Check derived disabled state
 
         const currentEquipments = activeEquipmentsRef.current;
         const localEquipment = currentEquipments?.get(localPlayerId);
@@ -167,14 +163,13 @@ export const useInputHandler = ({
         } catch (err) { // Use unknown type for error
             console.error("[AttemptSwing] Error calling useEquippedItem reducer:", err);
         }
-    }, [localPlayerId, isPlayerDead]); // Remove isInputEffectivelyDisabled dependency
+    }, [localPlayerId, isInputEffectivelyDisabled]); // Add derived state dependency
 
     // --- Input Handling useEffect (Listeners only) ---
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            const chatInputIsFocused = document.activeElement?.matches('[data-is-chat-input="true"]');
-            // Block if player is dead or chat is focused
-            if (!event || isPlayerDead || chatInputIsFocused) return; 
+            // Use the derived disabled state here
+            if (!event || isInputEffectivelyDisabled) return; 
             const key = event.key.toLowerCase();
 
             // Placement cancellation (checked before general input disabled)
@@ -182,6 +177,8 @@ export const useInputHandler = ({
                 placementActionsRef.current?.cancelPlacement();
                 return;
             }
+            // Check disabled state again for other inputs
+            if (isInputEffectivelyDisabled) return;
 
             // Sprinting start
             if (key === 'shift' && !isSprintingRef.current && !event.repeat) {
@@ -298,9 +295,8 @@ export const useInputHandler = ({
         };
 
         const handleKeyUp = (event: KeyboardEvent) => {
-            const chatInputIsFocused = document.activeElement?.matches('[data-is-chat-input="true"]');
-            // Block if player is dead or chat is focused
-            if (!event || isPlayerDead || chatInputIsFocused) return; 
+            // Use derived disabled state here
+            if (!event || isInputEffectivelyDisabled) return; 
             const key = event.key.toLowerCase();
             // Sprinting end
             if (key === 'shift') {
@@ -353,15 +349,13 @@ export const useInputHandler = ({
 
         // --- Mouse Handlers ---
         const handleMouseDown = (event: MouseEvent) => {
-            const chatInputIsFocused = document.activeElement?.matches('[data-is-chat-input="true"]');
-            // Block if player is dead, chat focused, button isn't left, or placing
-            if (isPlayerDead || chatInputIsFocused || event.button !== 0 || placementInfo) return; 
+            // Use derived disabled state here
+            if (isInputEffectivelyDisabled || event.button !== 0 || placementInfo) return; 
             isMouseDownRef.current = true;
             attemptSwing(); // Call internal swing logic
         };
 
         const handleMouseUp = (event: MouseEvent) => {
-            // No need to check focus here, just handle the button state
             if (event.button === 0) {
                 isMouseDownRef.current = false;
             }
@@ -369,9 +363,8 @@ export const useInputHandler = ({
 
         // --- Canvas Click for Placement ---
         const handleCanvasClick = (event: MouseEvent) => {
-            const chatInputIsFocused = document.activeElement?.matches('[data-is-chat-input="true"]');
-            // Block if player is dead, chat focused, or button isn't left
-            if (isPlayerDead || chatInputIsFocused || event.button !== 0) return; 
+            // Use derived disabled state here
+            if (isInputEffectivelyDisabled || event.button !== 0) return; 
             const currentWorldMouse = worldMousePosRefInternal.current;
             if (placementInfo && currentWorldMouse.x !== null && currentWorldMouse.y !== null) {
                  placementActionsRef.current?.attemptPlacement(currentWorldMouse.x, currentWorldMouse.y);
@@ -403,12 +396,14 @@ export const useInputHandler = ({
         const handleBlur = () => {
             if (isSprintingRef.current) {
                 isSprintingRef.current = false;
-                // Call reducer regardless of focus state if window loses focus
-                callSetSprintingReducer(false); 
+                // Use derived disabled state here
+                if (!isInputEffectivelyDisabled) { 
+                    callSetSprintingReducer(false);
+                }
             }
-            // keysPressed.current.clear(); // Keep this commented out
-            isMouseDownRef.current = false;
-            isEHeldDownRef.current = false;
+            keysPressed.current.clear();
+            isMouseDownRef.current = false; // Ensure mouse down state is cleared on blur
+            isEHeldDownRef.current = false; // Ensure E hold state is cleared
             if(eKeyHoldTimerRef.current) clearTimeout(eKeyHoldTimerRef.current);
             eKeyHoldTimerRef.current = null;
             setInteractionProgress(null);
@@ -452,13 +447,14 @@ export const useInputHandler = ({
                 clearTimeout(eKeyHoldTimerRef.current);
             }
         };
+    // Update dependencies: Replace isInputDisabled with localPlayer?.isDead
+    // Add localPlayer?.isDead as dependency
     }, [canvasRef, localPlayer?.isDead, placementInfo, callSetSprintingReducer, callJumpReducer, attemptSwing, setIsMinimapOpen]);
 
     // --- Function to process inputs and call actions (called by game loop) ---
     const processInputsAndActions = useCallback(() => {
-        const chatInputIsFocused = document.activeElement?.matches('[data-is-chat-input="true"]');
-        // Block if player is dead or chat is focused
-        if (isPlayerDead || chatInputIsFocused) return; 
+        // Use the derived disabled state here
+        if (isInputEffectivelyDisabled) return; 
 
         // --- Movement --- 
         let dx = 0;
@@ -488,13 +484,15 @@ export const useInputHandler = ({
         if (isMouseDownRef.current && !placementInfo) { // Only swing if not placing
             attemptSwing(); // Call internal attemptSwing function
         }
+    // Include dependencies that are read inside this function
+    // Update dependencies: Replace isInputDisabled with localPlayer?.isDead
     }, [
-        isPlayerDead, updatePlayerPosition, attemptSwing, placementInfo,
+        isInputEffectivelyDisabled, updatePlayerPosition, attemptSwing, placementInfo,
         localPlayerId, localPlayer, activeEquipments, worldMousePos, connection,
         closestInteractableMushroomId, closestInteractableCampfireId, 
         closestInteractableDroppedItemId, closestInteractableBoxId, 
         isClosestInteractableBoxEmpty, onSetInteractingWith, 
-        callSetSprintingReducer, callJumpReducer
+        callSetSprintingReducer, callJumpReducer 
     ]);
 
     // --- Return State & Actions ---

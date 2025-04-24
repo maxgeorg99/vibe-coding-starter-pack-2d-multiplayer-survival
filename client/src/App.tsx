@@ -72,9 +72,14 @@ function App() {
     const { 
       players, trees, stones, campfires, mushrooms, itemDefinitions, 
       inventoryItems, worldState, activeEquipments, droppedItems, 
-      woodenStorageBoxes, recipes, craftingQueueItems, localPlayerRegistered, 
-      messages // <<< Add messages from useSpacetimeTables
-    } = useSpacetimeTables({ connection, cancelPlacement, viewport: currentViewport }); // Pass currentViewport
+      woodenStorageBoxes, recipes, craftingQueueItems, localPlayerRegistered,
+      messages,
+      playerPins, // Destructure playerPins
+    } = useSpacetimeTables({ 
+        connection, 
+        cancelPlacement, 
+        viewport: currentViewport // Make sure viewport is passed correctly
+    });
 
     // --- Refs for Cross-Hook/Component Communication --- 
     // Ref for Placement cancellation needed by useSpacetimeTables callbacks
@@ -272,6 +277,7 @@ function App() {
                       cancelPlacement={cancelPlacement}
                       interactingWith={interactingWith}
                       handleSetInteractingWith={handleSetInteractingWith}
+                      playerPins={playerPins} // Pass playerPins down
                       draggedItemInfo={draggedItemInfo}
                       onItemDragStart={handleItemDragStart}
                       onItemDrop={handleItemDrop}

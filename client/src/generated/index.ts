@@ -118,6 +118,8 @@ import { SeedWorldState } from "./seed_world_state_reducer.ts";
 export { SeedWorldState };
 import { SendMessage } from "./send_message_reducer.ts";
 export { SendMessage };
+import { SetPlayerPin } from "./set_player_pin_reducer.ts";
+export { SetPlayerPin };
 import { SetSprinting } from "./set_sprinting_reducer.ts";
 export { SetSprinting };
 import { SplitAndMoveFromCampfire } from "./split_and_move_from_campfire_reducer.ts";
@@ -180,6 +182,8 @@ import { MushroomTableHandle } from "./mushroom_table.ts";
 export { MushroomTableHandle };
 import { PlayerTableHandle } from "./player_table.ts";
 export { PlayerTableHandle };
+import { PlayerPinTableHandle } from "./player_pin_table.ts";
+export { PlayerPinTableHandle };
 import { PlayerStatScheduleTableHandle } from "./player_stat_schedule_table.ts";
 export { PlayerStatScheduleTableHandle };
 import { RecipeTableHandle } from "./recipe_table.ts";
@@ -226,6 +230,8 @@ import { Mushroom } from "./mushroom_type.ts";
 export { Mushroom };
 import { Player } from "./player_type.ts";
 export { Player };
+import { PlayerPin } from "./player_pin_type.ts";
+export { PlayerPin };
 import { PlayerStatSchedule } from "./player_stat_schedule_type.ts";
 export { PlayerStatSchedule };
 import { Recipe } from "./recipe_type.ts";
@@ -316,6 +322,11 @@ const REMOTE_MODULE = {
       tableName: "player",
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
+    },
+    player_pin: {
+      tableName: "player_pin",
+      rowType: PlayerPin.getTypeScriptAlgebraicType(),
+      primaryKey: "playerId",
     },
     player_stat_schedule: {
       tableName: "player_stat_schedule",
@@ -521,6 +532,10 @@ const REMOTE_MODULE = {
       reducerName: "send_message",
       argsType: SendMessage.getTypeScriptAlgebraicType(),
     },
+    set_player_pin: {
+      reducerName: "set_player_pin",
+      argsType: SetPlayerPin.getTypeScriptAlgebraicType(),
+    },
     set_sprinting: {
       reducerName: "set_sprinting",
       argsType: SetSprinting.getTypeScriptAlgebraicType(),
@@ -655,6 +670,7 @@ export type Reducer = never
 | { name: "SeedRecipes", args: SeedRecipes }
 | { name: "SeedWorldState", args: SeedWorldState }
 | { name: "SendMessage", args: SendMessage }
+| { name: "SetPlayerPin", args: SetPlayerPin }
 | { name: "SetSprinting", args: SetSprinting }
 | { name: "SplitAndMoveFromCampfire", args: SplitAndMoveFromCampfire }
 | { name: "SplitStack", args: SplitStack }
@@ -1320,6 +1336,22 @@ export class RemoteReducers {
     this.connection.offReducer("send_message", callback);
   }
 
+  setPlayerPin(pinX: number, pinY: number) {
+    const __args = { pinX, pinY };
+    let __writer = new BinaryWriter(1024);
+    SetPlayerPin.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("set_player_pin", __argsBuffer, this.setCallReducerFlags.setPlayerPinFlags);
+  }
+
+  onSetPlayerPin(callback: (ctx: ReducerEventContext, pinX: number, pinY: number) => void) {
+    this.connection.onReducer("set_player_pin", callback);
+  }
+
+  removeOnSetPlayerPin(callback: (ctx: ReducerEventContext, pinX: number, pinY: number) => void) {
+    this.connection.offReducer("set_player_pin", callback);
+  }
+
   setSprinting(sprinting: boolean) {
     const __args = { sprinting };
     let __writer = new BinaryWriter(1024);
@@ -1780,6 +1812,11 @@ export class SetReducerFlags {
     this.sendMessageFlags = flags;
   }
 
+  setPlayerPinFlags: CallReducerFlags = 'FullUpdate';
+  setPlayerPin(flags: CallReducerFlags) {
+    this.setPlayerPinFlags = flags;
+  }
+
   setSprintingFlags: CallReducerFlags = 'FullUpdate';
   setSprinting(flags: CallReducerFlags) {
     this.setSprintingFlags = flags;
@@ -1919,6 +1956,10 @@ export class RemoteTables {
 
   get player(): PlayerTableHandle {
     return new PlayerTableHandle(this.connection.clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
+  }
+
+  get playerPin(): PlayerPinTableHandle {
+    return new PlayerPinTableHandle(this.connection.clientCache.getOrCreateTable<PlayerPin>(REMOTE_MODULE.tables.player_pin));
   }
 
   get playerStatSchedule(): PlayerStatScheduleTableHandle {

@@ -1,5 +1,5 @@
 import { gameConfig } from '../config/gameConfig';
-import { Player as SpacetimeDBPlayer, Tree, Stone as SpacetimeDBStone } from '../generated';
+import { Player as SpacetimeDBPlayer, Tree, Stone as SpacetimeDBStone, PlayerPin } from '../generated';
 
 // --- Calculate Proportional Dimensions ---
 const worldPixelWidth = gameConfig.worldWidth * gameConfig.tileSize;
@@ -23,6 +23,13 @@ const ROCK_DOT_COLOR = '#808080'; // Grey
 const ENTITY_DOT_SIZE = 2; // Slightly smaller dot size for world objects
 // Unused constants removed
 const MINIMAP_WORLD_BG_COLOR = 'rgba(52, 88, 52, 0.2)';
+const OUT_OF_BOUNDS_COLOR = 'rgba(20, 35, 20, 0.2)'; // Darker shade for outside world bounds
+
+// Updated pin styling
+const PIN_COLOR = '#FFD700'; // Golden yellow for pin
+const PIN_BORDER_COLOR = '#000000'; // Black border
+const PIN_SIZE = 8; // Larger pin
+const PIN_BORDER_WIDTH = 1; // Border width
 
 // Grid Constants - Divisions will be calculated dynamically
 const GRID_LINE_COLOR = 'rgba(200, 200, 200, 0.3)';
@@ -35,10 +42,14 @@ interface MinimapProps {
   players: Map<string, SpacetimeDBPlayer>; // Map of player identities to player data
   trees: Map<string, Tree>; // Map of tree identities/keys to tree data
   stones: Map<string, SpacetimeDBStone>; // Add stones prop
-  localPlayerId?: string; // Optional ID of the player viewing the map
+  localPlayer?: SpacetimeDBPlayer; // Pass the full local player object
+  localPlayerId?: string; // Still potentially useful for some checks
+  playerPin: PlayerPin | null; // Local player's pin data
   canvasWidth: number; // Width of the main game canvas
   canvasHeight: number; // Height of the main game canvas
   isMouseOverMinimap: boolean; // To change background on hover
+  zoomLevel: number; // Current zoom level
+  viewCenterOffset: { x: number; y: number }; // Panning offset from hook
 }
 
 /**
@@ -49,32 +60,68 @@ export function drawMinimapOntoCanvas({
   players,
   trees,
   stones,
+  localPlayer, // Destructure localPlayer
   localPlayerId,
+  playerPin, // Destructure playerPin
   canvasWidth,
   canvasHeight,
   isMouseOverMinimap,
+  zoomLevel, // Destructure zoomLevel
+  viewCenterOffset, // Destructure pan offset
 }: MinimapProps) {
   const minimapWidth = MINIMAP_WIDTH;
   const minimapHeight = MINIMAP_HEIGHT;
   
-  // Calculate top-left corner for centering
+  // Calculate top-left corner for centering the minimap UI element
   const minimapX = (canvasWidth - minimapWidth) / 2;
   const minimapY = (canvasHeight - minimapHeight) / 2;
 
-  // --- Calculate Scale to Fit Entire World ---
+  // --- Calculate Base Scale (Zoom Level 1) ---
   const worldPixelWidth = gameConfig.worldWidth * gameConfig.tileSize;
   const worldPixelHeight = gameConfig.worldHeight * gameConfig.tileSize;
-  const scaleX = minimapWidth / worldPixelWidth;
-  const scaleY = minimapHeight / worldPixelHeight;
-  // Use the smaller scale factor to ensure the entire world fits without distortion
-  const uniformScale = Math.min(scaleX, scaleY);
+  const baseScaleX = minimapWidth / worldPixelWidth;
+  const baseScaleY = minimapHeight / worldPixelHeight;
+  const baseUniformScale = Math.min(baseScaleX, baseScaleY);
 
-  // Adjust minimap drawing dimensions if aspect ratios don't match
-  const effectiveMinimapDrawWidth = worldPixelWidth * uniformScale;
-  const effectiveMinimapDrawHeight = worldPixelHeight * uniformScale;
-  // Center the actual map drawing within the minimap background area
-  const drawOffsetX = minimapX + (minimapWidth - effectiveMinimapDrawWidth) / 2;
-  const drawOffsetY = minimapY + (minimapHeight - effectiveMinimapDrawHeight) / 2;
+  // --- Calculate Current Scale based on Zoom ---
+  const currentScale = baseUniformScale * zoomLevel;
+
+  // --- Calculate Final View Center (incorporating pan offset) ---
+  let viewCenterXWorld: number;
+  let viewCenterYWorld: number;
+
+  if (zoomLevel <= 1 || !localPlayer) {
+    // At zoom 1 or if no local player, center on the world center
+    viewCenterXWorld = worldPixelWidth / 2;
+    viewCenterYWorld = worldPixelHeight / 2;
+  } else {
+    // When zoomed in, center on the local player
+    viewCenterXWorld = localPlayer.positionX + viewCenterOffset.x; // Add offset
+    viewCenterYWorld = localPlayer.positionY + viewCenterOffset.y; // Add offset
+  }
+
+  // Calculate the top-left world coordinate visible at the current zoom and center
+  const viewWidthWorld = minimapWidth / currentScale;
+  const viewHeightWorld = minimapHeight / currentScale;
+  const viewMinXWorld = viewCenterXWorld - viewWidthWorld / 2;
+  const viewMinYWorld = viewCenterYWorld - viewHeightWorld / 2;
+
+  // The drawing offset needs to map the calculated viewMinX/YWorld to the minimapX/Y screen coordinates
+  const drawOffsetX = minimapX - viewMinXWorld * currentScale;
+  const drawOffsetY = minimapY - viewMinYWorld * currentScale;
+
+  // Helper function to convert world coords to minimap screen coords
+  const worldToMinimap = (worldX: number, worldY: number): { x: number; y: number } | null => {
+    const screenX = drawOffsetX + worldX * currentScale;
+    const screenY = drawOffsetY + worldY * currentScale;
+    // Basic check if within minimap bounds (can be more precise)
+    if (screenX >= minimapX && screenX <= minimapX + minimapWidth &&
+        screenY >= minimapY && screenY <= minimapY + minimapHeight) {
+      return { x: screenX, y: screenY };
+    } else {
+      return null; // Off the minimap at current zoom/pan
+    }
+  };
 
   // --- Apply Retro Styling --- 
   ctx.save(); // Save context before applying shadow/styles
@@ -99,21 +146,31 @@ export function drawMinimapOntoCanvas({
   ctx.clip();
   // --- End Initial Styling & Clip ---
 
-  // 3. Draw World Background Area (Dark Green) within the effective drawing area
-  ctx.fillStyle = MINIMAP_WORLD_BG_COLOR;
-  // Use drawOffsetX/Y and effective dimensions
-  ctx.fillRect(drawOffsetX, drawOffsetY, effectiveMinimapDrawWidth, effectiveMinimapDrawHeight);
+  // 3. Draw Dark Background for the entire minimap area (including potential out-of-bounds)
+  ctx.fillStyle = OUT_OF_BOUNDS_COLOR;
+  ctx.fillRect(minimapX, minimapY, minimapWidth, minimapHeight);
 
-  // --- Calculate Grid Divisions Dynamically ---
-  const gridCellSize = gameConfig.minimapGridCellSizePixels > 0 ? gameConfig.minimapGridCellSizePixels : 1; // Avoid division by zero
+  // Calculate the screen rectangle for the actual world bounds at current zoom/pan
+  const worldRectScreenX = drawOffsetX + 0 * currentScale; // World X=0
+  const worldRectScreenY = drawOffsetY + 0 * currentScale; // World Y=0
+  const worldRectScreenWidth = worldPixelWidth * currentScale;
+  const worldRectScreenHeight = worldPixelHeight * currentScale;
 
-  const gridDivisionsX = Math.max(1, Math.round(worldPixelWidth / gridCellSize)); // Ensure at least 1 division
-  const gridDivisionsY = Math.max(1, Math.round(worldPixelHeight / gridCellSize)); // Ensure at least 1 division
+  // Draw the actual world background
+  ctx.fillStyle = MINIMAP_WORLD_BG_COLOR; 
+  ctx.fillRect(worldRectScreenX, worldRectScreenY, worldRectScreenWidth, worldRectScreenHeight);
+
+  // --- Calculate Grid Divisions Dynamically (Based on current view) ---
+  // Adjust grid rendering based on zoom level - maybe show finer grid when zoomed?
+  // For now, keep it simple: calculate grid lines based on visible world area.
+  const gridCellSizeWorld = gameConfig.minimapGridCellSizePixels > 0 ? gameConfig.minimapGridCellSizePixels : 1;
+
+  const startGridXWorld = Math.floor(viewMinXWorld / gridCellSizeWorld) * gridCellSizeWorld;
+  const endGridXWorld = Math.ceil((viewMinXWorld + viewWidthWorld) / gridCellSizeWorld) * gridCellSizeWorld;
+  const startGridYWorld = Math.floor(viewMinYWorld / gridCellSizeWorld) * gridCellSizeWorld;
+  const endGridYWorld = Math.ceil((viewMinYWorld + viewHeightWorld) / gridCellSizeWorld) * gridCellSizeWorld;
 
   // --- Draw Grid ---
-  const gridCellWidth = effectiveMinimapDrawWidth / gridDivisionsX;
-  const gridCellHeight = effectiveMinimapDrawHeight / gridDivisionsY;
-
   ctx.strokeStyle = GRID_LINE_COLOR;
   ctx.lineWidth = 0.5;
   ctx.fillStyle = GRID_TEXT_COLOR;
@@ -121,74 +178,84 @@ export function drawMinimapOntoCanvas({
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
-  // Draw Vertical Lines
-  for (let i = 0; i <= gridDivisionsX; i++) {
-    const x = drawOffsetX + i * gridCellWidth;
-    ctx.beginPath();
-    ctx.moveTo(x, drawOffsetY);
-    ctx.lineTo(x, drawOffsetY + effectiveMinimapDrawHeight);
-    ctx.stroke();
-  }
-
-  // Draw Horizontal Lines
-  for (let i = 0; i <= gridDivisionsY; i++) {
-    const y = drawOffsetY + i * gridCellHeight;
-    ctx.beginPath();
-    ctx.moveTo(drawOffsetX, y);
-    ctx.lineTo(drawOffsetX + effectiveMinimapDrawWidth, y);
-    ctx.stroke();
-  }
-
-  // Draw Cell Labels (e.g., A1, B1, A2) in the top-left corner of each cell
-  for (let row = 0; row < gridDivisionsY; row++) {
-    for (let col = 0; col < gridDivisionsX; col++) {
-      const cellX = drawOffsetX + col * gridCellWidth;
-      const cellY = drawOffsetY + row * gridCellHeight;
-      
-      const colLabel = String.fromCharCode(65 + col); // A, B, C...
-      const rowLabel = (row + 1).toString(); // 1, 2, 3...
-      const label = colLabel + rowLabel;
-
-      ctx.fillText(label, cellX + 2, cellY + 2); // Draw label with small offset
+  // Draw Vertical Lines & Labels
+  for (let worldX = startGridXWorld; worldX <= endGridXWorld; worldX += gridCellSizeWorld) {
+    const screenCoords = worldToMinimap(worldX, viewMinYWorld);
+    if (screenCoords) {
+      const screenX = screenCoords.x;
+      ctx.beginPath();
+      ctx.moveTo(screenX, minimapY);
+      ctx.lineTo(screenX, minimapY + minimapHeight);
+      ctx.stroke();
+      // Optionally add world coordinate labels when zoomed
+      // if (zoomLevel > 1.5) {
+      //  ctx.fillText(Math.round(worldX).toString(), screenX + 2, minimapY + 2);
+      // }
     }
   }
 
+  // Draw Horizontal Lines & Labels
+  for (let worldY = startGridYWorld; worldY <= endGridYWorld; worldY += gridCellSizeWorld) {
+    const screenCoords = worldToMinimap(viewMinXWorld, worldY);
+    if (screenCoords) {
+      const screenY = screenCoords.y;
+      ctx.beginPath();
+      ctx.moveTo(minimapX, screenY);
+      ctx.lineTo(minimapX + minimapWidth, screenY);
+      ctx.stroke();
+      // Optionally add world coordinate labels when zoomed
+      // if (zoomLevel > 1.5) {
+      //   ctx.fillText(Math.round(worldY).toString(), minimapX + 2, screenY + 2);
+      // }
+    }
+  }
+
+  // Draw Cell Labels (A1, B2 etc.) based on world grid cells visible
+  const labelGridDivisionsX = Math.max(1, Math.round(worldPixelWidth / gridCellSizeWorld));
+  const labelGridDivisionsY = Math.max(1, Math.round(worldPixelHeight / gridCellSizeWorld));
+
+  for (let row = 0; row < labelGridDivisionsY; row++) {
+    for (let col = 0; col < labelGridDivisionsX; col++) {
+      // Calculate world coordinates of the top-left corner of this grid cell
+      const cellWorldX = col * gridCellSizeWorld;
+      const cellWorldY = row * gridCellSizeWorld;
+      // Convert world corner to screen coordinates
+      const screenCoords = worldToMinimap(cellWorldX, cellWorldY);
+      if (screenCoords) {
+          // Check if the label position is actually within the minimap bounds
+          if (screenCoords.x + 2 < minimapX + minimapWidth && screenCoords.y + 12 < minimapY + minimapHeight) {
+              const colLabel = String.fromCharCode(65 + col); // A, B, C...
+              const rowLabel = (row + 1).toString(); // 1, 2, 3...
+              const label = colLabel + rowLabel;
+              ctx.fillText(label, screenCoords.x + 2, screenCoords.y + 2); // Draw label at scaled position
+          }
+      }
+    }
+  }
   // --- End Grid Drawing ---
 
   // --- Draw Trees ---
   ctx.fillStyle = TREE_DOT_COLOR;
   trees.forEach(tree => {
-      // Use posX/posY based on GameCanvas.tsx usage
-      const treeMinimapX = drawOffsetX + tree.posX * uniformScale;
-      const treeMinimapY = drawOffsetY + tree.posY * uniformScale;
-
-      // Draw only if within minimap bounds
-      if (treeMinimapX >= minimapX && treeMinimapX <= minimapX + minimapWidth &&
-          treeMinimapY >= minimapY && treeMinimapY <= minimapY + minimapHeight) 
-      {
-        ctx.fillRect(
-          treeMinimapX - ENTITY_DOT_SIZE / 2,
-          treeMinimapY - ENTITY_DOT_SIZE / 2,
-          ENTITY_DOT_SIZE,
-          ENTITY_DOT_SIZE
-        );
-      }
+    const screenCoords = worldToMinimap(tree.posX, tree.posY);
+    if (screenCoords) {
+      ctx.fillRect(
+        screenCoords.x - ENTITY_DOT_SIZE / 2,
+        screenCoords.y - ENTITY_DOT_SIZE / 2,
+        ENTITY_DOT_SIZE,
+        ENTITY_DOT_SIZE
+      );
+    }
   });
 
   // --- Draw Stones ---
   ctx.fillStyle = ROCK_DOT_COLOR; // Use ROCK_DOT_COLOR
   stones.forEach(stone => { // Use stones prop (type SpacetimeDBStone)
-      // Use posX/posY based on GameCanvas.tsx usage
-      const stoneMinimapX = drawOffsetX + stone.posX * uniformScale;
-      const stoneMinimapY = drawOffsetY + stone.posY * uniformScale;
-
-      // Draw only if within minimap bounds
-      if (stoneMinimapX >= minimapX && stoneMinimapX <= minimapX + minimapWidth &&
-          stoneMinimapY >= minimapY && stoneMinimapY <= minimapY + minimapHeight) 
-      {
+    const screenCoords = worldToMinimap(stone.posX, stone.posY);
+    if (screenCoords) {
         ctx.fillRect(
-          stoneMinimapX - ENTITY_DOT_SIZE / 2,
-          stoneMinimapY - ENTITY_DOT_SIZE / 2,
+          screenCoords.x - ENTITY_DOT_SIZE / 2,
+          screenCoords.y - ENTITY_DOT_SIZE / 2,
           ENTITY_DOT_SIZE,
           ENTITY_DOT_SIZE
         );
@@ -196,29 +263,55 @@ export function drawMinimapOntoCanvas({
   });
 
   // --- Draw Local Player --- 
-  players.forEach(player => {
-    const isLocal = player.identity.toHexString() === localPlayerId;
-    // Only draw if it's the local player
-    if (isLocal) {
-      ctx.fillStyle = LOCAL_PLAYER_DOT_COLOR;
-
-      // Calculate player position relative to the world origin (0,0) and scale it
-      const playerMinimapX = drawOffsetX + player.positionX * uniformScale;
-      const playerMinimapY = drawOffsetY + player.positionY * uniformScale;
-
-      // Draw only if within minimap bounds
-      if (playerMinimapX >= minimapX && playerMinimapX <= minimapX + minimapWidth &&
-          playerMinimapY >= minimapY && playerMinimapY <= minimapY + minimapHeight) 
-      {
+  // The local player should ideally always be drawn (usually near the center when zoomed)
+  if (localPlayer) {
+    const screenCoords = worldToMinimap(localPlayer.positionX, localPlayer.positionY);
+    if (screenCoords) { // Should generally be true unless player is somehow off-world
+        ctx.fillStyle = LOCAL_PLAYER_DOT_COLOR;
         ctx.fillRect(
-          playerMinimapX - PLAYER_DOT_SIZE / 2,
-          playerMinimapY - PLAYER_DOT_SIZE / 2,
+          screenCoords.x - PLAYER_DOT_SIZE / 2,
+          screenCoords.y - PLAYER_DOT_SIZE / 2,
           PLAYER_DOT_SIZE,
           PLAYER_DOT_SIZE
         );
-      }
     }
-  });
+  }
+
+  // --- Draw Player Pin ---
+  if (playerPin) {
+      const pinScreenCoords = worldToMinimap(playerPin.pinX, playerPin.pinY);
+      if (pinScreenCoords) {
+          // Draw a better marker (simple marker icon with black outline)
+          const x = pinScreenCoords.x;
+          const y = pinScreenCoords.y;
+          const size = PIN_SIZE;
+          
+          // Save context for styling
+          ctx.save();
+          
+          // Draw the pin as a filled circle with border
+          ctx.beginPath();
+          ctx.arc(x, y, size/2, 0, Math.PI * 2);
+          ctx.fillStyle = PIN_COLOR;
+          ctx.fill();
+          ctx.lineWidth = PIN_BORDER_WIDTH;
+          ctx.strokeStyle = PIN_BORDER_COLOR;
+          ctx.stroke();
+          
+          // Draw a small triangle on top pointing down to make it look like a location pin
+          ctx.beginPath();
+          ctx.moveTo(x, y - size/2); // Top of circle
+          ctx.lineTo(x - size/3, y - size);  // Left point
+          ctx.lineTo(x + size/3, y - size);  // Right point
+          ctx.closePath();
+          ctx.fillStyle = PIN_COLOR;
+          ctx.fill();
+          ctx.stroke();
+          
+          // Restore context after pin drawing
+          ctx.restore();
+      }
+  }
 
   // Restore context after drawing clipped content
   ctx.restore(); // Re-enable restore
@@ -229,3 +322,5 @@ export const MINIMAP_DIMENSIONS = {
   width: MINIMAP_WIDTH,
   height: MINIMAP_HEIGHT,
 };
+
+export default drawMinimapOntoCanvas;

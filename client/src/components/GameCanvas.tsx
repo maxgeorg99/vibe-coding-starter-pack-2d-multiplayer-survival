@@ -11,7 +11,7 @@ import {
   ItemDefinition as SpacetimeDBItemDefinition,
   DroppedItem as SpacetimeDBDroppedItem,
   WoodenStorageBox as SpacetimeDBWoodenStorageBox,
-  Message as SpacetimeDBMessage
+  PlayerPin as SpacetimeDBPlayerPin
 } from '../generated';
 
 // --- Core Hooks ---
@@ -24,6 +24,7 @@ import { useInteractionFinder } from '../hooks/useInteractionFinder';
 import { useGameLoop } from '../hooks/useGameLoop';
 import { useInputHandler } from '../hooks/useInputHandler';
 import { usePlayerHover } from '../hooks/usePlayerHover';
+import { useMinimapInteraction } from '../hooks/useMinimapInteraction';
 
 // --- Rendering Utilities ---
 import { renderWorldBackground } from '../utils/worldRenderingUtils';
@@ -61,6 +62,7 @@ interface GameCanvasProps {
   mushrooms: Map<string, SpacetimeDBMushroom>;
   droppedItems: Map<string, SpacetimeDBDroppedItem>;
   woodenStorageBoxes: Map<string, SpacetimeDBWoodenStorageBox>;
+  playerPins: Map<string, SpacetimeDBPlayerPin>;
   inventoryItems: Map<string, SpacetimeDBInventoryItem>;
   itemDefinitions: Map<string, SpacetimeDBItemDefinition>;
   worldState: SpacetimeDBWorldState | null;
@@ -77,7 +79,7 @@ interface GameCanvasProps {
   isMinimapOpen: boolean;
   setIsMinimapOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isChatting: boolean;
-  messages: Map<string, SpacetimeDBMessage>;
+  messages: any;
 }
 
 /**
@@ -95,6 +97,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   mushrooms,
   droppedItems,
   woodenStorageBoxes,
+  playerPins,
+  inventoryItems,
   itemDefinitions,
   worldState,
   localPlayerId,
@@ -129,7 +133,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   const { canvasSize, cameraOffsetX, cameraOffsetY } = useGameViewport(localPlayer);
   const { heroImageRef, grassImageRef, itemImagesRef } = useAssetLoader();
-  const { worldMousePos } = useMousePosition({ canvasRef, cameraOffsetX, cameraOffsetY, canvasSize });
+  const { worldMousePos, canvasMousePos } = useMousePosition({ canvasRef, cameraOffsetX, cameraOffsetY, canvasSize });
   const { overlayRgba, maskCanvasRef } = useDayNightCycle({ worldState, campfires, cameraOffsetX, cameraOffsetY, canvasSize });
   const {
     closestInteractableMushroomId,
@@ -144,16 +148,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       activeEquipments, placementInfo, placementActions, worldMousePos,
       closestInteractableMushroomId, closestInteractableCampfireId, closestInteractableDroppedItemId,
       closestInteractableBoxId, isClosestInteractableBoxEmpty, isMinimapOpen, setIsMinimapOpen,
-      onSetInteractingWith, updatePlayerPosition, callJumpReducer, callSetSprintingReducer,
-      isChatting,
+      onSetInteractingWith, updatePlayerPosition, callJumpReducer, callSetSprintingReducer
   });
 
   // --- UI State ---
-  const [isMouseOverMinimap ] = useState(false);
-  
-  // Replace inline hover implementation with hook
   const { hoveredPlayerIds, handlePlayerHover } = usePlayerHover();
-  
+
+  // --- Use the new Minimap Interaction Hook ---
+  const { minimapZoom, isMouseOverMinimap, localPlayerPin, viewCenterOffset } = useMinimapInteraction({
+      canvasRef,
+      isMinimapOpen,
+      connection,
+      localPlayer,
+      playerPins,
+      localPlayerId,
+      canvasSize,
+  });
+
   // --- Derived State ---
   const respawnTimestampMs = useMemo(() => {
     if (localPlayer?.isDead && localPlayer.respawnAt) {
@@ -162,23 +173,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return 0;
   }, [localPlayer?.isDead, localPlayer?.respawnAt]);
 
-  // --- Add logging for dead player state ---
-  useEffect(() => {
-    if (localPlayer?.isDead) {
-      console.log('[GameCanvas] Local player is dead. Data:', {
-        isDead: localPlayer.isDead,
-        respawnAt: localPlayer.respawnAt,
-        calculatedRespawnTimestampMs: respawnTimestampMs,
-        connectionExists: !!connection,
-      });
+  // --- Handle respawn ---
+  const handleRespawnRequest = useCallback(() => {
+    if (!connection?.reducers) {
+      console.error("Connection or reducers not available for respawn request.");
+      return;
     }
-  }, [localPlayer?.isDead, localPlayer?.respawnAt, respawnTimestampMs, connection]);
-  // --- End logging ---
+    try {
+      connection.reducers.requestRespawn();
+    } catch (err) {
+      console.error("Error calling requestRespawn reducer:", err);
+    }
+  }, [connection]);
+
+  // --- Should show death screen ---
+  const shouldShowDeathScreen = !!(localPlayer?.isDead && respawnTimestampMs > 0 && connection);
+  
+  // Set cursor style based on placement
   const cursorStyle = placementInfo ? 'cell' : 'crosshair';
 
   // --- Effects ---
   useEffect(() => {
-    // console.log("Preloading item images based on itemDefinitions update...");
     itemDefinitions.forEach(itemDef => {
       const iconSrc = itemIcons[itemDef.iconAssetName];
       if (itemDef && iconSrc && typeof iconSrc === 'string' && !itemImagesRef.current.has(itemDef.iconAssetName)) {
@@ -186,7 +201,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         img.src = iconSrc;
         img.onload = () => {
           itemImagesRef.current.set(itemDef.iconAssetName, img);
-          // console.log(`Preloaded item image: ${itemDef.iconAssetName} from ${img.src}`);
         };
         img.onerror = () => console.error(`Failed to preload item image asset: ${itemDef.iconAssetName} (Expected path/source: ${iconSrc})`);
         itemImagesRef.current.set(itemDef.iconAssetName, img);
@@ -194,9 +208,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
   }, [itemDefinitions]);
 
-  // --- Viewport Calculation (added helper) ---
+  // --- Viewport Calculation ---
   const getViewportBounds = useCallback(() => {
-    const buffer = gameConfig.tileSize * 2; // Use gameConfig.tileSize
+    const buffer = gameConfig.tileSize * 2;
     const viewMinX = -cameraOffsetX - buffer;
     const viewMaxX = -cameraOffsetX + canvasSize.width + buffer;
     const viewMinY = -cameraOffsetY - buffer;
@@ -204,12 +218,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return { viewMinX, viewMaxX, viewMinY, viewMaxY };
   }, [cameraOffsetX, cameraOffsetY, canvasSize.width, canvasSize.height]);
 
-  // --- Entity Filtering (added helper) ---
+  // --- Entity Filtering ---
   const isEntityInView = useCallback((entity: any, bounds: { viewMinX: number, viewMaxX: number, viewMinY: number, viewMaxY: number }) => {
     let x: number | undefined;
     let y: number | undefined;
-    let width: number = gameConfig.tileSize; // Use gameConfig.tileSize
-    let height: number = gameConfig.tileSize; // Use gameConfig.tileSize
+    let width: number = gameConfig.tileSize;
+    let height: number = gameConfig.tileSize;
 
     if (isPlayer(entity)) {
         x = entity.positionX;
@@ -247,23 +261,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         width = 64;
         height = 64;
     } else {
-        // Fallback for unknown types or if position is missing
-        console.warn("Unknown entity type for viewport culling:", entity);
-        return false; // Cannot determine position
+        return false; // Unknown entity type
     }
 
     if (x === undefined || y === undefined) return false;
 
-    // Simple Axis-Aligned Bounding Box (AABB) overlap check
+    // AABB overlap check
     return (
         x + width / 2 > bounds.viewMinX &&
         x - width / 2 < bounds.viewMaxX &&
-        y + height / 2 > bounds.viewMinY && // Check bottom edge against top view
-        y - height / 2 < bounds.viewMaxY  // Check top edge against bottom view
+        y + height / 2 > bounds.viewMinY &&
+        y - height / 2 < bounds.viewMaxY
     );
-  }, []); // Depends only on type guards
+  }, []);
 
-  // --- Memoized Filtered Entities (Moved outside renderGame) ---
+  // --- Memoized Filtered Entities ---
   const viewBounds = useMemo(() => getViewportBounds(), [getViewportBounds]);
 
   const visibleMushrooms = useMemo(() => 
@@ -308,7 +320,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ...visibleCampfires
   ], [visibleMushrooms, visibleDroppedItems, visibleCampfires]);
 
-  // Memoized and sorted list for Y-sorted entities (Addresses part of Step 2 early)
+  // Memoized and sorted list for Y-sorted entities
   const ySortedEntities = useMemo(() => {
     const entities = [
         ...visiblePlayers,
@@ -347,7 +359,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Pass the necessary viewport parameters to the optimized background renderer
     renderWorldBackground(ctx, grassImageRef, cameraOffsetX, cameraOffsetY, currentCanvasWidth, currentCanvasHeight);
 
-
     let isPlacementTooFar = false;
     if (placementInfo && localPlayer && currentWorldMouseX !== null && currentWorldMouseY !== null) {
          const placeDistSq = (currentWorldMouseX - localPlayer.positionX)**2 + (currentWorldMouseY - localPlayer.positionY)**2;
@@ -367,10 +378,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     renderInteractionLabels({
         ctx,
-        mushrooms: visibleMushroomsMap,         // Pass filtered Map
-        campfires: visibleCampfiresMap,         // Pass filtered Map
-        droppedItems: visibleDroppedItemsMap,    // Pass filtered Map
-        woodenStorageBoxes: visibleBoxesMap, // Pass filtered Map
+        mushrooms: visibleMushroomsMap,
+        campfires: visibleCampfiresMap,
+        droppedItems: visibleDroppedItemsMap,
+        woodenStorageBoxes: visibleBoxesMap,
         itemDefinitions,
         closestInteractableMushroomId, closestInteractableCampfireId,
         closestInteractableDroppedItemId, closestInteractableBoxId, isClosestInteractableBoxEmpty,
@@ -401,13 +412,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     };
 
     // Iterate through visible entities for indicators
-    visibleCampfires.forEach(fire => { drawIndicatorIfNeeded('campfire', fire.id, fire.posX, fire.posY, CAMPFIRE_HEIGHT, true); });
-    visibleWoodenStorageBoxes.forEach(box => { if (interactionProgress && interactionProgress.targetId === box.id && isClosestInteractableBoxEmpty) { drawIndicatorIfNeeded('wooden_storage_box', box.id, box.posX, box.posY, BOX_HEIGHT, true); } });
+    visibleCampfires.forEach((fire) => { 
+      drawIndicatorIfNeeded('campfire', fire.id, fire.posX, fire.posY, CAMPFIRE_HEIGHT, true); 
+    });
+    
+    visibleWoodenStorageBoxes.forEach((box) => { 
+      if (interactionProgress && interactionProgress.targetId === box.id && isClosestInteractableBoxEmpty) { 
+        drawIndicatorIfNeeded('wooden_storage_box', box.id, box.posX, box.posY, BOX_HEIGHT, true); 
+      } 
+    });
 
     // Campfire Lights - Only draw for visible campfires
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    visibleCampfires.forEach(fire => { // Use visibleCampfires
+    visibleCampfires.forEach((fire) => {
         if (fire.isBurning) {
             const lightScreenX = fire.posX + cameraOffsetX;
             const lightScreenY = fire.posY + cameraOffsetY;
@@ -424,25 +442,37 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
     ctx.restore();
 
-    // Minimap (only if open)
+    // Re-added Minimap drawing call
     if (isMinimapOpen) {
-        // Pass the original player map, minimap might show players outside main view
-        drawMinimapOntoCanvas({ ctx, players, trees, stones, localPlayerId, canvasWidth: currentCanvasWidth, canvasHeight: currentCanvasHeight, isMouseOverMinimap });
+        drawMinimapOntoCanvas({ 
+            ctx: ctx!, // Use non-null assertion if context is guaranteed here
+            players, 
+            trees, 
+            stones, 
+            localPlayer, // Pass localPlayer directly
+            localPlayerId,
+            viewCenterOffset, // Pass pan offset
+            playerPin: localPlayerPin, // Pass pin data
+            canvasWidth: currentCanvasWidth, 
+            canvasHeight: currentCanvasHeight, 
+            isMouseOverMinimap, // Pass hover state
+            zoomLevel: minimapZoom // Pass zoom level
+        });
     }
   }, [
-      // Dependencies: Include new helper functions and filtered lists' sources
-      getViewportBounds, isEntityInView, // New helper functions
-      // Use memoized lists/maps as dependencies now
-      groundItems, ySortedEntities, visibleMushroomsMap, visibleCampfiresMap, visibleDroppedItemsMap, visibleBoxesMap, // Memoized data
-      players, itemDefinitions, // Still need raw players map for minimap, itemDefs for rendering
-      worldState, localPlayerId, localPlayer, activeEquipments,
+      // Dependencies
+      getViewportBounds, isEntityInView,
+      groundItems, ySortedEntities, visibleMushroomsMap, visibleCampfiresMap, visibleDroppedItemsMap, visibleBoxesMap,
+      visibleCampfires, visibleWoodenStorageBoxes, // Added for indicators and lights
+      players, itemDefinitions, trees, stones, 
+      worldState, localPlayerId, localPlayer, activeEquipments, localPlayerPin, viewCenterOffset, // Add viewCenterOffset dependency
       itemImagesRef, heroImageRef, grassImageRef, cameraOffsetX, cameraOffsetY,
       canvasSize.width, canvasSize.height, worldMousePos.x, worldMousePos.y,
       animationFrame, placementInfo, placementError, overlayRgba, maskCanvasRef,
       closestInteractableMushroomId, closestInteractableCampfireId,
       closestInteractableDroppedItemId, closestInteractableBoxId, isClosestInteractableBoxEmpty,
-      interactionProgress, isMinimapOpen, isMouseOverMinimap, lastPositionsRef,
-      isChatting, hoveredPlayerIds, handlePlayerHover, messages // Added messages
+      interactionProgress, hoveredPlayerIds, handlePlayerHover, messages,
+      isMinimapOpen, isMouseOverMinimap, minimapZoom // Added zoom state dependency
   ]);
 
   const gameLoopCallback = useCallback(() => {
@@ -451,50 +481,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [processInputsAndActions, renderGame]);
   useGameLoop(gameLoopCallback);
 
-  const handleRespawnRequest = useCallback(() => {
-    if (!connection?.reducers) {
-      console.error("Connection or reducers not available for respawn request.");
-      return;
-    }
-    // --- Add Logging --- 
-    console.log('[GameCanvas] Calling connection.reducers.requestRespawn()');
-    // --- End Logging ---
-    try {
-      connection.reducers.requestRespawn();
-    } catch (err) {
-      console.error("Error calling requestRespawn reducer:", err);
-    }
-  }, [connection]);
-
   return (
     <>
-      {/* --- Add Logging for render condition --- */}
-      {(() => {
-        const shouldRenderDeathScreen = !!(localPlayer?.isDead && respawnTimestampMs > 0 && connection);
-        if (localPlayer?.isDead) { // Log specifically when dead, regardless of other conditions
-          console.log('[GameCanvas] DeathScreen render check:', {
-            isDead: localPlayer.isDead,
-            respawnTimestampMs,
-            connectionExists: !!connection,
-            shouldRender: shouldRenderDeathScreen
-          });
-        }
-        return shouldRenderDeathScreen ? (
-          <DeathScreen
-            respawnAt={respawnTimestampMs}
-            onRespawn={handleRespawnRequest}
-          />
-        ) : null;
-      })()}
-      {/* --- End Logging --- */}
+      {shouldShowDeathScreen && (
+        <DeathScreen
+          respawnAt={respawnTimestampMs}
+          onRespawn={handleRespawnRequest}
+        />
+      )}
 
       <canvas
         ref={canvasRef}
+        id="game-canvas"
         width={canvasSize.width}
         height={canvasSize.height}
         style={{ cursor: cursorStyle }}
         onContextMenu={(e) => {
-            if (placementInfo || (isMinimapOpen && isMouseOverMinimap)) {
+            if (placementInfo) {
                  e.preventDefault();
             }
         }}
