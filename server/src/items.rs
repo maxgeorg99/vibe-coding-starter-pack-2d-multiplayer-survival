@@ -572,49 +572,57 @@ pub fn drop_item(
     let item_def = ctx.db.item_definition().id().find(item_to_drop.item_def_id)
         .ok_or_else(|| format!("Definition missing for item {}", item_to_drop.item_def_id))?;
 
-    // Temporarily comment out the problematic call
-    // clear_item_from_source_location(ctx, item_instance_id)?;
-    // Restore the call now that the helper is fixed
-    clear_item_from_source_location(ctx, item_instance_id)?;
-
-    // --- 4.5 NEW: Check if dropped item was the EQUIPPED item and unequip --- 
-    let active_equip_table = ctx.db.active_equipment();
-    if let Some(mut equip) = active_equip_table.player_identity().find(sender_id) {
-         // Check only the main hand slot (equipped_item_instance_id)
-         if equip.equipped_item_instance_id == Some(item_instance_id) {
-            log::info!("[DropItem] Dropped item {} was equipped. Unequipping.", item_instance_id);
-            equip.equipped_item_instance_id = None;
-            equip.equipped_item_def_id = None;
-            equip.swing_start_time_ms = 0;
-            active_equip_table.player_identity().update(equip); // Update the equipment table
-         }
+    // --- 4. Check if dropped item was the EQUIPPED item and unequip (only if dropping entire stack) ---
+    if quantity_to_drop == item_to_drop.quantity {
+        let active_equip_table = ctx.db.active_equipment();
+        if let Some(mut equip) = active_equip_table.player_identity().find(sender_id) {
+            // Check only the main hand slot (equipped_item_instance_id)
+            if equip.equipped_item_instance_id == Some(item_instance_id) {
+                log::info!("[DropItem] Dropped item {} was equipped. Unequipping.", item_instance_id);
+                equip.equipped_item_instance_id = None;
+                equip.equipped_item_def_id = None;
+                equip.swing_start_time_ms = 0;
+                active_equip_table.player_identity().update(equip); // Update the equipment table
+            }
+        }
     }
-    // No need to check armor slots here, as dropping is usually from hotbar/inventory
-    // Armor unequipping happens via equip_armor_from_drag or potentially a context menu action.
 
     // --- 5. Calculate Drop Position ---
     let (drop_x, drop_y) = calculate_drop_position(&player);
     log::debug!("[DropItem] Calculated drop position: ({:.1}, {:.1}) for player {:?}", drop_x, drop_y, sender_id);
-    // TODO: Add collision check for drop position? Ensure it's not inside a wall/tree? For now, just place it.
 
     // --- 6. Handle Item Quantity (Split or Delete Original) ---
     if quantity_to_drop == item_to_drop.quantity {
         // Dropping the entire stack
         log::info!("[DropItem] Dropping entire stack (ID: {}, Qty: {}). Deleting original InventoryItem.", item_instance_id, quantity_to_drop);
+        
+        // Only clear from source location if dropping the entire stack
+        clear_item_from_source_location(ctx, item_instance_id)?;
         ctx.db.inventory_item().instance_id().delete(item_instance_id);
     } else {
         // Dropping part of the stack
         // Need to check if the item is actually stackable for splitting (though UI should prevent this)
         if !item_def.is_stackable {
-             return Err(format!("Cannot drop partial quantity of non-stackable item '{}'.", item_def.name));
+            return Err(format!("Cannot drop partial quantity of non-stackable item '{}'.", item_def.name));
         }
+        
+        // Store original slot information (key fix)
+        let original_inventory_slot = item_to_drop.inventory_slot;
+        let original_hotbar_slot = item_to_drop.hotbar_slot;
+        
         log::info!("[DropItem] Dropping partial stack (ID: {}, QtyDrop: {}). Reducing original quantity.", item_instance_id, quantity_to_drop);
         item_to_drop.quantity -= quantity_to_drop;
+        
+        // Preserve slot information for partial drops (key fix)
+        item_to_drop.inventory_slot = original_inventory_slot;
+        item_to_drop.hotbar_slot = original_hotbar_slot;
+        
         // If the item was originally equip/fuel, assign ownership to the sender now
         if was_originally_equipped_or_fuel {
-             item_to_drop.player_identity = sender_id;
-             log::debug!("[DropItem] Assigning ownership of remaining stack {} to player {:?}", item_instance_id, sender_id);
+            item_to_drop.player_identity = sender_id;
+            log::debug!("[DropItem] Assigning ownership of remaining stack {} to player {:?}", item_instance_id, sender_id);
         }
+        
         ctx.db.inventory_item().instance_id().update(item_to_drop);
     }
 
@@ -622,7 +630,7 @@ pub fn drop_item(
     create_dropped_item_entity(ctx, item_def.id, quantity_to_drop, drop_x, drop_y)?;
 
     log::info!("[DropItem] Successfully dropped {} of item def {} (Original ID: {}) at ({:.1}, {:.1}) for player {:?}.",
-             quantity_to_drop, item_def.id, item_instance_id, drop_x, drop_y, sender_id);
+            quantity_to_drop, item_def.id, item_instance_id, drop_x, drop_y, sender_id);
 
     Ok(())
 }

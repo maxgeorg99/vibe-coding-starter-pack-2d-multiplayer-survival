@@ -32,8 +32,11 @@ mod crafting; // ADD: Crafting recipe definitions
 mod crafting_queue; // ADD: Crafting queue logic
 mod player_stats; // ADD: Player stat scheduling logic
 mod global_tick; // ADD: Global tick scheduling logic
-mod chat; // <<< ADDED chat module declaration
-mod player_pin; // <<< ADDED player pin module declaration
+mod chat; // ADD: Chat module for message handling
+mod player_pin; // ADD: Player pin module for minimap
+
+// Re-export chat types and reducers for use in other modules
+pub use chat::Message;
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait;
@@ -46,14 +49,13 @@ use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
 use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTableTrait;
 use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
+use crate::chat::message as MessageTableTrait; // Import the trait for Message table
 
 // Use struct names directly for trait aliases
 use crate::crafting::Recipe as RecipeTableTrait;
 use crate::crafting_queue::CraftingQueueItem as CraftingQueueItemTableTrait;
 use crate::crafting_queue::CraftingFinishSchedule as CraftingFinishScheduleTableTrait;
 use crate::global_tick::GlobalTickSchedule as GlobalTickScheduleTableTrait;
-// Make player pin contents public
-pub use player_pin::*; // <<< ADDED player pin export
 
 // Import constants needed from player_stats
 use crate::player_stats::{
