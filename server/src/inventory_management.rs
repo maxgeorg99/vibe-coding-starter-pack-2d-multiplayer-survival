@@ -173,15 +173,15 @@ pub(crate) fn handle_move_from_container_slot<C: ItemContainer>(
     log::info!("[InvManager FromContainer] Attempting move item {} from container slot {} to player {:?} {} slot {}", 
              source_instance_id, source_slot_index, sender_id, target_slot_type, target_slot_index);
     
-    // --- Call specific move function from items.rs --- 
+    // --- Call specific move function from player_inventory.rs --- 
     let move_result = match target_slot_type.as_str() {
         "inventory" => {
             if target_slot_index >= 24 { return Err("Invalid inventory target index".to_string()); }
-            crate::items::move_item_to_inventory(ctx, source_instance_id, target_slot_index as u16)
+            crate::player_inventory::move_item_to_inventory(ctx, source_instance_id, target_slot_index as u16)
         },
         "hotbar" => {
             if target_slot_index >= 6 { return Err("Invalid hotbar target index".to_string()); }
-            crate::items::move_item_to_hotbar(ctx, source_instance_id, target_slot_index as u8)
+            crate::player_inventory::move_item_to_hotbar(ctx, source_instance_id, target_slot_index as u8)
         },
         _ => Err(format!("Invalid target slot type '{}'", target_slot_type)),
     };
@@ -393,11 +393,11 @@ pub(crate) fn handle_split_from_container<C: ItemContainer>(
                             .ok_or("Newly split item stack not found!")?;
     new_item_stack.player_identity = ctx.sender; 
 
-    // Call appropriate move function from items.rs 
+    // Call appropriate move function from player_inventory.rs 
     let move_result = if target_slot_type == "inventory" {
-        crate::items::move_item_to_inventory(ctx, new_item_instance_id, target_slot_index as u16)
+        crate::player_inventory::move_item_to_inventory(ctx, new_item_instance_id, target_slot_index as u16)
     } else if target_slot_type == "hotbar" {
-        crate::items::move_item_to_hotbar(ctx, new_item_instance_id, target_slot_index as u8)
+        crate::player_inventory::move_item_to_hotbar(ctx, new_item_instance_id, target_slot_index as u8)
     } else {
         ctx.db.inventory_item().instance_id().delete(new_item_instance_id); 
         Err(format!("Invalid target slot type '{}' in split handler", target_slot_type))
@@ -563,7 +563,8 @@ pub(crate) fn handle_quick_move_from_container<C: ItemContainer>(
 
     // 2. If quantity remains, find empty slot (Hotbar first, then Inventory)
     if remaining_quantity > 0 {
-        let target_slot: Option<(String, u32)> = find_first_empty_player_slot(ctx, sender_id);
+        // Use helper from player_inventory module
+        let target_slot: Option<(String, u32)> = crate::player_inventory::find_first_empty_player_slot(ctx, sender_id);
 
         if let Some((slot_type, slot_index)) = target_slot {
             // Assign the *original item* to the empty slot
@@ -597,28 +598,6 @@ pub(crate) fn handle_quick_move_from_container<C: ItemContainer>(
     }
     
     Ok(()) 
-}
-
-// Helper to find the first available slot (hotbar preferred)
-pub(crate) fn find_first_empty_player_slot(ctx: &ReducerContext, player_id: Identity) -> Option<(String, u32)> {
-    let inventory = ctx.db.inventory_item();
-    // Check Hotbar (0-5)
-    let occupied_hotbar: std::collections::HashSet<u8> = inventory.iter()
-        .filter(|i| i.player_identity == player_id && i.hotbar_slot.is_some())
-        .map(|i| i.hotbar_slot.unwrap())
-        .collect();
-    if let Some(empty_slot) = (0..6).find(|slot| !occupied_hotbar.contains(slot)) {
-        return Some(("hotbar".to_string(), empty_slot as u32));
-    }
-    // Check Inventory (0-23)
-    let occupied_inventory: std::collections::HashSet<u16> = inventory.iter()
-        .filter(|i| i.player_identity == player_id && i.inventory_slot.is_some())
-        .map(|i| i.inventory_slot.unwrap())
-        .collect();
-    if let Some(empty_slot) = (0..24).find(|slot| !occupied_inventory.contains(slot)) {
-        return Some(("inventory".to_string(), empty_slot as u32));
-    }
-    None // No empty slots found
 }
 
 /// Handles quickly moving an item FROM the player inventory/hotbar INTO the first
@@ -720,7 +699,7 @@ pub(crate) fn handle_quick_move_to_container<C: ItemContainer>(
     // --- Clear Original Equipment Slot if Necessary --- 
     if original_location_was_equipment {
         log::info!("[MoveToContainer] Clearing original equipment slot for item {}.", item_instance_id);
-        // Call helper using crate path
+        // Call helper using crate path - make sure this helper is accessible (it's in items.rs)
         crate::items::clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
     }
 

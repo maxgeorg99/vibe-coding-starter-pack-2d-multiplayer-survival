@@ -136,12 +136,59 @@ export const useDragDropManager = ({
                             setDropError("Invalid target slot for split.");
                             return;
                         }
-                        // console.log(`[useDragDropManager Drop] Calling splitAndMoveFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum} -> ${targetSlotType}:${targetSlotIndexNum}`);
-                        connection.reducers.splitAndMoveFromCampfire(
+
+                        // --- DEBUG LOGS START ---
+                        console.log(`[DEBUG] Splitting from Campfire (${sourceCampfireId}, Slot ${sourceIndexNum})`);
+                        console.log(`  Source Item:`, sourceInfo.item);
+                        console.log(`  Quantity to Split: ${quantityToSplit}`);
+                        console.log(`  Target Slot: ${targetSlotType}:${targetSlotIndexNum}`);
+
+                        // Check target slot state BEFORE calling reducer
+                        let targetItemInstance = null;
+                        const allPlayerItems = Array.from(connection.db.inventoryItem.iter()); // Convert to array
+                        if (targetSlotType === 'inventory') {
+                            targetItemInstance = allPlayerItems.find(i => i.inventorySlot === targetSlotIndexNum);
+                        } else { // hotbar
+                            targetItemInstance = allPlayerItems.find(i => i.hotbarSlot === targetSlotIndexNum);
+                        }
+                        if (targetItemInstance) {
+                            console.log(`  Target Slot Occupied By:`, targetItemInstance);
+                            console.log(`    -> Current Quantity: ${targetItemInstance.quantity}`);
+                        } else {
+                            console.log(`  Target Slot is Empty.`);
+                        }
+                        console.log(`  Calling Reducer: splitStackFromCampfire(${sourceCampfireId}, ${sourceIndexNum}, ${quantityToSplit}, ${targetSlotType}, ${targetSlotIndexNum})`);
+                        // --- DEBUG LOGS END ---
+                        
+                        connection.reducers.splitStackFromCampfire(
                             sourceCampfireId,
                             sourceIndexNum,
                             quantityToSplit,
                             targetSlotType,
+                            targetSlotIndexNum
+                        );
+                    } else if (targetSlotType === 'campfire_fuel') {
+                        // Handle splitting within the same campfire
+                        targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
+                        const targetCampfireId = targetSlot.parentId ? Number(targetSlot.parentId) : null;
+                        
+                        if (targetSlotIndexNum === null || isNaN(targetSlotIndexNum) || targetCampfireId === null || isNaN(targetCampfireId)) {
+                            console.error("[useDragDropManager Drop] Invalid target index or missing CampfireID for intra-campfire split.");
+                            setDropError("Invalid target slot for campfire split.");
+                            return;
+                        }
+                        
+                        if (sourceCampfireId !== targetCampfireId) {
+                            console.warn("[useDragDropManager Drop] Cannot split between different campfires yet.");
+                            setDropError("Cannot split between different campfires.");
+                            return;
+                        }
+                        
+                        console.log(`[useDragDropManager Drop] Calling split_stack_within_campfire: Campfire ${sourceCampfireId} from slot ${sourceIndexNum} to slot ${targetSlotIndexNum}, amount: ${quantityToSplit}`);
+                        connection.reducers.splitStackWithinCampfire(
+                            sourceCampfireId,
+                            sourceIndexNum,
+                            quantityToSplit,
                             targetSlotIndexNum
                         );
                     } else {

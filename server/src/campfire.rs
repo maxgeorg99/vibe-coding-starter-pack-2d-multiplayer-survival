@@ -6,9 +6,19 @@ use std::cmp::min; // Import min for merging logic
 
 // Import table traits AND concrete types
 use crate::player as PlayerTableTrait;
-use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait, InventoryItem, ItemDefinition};
+// Consolidate item imports
+use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait, InventoryItem, ItemDefinition, calculate_merge_result, split_stack_helper};
 // Import helper functions
-use crate::items::add_item_to_player_inventory;
+// REMOVED use crate::items::add_item_to_player_inventory; (Not directly used in campfire.rs)
+
+// Import inventory management module and traits
+use crate::inventory_management::{self, ItemContainer, ContainerItemClearer};
+// Import Player struct
+use crate::Player;
+
+// Import necessary types, traits, and helpers from other modules
+// REMOVED redundant imports for InventoryItem, ItemDefinition, calculate_merge_result, split_stack_helper
+use crate::player_inventory::{move_item_to_inventory, move_item_to_hotbar}; // Import player inventory functions
 
 // --- Constants ---
 pub(crate) const CAMPFIRE_COLLISION_RADIUS: f32 = 18.0; // Smaller than player radius
@@ -97,125 +107,37 @@ pub fn interact_with_campfire(ctx: &ReducerContext, campfire_id: u32) -> Result<
 /// Adds an item from the player's inventory as fuel to a specific campfire slot.
 #[spacetimedb::reducer]
 pub fn add_fuel_to_campfire(ctx: &ReducerContext, campfire_id: u32, target_slot_index: u8, item_instance_id: u64) -> Result<(), String> {
-    let sender_id = ctx.sender;
-    let players = ctx.db.player();
-    let mut campfires = ctx.db.campfire();
-    let mut inventory_items = ctx.db.inventory_item();
-    let item_defs = ctx.db.item_definition();
-
-    // 1. Validate slot index
-    if target_slot_index >= NUM_FUEL_SLOTS as u8 {
-        return Err(format!("Invalid target fuel slot index: {}", target_slot_index));
-    }
-    let slot_idx = target_slot_index as usize; // Use usize for indexing later
-
-    // 2. Find Player & Campfire
-    let player = players.identity().find(sender_id).ok_or("Player not found")?;
-    let mut campfire = campfires.id().find(campfire_id).ok_or(format!("Campfire {} not found", campfire_id))?;
-
-    // 3. Check Distance
-    let dx = player.position_x - campfire.pos_x;
-    let dy = player.position_y - campfire.pos_y;
-    if (dx * dx + dy * dy) > PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED { return Err("Too far away".to_string()); }
-
-    // 4. Find the dragged item (item_to_add) & its definition
-    let mut item_to_add = inventory_items.instance_id().find(item_instance_id).ok_or("Item instance not found")?;
-    if item_to_add.player_identity != sender_id { return Err("Item does not belong to player".to_string()); }
-    let definition_to_add = item_defs.id().find(item_to_add.item_def_id).ok_or("Item definition not found")?;
-
-    // --- Determine Original Location --- 
-    let original_location_was_equipment = item_to_add.inventory_slot.is_none() && item_to_add.hotbar_slot.is_none();
-    if original_location_was_equipment {
-        log::debug!("[AddFuel] Item {} potentially coming from equipment slot.", item_instance_id);
-    }
-
-    // 6. Check if target slot is occupied and handle merge/swap
-    let target_instance_id = match target_slot_index {
-        0 => campfire.fuel_instance_id_0,
-        1 => campfire.fuel_instance_id_1,
-        2 => campfire.fuel_instance_id_2,
-        3 => campfire.fuel_instance_id_3,
-        4 => campfire.fuel_instance_id_4,
-        _ => None, // Should be caught by earlier validation
-    };
-
-    if let Some(existing_fuel_instance_id) = target_instance_id {
-        // --- Target Slot Occupied: Attempt Merge --- 
-        log::debug!("[AddFuel] Target slot {} occupied by item {}. Attempting merge with {}.", 
-                 target_slot_index, existing_fuel_instance_id, item_instance_id);
-        let mut existing_fuel_item = inventory_items.instance_id().find(existing_fuel_instance_id)
-            .ok_or(format!("Existing fuel item {} not found in slot {}", existing_fuel_instance_id, target_slot_index))?;
-        
-        match crate::items::calculate_merge_result(&item_to_add, &existing_fuel_item, &definition_to_add) {
-            Ok((qty_transfer, source_new_qty, target_new_qty, delete_source)) => {
-                // Merge successful
-                log::info!("[AddFuel Merge] Merging {} from item {} onto campfire item {}. Target new qty: {}.",
-                         qty_transfer, item_instance_id, existing_fuel_instance_id, target_new_qty);
-                existing_fuel_item.quantity = target_new_qty;
-                inventory_items.instance_id().update(existing_fuel_item);
-
-                if delete_source {
-                    log::info!("[AddFuel Merge] Source item {} depleted. Deleting instance.", item_instance_id);
-                    inventory_items.instance_id().delete(item_instance_id);
-                    // Item is gone, no need to clear slots later
-                } else {
-                     log::info!("[AddFuel Merge] Source item {} reduced to {}. Updating instance.", item_instance_id, source_new_qty);
-                     item_to_add.quantity = source_new_qty;
-                     // Update the source item to reflect reduced quantity BUT KEEP its player slots for now
-                     // It wasn't fully consumed.
-                     inventory_items.instance_id().update(item_to_add);
-                     // Return error because the *entire* source stack wasn't moved/merged
-                     return Err("Could not merge entire stack into campfire slot.".to_string());
-                }
-                // No need to update campfire struct here, the target item quantity was updated.
-            },
-            Err(e) => {
-                // Merge failed (different item type, target full, etc.)
-                log::warn!("[AddFuel Merge Failed] Cannot merge item {} onto {}: {}. Aborting add.", 
-                         item_instance_id, existing_fuel_instance_id, e);
-                 return Err(format!("Cannot merge onto item in slot {}: {}", target_slot_index, e));
-            }
+    // Validate campfire interaction and get campfire
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, campfire_id)?;
+    
+    // Validate that the item is valid fuel
+    validate_fuel_item(ctx, item_instance_id)?;
+    
+    // Use the generic container handler to move the item to the campfire
+    inventory_management::handle_move_to_container_slot(
+        ctx,
+        &mut campfire,
+        target_slot_index,
+        item_instance_id
+    )?;
+    
+    // Make a copy of the campfire for later use
+    let campfire_copy = campfire.clone();
+    
+    // Update campfire state
+    ctx.db.campfire().id().update(campfire);
+    
+    // If adding fuel to a burning campfire, we might need to update fuel consumption schedule
+    if campfire_copy.is_burning {
+        // Ensure next fuel consumption is scheduled if not already
+        if campfire_copy.next_fuel_consume_at.is_none() {
+            // Schedule next fuel consumption in 30 seconds
+            let next_consume_time = ctx.timestamp + Duration::from_secs(30).into();
+            let mut updated_campfire = campfire_copy.clone();
+            updated_campfire.next_fuel_consume_at = Some(next_consume_time);
+            ctx.db.campfire().id().update(updated_campfire);
+            log::info!("Scheduled next fuel consumption for campfire {} at {:?}", campfire_id, next_consume_time);
         }
-    } else {
-        // --- Target Slot Empty: Place Item --- 
-        log::info!("[AddFuel Place] Placing item {} (Def {}) into empty campfire slot {}.", 
-                 item_instance_id, definition_to_add.id, target_slot_index);
-        
-        // UPDATE the item being moved: clear its player inventory/hotbar slots
-        item_to_add.inventory_slot = None;
-        item_to_add.hotbar_slot = None;
-        // Don't change player_identity yet, it's now 'in' the campfire world object
-        inventory_items.instance_id().update(item_to_add); 
-        
-        // Update the specific campfire slot field
-        match target_slot_index {
-            0 => { campfire.fuel_instance_id_0 = Some(item_instance_id); campfire.fuel_def_id_0 = Some(definition_to_add.id); },
-            1 => { campfire.fuel_instance_id_1 = Some(item_instance_id); campfire.fuel_def_id_1 = Some(definition_to_add.id); },
-            2 => { campfire.fuel_instance_id_2 = Some(item_instance_id); campfire.fuel_def_id_2 = Some(definition_to_add.id); },
-            3 => { campfire.fuel_instance_id_3 = Some(item_instance_id); campfire.fuel_def_id_3 = Some(definition_to_add.id); },
-            4 => { campfire.fuel_instance_id_4 = Some(item_instance_id); campfire.fuel_def_id_4 = Some(definition_to_add.id); },
-            _ => {}, // Should not happen
-        }
-    }
-        
-    // --- Final Steps --- 
-    // Re-check if fire should extinguish if it was burning without valid fuel
-    // (Keep this logic as it might be relevant after merging/placing)
-    let can_light_now = check_if_campfire_has_fuel(ctx, &campfire);
-    if !can_light_now && campfire.is_burning {
-        campfire.is_burning = false;
-        campfire.next_fuel_consume_at = None;
-        log::warn!("Campfire {} extinguished as newly added fuel is not valid wood.", campfire_id);
-    }
-
-    campfires.id().update(campfire); // Update the campfire state
-    log::info!("Successfully added/merged item instance {} as fuel to campfire {} slot {}.", 
-             item_instance_id, campfire_id, target_slot_index);
-
-    // Clear equipment slot AFTER successful placement/merge
-    // (This handles the edge case of equipping fuel directly)
-    if original_location_was_equipment {
-        crate::items::clear_specific_item_from_equipment_slots(ctx, sender_id, item_instance_id);
     }
 
     Ok(())
@@ -226,194 +148,33 @@ pub fn add_fuel_to_campfire(ctx: &ReducerContext, campfire_id: u32, target_slot_
 #[spacetimedb::reducer]
 pub fn auto_remove_fuel_from_campfire(ctx: &ReducerContext, campfire_id: u32, source_slot_index: u8) -> Result<(), String> {
     let sender_id = ctx.sender;
-    let players = ctx.db.player();
     let mut campfires = ctx.db.campfire();
-    let mut inventory_items = ctx.db.inventory_item();
-    let item_defs = ctx.db.item_definition();
 
     log::info!(
         "[AutoRemoveFuel] Player {:?} removing fuel from campfire {} slot {}",
         sender_id, campfire_id, source_slot_index
     );
 
-    // 1. Validate slot index
+    // --- Basic Validations --- 
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, campfire_id)?;
     if source_slot_index >= NUM_FUEL_SLOTS as u8 {
         return Err(format!("Invalid source fuel slot index: {}", source_slot_index));
     }
-
-    // 2. Find Player & Campfire
-    let player = players.identity().find(sender_id).ok_or("Player not found")?;
-    let mut campfire = campfires.id().find(campfire_id).ok_or(format!("Campfire {} not found", campfire_id))?;
-
-    // 3. Check Distance
-    let dx = player.position_x - campfire.pos_x;
-    let dy = player.position_y - campfire.pos_y;
-    if (dx * dx + dy * dy) > PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED {
-        return Err("Too far away".to_string());
+    // Ensure the source slot is not empty before calling the handler
+    if campfire.get_slot_instance_id(source_slot_index).is_none() {
+        return Err(format!("Source slot {} is empty.", source_slot_index));
     }
+    
+    // --- Call Generic Handler --- 
+    // This handles finding the item, adding/merging to player inv/hotbar, and clearing the campfire slot.
+    inventory_management::handle_quick_move_from_container(
+        ctx, 
+        &mut campfire, 
+        source_slot_index
+    )?;
 
-    // 4. Check if there is a fuel item in the specified slot (use match)
-    let (fuel_instance_id, fuel_def_id) = match source_slot_index {
-        0 => (campfire.fuel_instance_id_0, campfire.fuel_def_id_0),
-        1 => (campfire.fuel_instance_id_1, campfire.fuel_def_id_1),
-        2 => (campfire.fuel_instance_id_2, campfire.fuel_def_id_2),
-        3 => (campfire.fuel_instance_id_3, campfire.fuel_def_id_3),
-        4 => (campfire.fuel_instance_id_4, campfire.fuel_def_id_4),
-        _ => (None, None),
-    };
-    let fuel_instance_id = fuel_instance_id
-        .ok_or_else(|| format!("No fuel item in campfire slot {} to remove", source_slot_index))?;
-    let fuel_def_id = fuel_def_id
-        .ok_or_else(|| format!("Missing def ID for fuel item in slot {}", source_slot_index))?;
-
-    // 5. Find Inventory Item (mutable) and Definition
-    let mut item_to_return = inventory_items.instance_id().find(fuel_instance_id)
-        .ok_or_else(|| format!("Could not find fuel item instance {}", fuel_instance_id))?;
-    let definition = item_defs.id().find(fuel_def_id)
-        .ok_or("Fuel item definition not found")?;
-
-    // 6. Attempt to merge into player's inventory/hotbar
-    let mut item_fully_merged = false;
-    if definition.is_stackable {
-        // Prioritize merging into hotbar
-        let hotbar_items: Vec<InventoryItem> = inventory_items.iter()
-            .filter(|i| i.player_identity == sender_id && i.item_def_id == fuel_def_id && i.hotbar_slot.is_some())
-            .collect(); // Collect to avoid borrowing issues
-        
-        for mut target_item in hotbar_items {
-             match crate::items::calculate_merge_result(&item_to_return, &target_item, &definition) {
-                Ok((qty_transfer, source_new_qty, target_new_qty, delete_source)) => {
-                    if qty_transfer > 0 {
-                        log::info!(
-                            "[AutoRemoveFuel Merge] Merging {} from campfire item {} onto hotbar item {}.",
-                            qty_transfer, fuel_instance_id, target_item.instance_id
-                        );
-                        target_item.quantity = target_new_qty;
-                        inventory_items.instance_id().update(target_item);
-                        item_to_return.quantity = source_new_qty;
-                        if delete_source {
-                            item_fully_merged = true;
-                            break;
-                        }
-                    }
-                }
-                 Err(_) => {} // Ignore errors (e.g., target full)
-             }
-        }
-
-        // If not fully merged, try merging into main inventory
-        if !item_fully_merged {
-            let inventory_items_main: Vec<InventoryItem> = inventory_items.iter()
-                .filter(|i| i.player_identity == sender_id && i.item_def_id == fuel_def_id && i.inventory_slot.is_some())
-                .collect();
-
-            for mut target_item in inventory_items_main {
-                 match crate::items::calculate_merge_result(&item_to_return, &target_item, &definition) {
-                    Ok((qty_transfer, source_new_qty, target_new_qty, delete_source)) => {
-                        if qty_transfer > 0 {
-                             log::info!(
-                                "[AutoRemoveFuel Merge] Merging {} from campfire item {} onto inventory item {}.",
-                                qty_transfer, fuel_instance_id, target_item.instance_id
-                            );
-                            target_item.quantity = target_new_qty;
-                            inventory_items.instance_id().update(target_item);
-                            item_to_return.quantity = source_new_qty;
-                            if delete_source {
-                                item_fully_merged = true;
-                                break;
-                            }
-                        }
-                    }
-                    Err(_) => {} // Ignore errors
-                 }
-            }
-        }
-    }
-
-    // 7. If item fully merged, delete the original and clear campfire slot
-    if item_fully_merged {
-        log::info!(
-            "[AutoRemoveFuel] Item {} fully merged into player inventory. Deleting original.",
-            fuel_instance_id
-        );
-        inventory_items.instance_id().delete(fuel_instance_id);
-    } else {
-        // 8. Item not fully merged, find empty slot (Hotbar first, then Inventory)
-        log::info!(
-            "[AutoRemoveFuel] Item {} (qty {}) not fully merged. Finding empty slot...",
-            fuel_instance_id, item_to_return.quantity
-        );
-        let occupied_hotbar_slots: std::collections::HashSet<u8> = inventory_items.iter()
-            .filter(|i| i.player_identity == sender_id && i.hotbar_slot.is_some())
-            .map(|i| i.hotbar_slot.unwrap())
-            .collect();
-        let empty_hotbar_slot = (0..6).find(|slot| !occupied_hotbar_slots.contains(slot));
-
-        if let Some(slot_index) = empty_hotbar_slot {
-            // Place in empty hotbar slot
-            log::info!(
-                "[AutoRemoveFuel] Placing remaining item {} into hotbar slot {}",
-                fuel_instance_id, slot_index
-            );
-            item_to_return.player_identity = sender_id; // Ensure ownership
-            item_to_return.inventory_slot = None;
-            item_to_return.hotbar_slot = Some(slot_index);
-            inventory_items.instance_id().update(item_to_return);
-        } else {
-            // Hotbar full, try main inventory
-            let occupied_inventory_slots: std::collections::HashSet<u16> = inventory_items.iter()
-                .filter(|i| i.player_identity == sender_id && i.inventory_slot.is_some())
-                .map(|i| i.inventory_slot.unwrap())
-                .collect();
-            let empty_inventory_slot = (0..24).find(|slot| !occupied_inventory_slots.contains(slot));
-
-            if let Some(slot_index) = empty_inventory_slot {
-                 // Place in empty inventory slot
-                log::info!(
-                    "[AutoRemoveFuel] Placing remaining item {} into inventory slot {}",
-                    fuel_instance_id, slot_index
-                );
-                item_to_return.player_identity = sender_id; // Ensure ownership
-                item_to_return.inventory_slot = Some(slot_index);
-                item_to_return.hotbar_slot = None;
-                inventory_items.instance_id().update(item_to_return);
-            } else {
-                // Inventory full, cannot place item
-                 log::error!(
-                    "[AutoRemoveFuel] Player {:?} inventory full, cannot return item {} from campfire.",
-                    sender_id, fuel_instance_id
-                );
-                return Err("Inventory is full".to_string());
-            }
-        }
-    }
-
-    // 9. Update campfire state: clear the specific source slot (use match)
-    match source_slot_index {
-        0 => {
-            campfire.fuel_instance_id_0 = None;
-            campfire.fuel_def_id_0 = None;
-        }
-        1 => {
-            campfire.fuel_instance_id_1 = None;
-            campfire.fuel_def_id_1 = None;
-        }
-        2 => {
-            campfire.fuel_instance_id_2 = None;
-            campfire.fuel_def_id_2 = None;
-        }
-        3 => {
-            campfire.fuel_instance_id_3 = None;
-            campfire.fuel_def_id_3 = None;
-        }
-        4 => {
-            campfire.fuel_instance_id_4 = None;
-            campfire.fuel_def_id_4 = None;
-        }
-        _ => {} // Should not happen
-    }
-
-    // Check if fire should extinguish
+    // --- Update Campfire & Check Extinguish Status --- 
+    // Need to check extinguish status *after* handler potentially cleared the slot.
     let still_has_fuel = check_if_campfire_has_fuel(ctx, &campfire);
     if !still_has_fuel && campfire.is_burning {
         campfire.is_burning = false;
@@ -424,9 +185,9 @@ pub fn auto_remove_fuel_from_campfire(ctx: &ReducerContext, campfire_id: u32, so
         );
     }
 
-    campfires.id().update(campfire); // Update the campfire
+    campfires.id().update(campfire); // Update the campfire state
     log::info!(
-        "Removed/merged fuel from campfire {} slot {}.",
+        "Quick moved fuel from campfire {} slot {}.",
         campfire_id, source_slot_index
     );
 
@@ -680,72 +441,50 @@ pub fn split_stack_into_campfire(
     target_campfire_id: u32,
     target_slot_index: u8,
 ) -> Result<(), String> {
-    let sender_id = ctx.sender;
-    let mut inventory_items = ctx.db.inventory_item();
-    let mut campfires = ctx.db.campfire();
-    let item_defs = ctx.db.item_definition();
-
-    log::info!("[SplitIntoCampfire] Player {:?} splitting {} from item {} into campfire {} slot {}",
-             sender_id, quantity_to_split, source_item_instance_id, target_campfire_id, target_slot_index);
-
-    // 1. Validate target slot index
-    if target_slot_index >= NUM_FUEL_SLOTS as u8 {
-        return Err(format!("Invalid target fuel slot index: {}", target_slot_index));
+    // Validate item for fuel purposes
+    let mut source_item = validate_fuel_item(ctx, source_item_instance_id)?;
+    
+    // Validate basic constraints for splitting
+    if quantity_to_split == 0 || quantity_to_split >= source_item.quantity {
+        return Err("Invalid split quantity".to_string());
     }
-
-    // 2. Find source item and check ownership/location
-    let mut source_item = inventory_items.instance_id().find(source_item_instance_id)
-        .ok_or("Source item instance not found")?;
-    if source_item.player_identity != sender_id { return Err("Source item not owned by caller".to_string()); }
-    if source_item.inventory_slot.is_none() && source_item.hotbar_slot.is_none() {
-        return Err("Source item must be in inventory or hotbar to split into campfire".to_string());
+    
+    // Get the item definition to check if it's stackable
+    let item_def = ctx.db.item_definition().id().find(source_item.item_def_id)
+        .ok_or("Item definition not found")?;
+    if !item_def.is_stackable {
+        return Err("Cannot split a non-stackable item".to_string());
     }
-
-    // 3. Find target campfire
-    let mut campfire = campfires.id().find(target_campfire_id)
-        .ok_or(format!("Target campfire {} not found", target_campfire_id))?;
-
-    // 4. Check if target slot is empty
-    let is_slot_occupied = match target_slot_index {
-        0 => campfire.fuel_instance_id_0.is_some(),
-        1 => campfire.fuel_instance_id_1.is_some(),
-        2 => campfire.fuel_instance_id_2.is_some(),
-        3 => campfire.fuel_instance_id_3.is_some(),
-        4 => campfire.fuel_instance_id_4.is_some(),
-        _ => return Err("Invalid slot index logic".to_string()),
-    };
-    if is_slot_occupied {
-        return Err(format!("Target campfire fuel slot {} is already occupied.", target_slot_index));
+    
+    // Validate campfire interaction and get campfire
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, target_campfire_id)?;
+    
+    // Use the generic container handler to split a stack into the campfire
+    inventory_management::handle_split_into_container(
+        ctx,
+        &mut campfire,
+        target_slot_index,
+        &mut source_item,
+        quantity_to_split
+    )?;
+    
+    // Make a copy of the campfire for later use
+    let campfire_copy = campfire.clone();
+    
+    // Update campfire state
+    ctx.db.campfire().id().update(campfire);
+    
+    // If campfire is burning, ensure fuel consumption schedule exists
+    if campfire_copy.is_burning && campfire_copy.next_fuel_consume_at.is_none() {
+        // Schedule next fuel consumption
+        let next_consume_time = ctx.timestamp + Duration::from_secs(30).into();
+        let mut updated_campfire = campfire_copy.clone();
+        updated_campfire.next_fuel_consume_at = Some(next_consume_time);
+        ctx.db.campfire().id().update(updated_campfire);
+        log::info!("Scheduled next fuel consumption for campfire {} at {:?}", 
+                target_campfire_id, next_consume_time);
     }
-
-    // 5. Call the core split logic helper (passes mutable borrow of source_item)
-    let new_item_instance_id = crate::items::split_stack_helper(ctx, &mut source_item, quantity_to_split)?;
-
-    // 6. Get definition ID for the new item (same as source)
-    let definition_id = source_item.item_def_id;
-
-    // 7. Update the target campfire slot with the NEW item instance ID
-    match target_slot_index {
-        0 => { campfire.fuel_instance_id_0 = Some(new_item_instance_id); campfire.fuel_def_id_0 = Some(definition_id); },
-        1 => { campfire.fuel_instance_id_1 = Some(new_item_instance_id); campfire.fuel_def_id_1 = Some(definition_id); },
-        2 => { campfire.fuel_instance_id_2 = Some(new_item_instance_id); campfire.fuel_def_id_2 = Some(definition_id); },
-        3 => { campfire.fuel_instance_id_3 = Some(new_item_instance_id); campfire.fuel_def_id_3 = Some(definition_id); },
-        4 => { campfire.fuel_instance_id_4 = Some(new_item_instance_id); campfire.fuel_def_id_4 = Some(definition_id); },
-        _ => {}, // Should not happen
-    }
-
-    // Re-check fuel state and update campfire
-    let can_light_now = check_if_campfire_has_fuel(ctx, &campfire);
-    if !can_light_now && campfire.is_burning {
-        campfire.is_burning = false;
-        campfire.next_fuel_consume_at = None;
-        log::warn!("Campfire {} extinguished as newly added fuel is not valid wood.", target_campfire_id);
-    }
-    campfires.id().update(campfire);
-
-    log::info!("[SplitIntoCampfire] Split successful. New item {} placed in campfire {} slot {}.", 
-             new_item_instance_id, target_campfire_id, target_slot_index);
-
+    
     Ok(())
 }
 
@@ -758,134 +497,19 @@ pub fn move_fuel_within_campfire(
     source_slot_index: u8,
     target_slot_index: u8,
 ) -> Result<(), String> {
-    let sender_id = ctx.sender;
-    let mut campfires = ctx.db.campfire();
-    let mut inventory_items = ctx.db.inventory_item();
-    let item_defs = ctx.db.item_definition();
-
-    log::info!("[MoveWithinCampfire] Player {:?} moving fuel from slot {} to slot {} in campfire {}",
-             sender_id, source_slot_index, target_slot_index, campfire_id);
-
-    // 1. Validate slot indices
-    if source_slot_index >= NUM_FUEL_SLOTS as u8 || target_slot_index >= NUM_FUEL_SLOTS as u8 || source_slot_index == target_slot_index {
-        return Err("Invalid source or target slot index".to_string());
-    }
-    let source_idx = source_slot_index as usize;
-    let target_idx = target_slot_index as usize;
-
-    // 2. Find Campfire
-    let mut campfire = campfires.id().find(campfire_id)
-        .ok_or(format!("Target campfire {} not found", campfire_id))?;
-
-    // 3. Get source item ID and definition ID
-    let (source_instance_id, source_def_id) = match source_slot_index {
-        0 => (campfire.fuel_instance_id_0, campfire.fuel_def_id_0),
-        1 => (campfire.fuel_instance_id_1, campfire.fuel_def_id_1),
-        2 => (campfire.fuel_instance_id_2, campfire.fuel_def_id_2),
-        3 => (campfire.fuel_instance_id_3, campfire.fuel_def_id_3),
-        4 => (campfire.fuel_instance_id_4, campfire.fuel_def_id_4),
-        _ => (None, None),
-    };
-    let source_instance_id = source_instance_id.ok_or(format!("Source slot {} is empty", source_slot_index))?;
-    let source_def_id = source_def_id.ok_or("Source definition ID missing")?;
-
-    // 4. Get target item ID and definition ID (if occupied)
-     let (target_instance_id_opt, target_def_id_opt) = match target_slot_index {
-        0 => (campfire.fuel_instance_id_0, campfire.fuel_def_id_0),
-        1 => (campfire.fuel_instance_id_1, campfire.fuel_def_id_1),
-        2 => (campfire.fuel_instance_id_2, campfire.fuel_def_id_2),
-        3 => (campfire.fuel_instance_id_3, campfire.fuel_def_id_3),
-        4 => (campfire.fuel_instance_id_4, campfire.fuel_def_id_4),
-        _ => (None, None),
-    };
-
-    // --- Logic Branching --- 
-    if let Some(target_instance_id) = target_instance_id_opt {
-        // == Target is Occupied: Attempt Merge then Swap ==
-        let mut source_item = inventory_items.instance_id().find(source_instance_id).ok_or("Source item not found")?;
-        let mut target_item = inventory_items.instance_id().find(target_instance_id).ok_or("Target item not found")?;
-        let item_def = item_defs.id().find(source_def_id).ok_or("Item definition not found")?; // Assume source/target defs match if merge possible
-
-        match crate::items::calculate_merge_result(&source_item, &target_item, &item_def) {
-            Ok((_, source_new_qty, target_new_qty, delete_source)) => {
-                // -- Merge Possible --
-                log::info!("[MoveWithinCampfire] Merging slot {} onto slot {}", source_slot_index, target_slot_index);
-                target_item.quantity = target_new_qty;
-                inventory_items.instance_id().update(target_item);
-                if delete_source {
-                    inventory_items.instance_id().delete(source_instance_id);
-                } else {
-                    source_item.quantity = source_new_qty;
-                    inventory_items.instance_id().update(source_item);
-                }
-                // Clear source slot in campfire
-                 match source_slot_index {
-                    0 => { campfire.fuel_instance_id_0 = None; campfire.fuel_def_id_0 = None; },
-                    1 => { campfire.fuel_instance_id_1 = None; campfire.fuel_def_id_1 = None; },
-                    2 => { campfire.fuel_instance_id_2 = None; campfire.fuel_def_id_2 = None; },
-                    3 => { campfire.fuel_instance_id_3 = None; campfire.fuel_def_id_3 = None; },
-                    4 => { campfire.fuel_instance_id_4 = None; campfire.fuel_def_id_4 = None; },
-                    _ => {}
-                }
-            },
-            Err(_) => {
-                // -- Merge Failed: Perform Swap --
-                log::info!("[MoveWithinCampfire] Cannot merge, swapping slot {} and {}", source_slot_index, target_slot_index);
-                // Just swap the references in the campfire struct
-                 match (source_slot_index, target_slot_index) {
-                    // This requires temporary variables to avoid overwriting
-                    // A bit verbose, but necessary without direct array indexing
-                    _ => { // Generic swap logic (handle all pairs)
-                        let temp_instance_id = target_instance_id_opt;
-                        let temp_def_id = target_def_id_opt;
-                        
-                        // Set target slot from source
-                         match target_slot_index {
-                            0 => { campfire.fuel_instance_id_0 = Some(source_instance_id); campfire.fuel_def_id_0 = Some(source_def_id); },
-                            1 => { campfire.fuel_instance_id_1 = Some(source_instance_id); campfire.fuel_def_id_1 = Some(source_def_id); },
-                            2 => { campfire.fuel_instance_id_2 = Some(source_instance_id); campfire.fuel_def_id_2 = Some(source_def_id); },
-                            3 => { campfire.fuel_instance_id_3 = Some(source_instance_id); campfire.fuel_def_id_3 = Some(source_def_id); },
-                            4 => { campfire.fuel_instance_id_4 = Some(source_instance_id); campfire.fuel_def_id_4 = Some(source_def_id); },
-                            _ => {}
-                        }
-                        // Set source slot from target (using temps)
-                         match source_slot_index {
-                            0 => { campfire.fuel_instance_id_0 = temp_instance_id; campfire.fuel_def_id_0 = temp_def_id; },
-                            1 => { campfire.fuel_instance_id_1 = temp_instance_id; campfire.fuel_def_id_1 = temp_def_id; },
-                            2 => { campfire.fuel_instance_id_2 = temp_instance_id; campfire.fuel_def_id_2 = temp_def_id; },
-                            3 => { campfire.fuel_instance_id_3 = temp_instance_id; campfire.fuel_def_id_3 = temp_def_id; },
-                            4 => { campfire.fuel_instance_id_4 = temp_instance_id; campfire.fuel_def_id_4 = temp_def_id; },
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        // == Target is Empty: Move Item ==
-        log::info!("[MoveWithinCampfire] Moving from slot {} to empty slot {}", source_slot_index, target_slot_index);
-        // Clear source slot
-        match source_slot_index {
-            0 => { campfire.fuel_instance_id_0 = None; campfire.fuel_def_id_0 = None; },
-            1 => { campfire.fuel_instance_id_1 = None; campfire.fuel_def_id_1 = None; },
-            2 => { campfire.fuel_instance_id_2 = None; campfire.fuel_def_id_2 = None; },
-            3 => { campfire.fuel_instance_id_3 = None; campfire.fuel_def_id_3 = None; },
-            4 => { campfire.fuel_instance_id_4 = None; campfire.fuel_def_id_4 = None; },
-            _ => {}
-        }
-        // Set target slot
-        match target_slot_index {
-            0 => { campfire.fuel_instance_id_0 = Some(source_instance_id); campfire.fuel_def_id_0 = Some(source_def_id); },
-            1 => { campfire.fuel_instance_id_1 = Some(source_instance_id); campfire.fuel_def_id_1 = Some(source_def_id); },
-            2 => { campfire.fuel_instance_id_2 = Some(source_instance_id); campfire.fuel_def_id_2 = Some(source_def_id); },
-            3 => { campfire.fuel_instance_id_3 = Some(source_instance_id); campfire.fuel_def_id_3 = Some(source_def_id); },
-            4 => { campfire.fuel_instance_id_4 = Some(source_instance_id); campfire.fuel_def_id_4 = Some(source_def_id); },
-            _ => {}
-        }
-    }
-
-    // Update the campfire state
-    campfires.id().update(campfire);
+    // Validate campfire interaction and get campfire
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, campfire_id)?;
+    
+    // Use the generic container handler to move the item within the campfire
+    inventory_management::handle_move_within_container(
+        ctx,
+        &mut campfire,
+        source_slot_index,
+        target_slot_index
+    )?;
+    
+    // Update campfire state
+    ctx.db.campfire().id().update(campfire);
 
     Ok(())
 }
@@ -899,73 +523,20 @@ pub fn split_stack_within_campfire(
     quantity_to_split: u32,
     target_slot_index: u8,
 ) -> Result<(), String> {
-    let sender_id = ctx.sender;
-    let mut inventory_items = ctx.db.inventory_item();
-    let mut campfires = ctx.db.campfire();
-
-    log::info!("[SplitWithinCampfire] Player {:?} splitting {} from slot {} to slot {} in campfire {}",
-             sender_id, quantity_to_split, source_slot_index, target_slot_index, campfire_id);
-
-    // 1. Validate slot indices
-    if source_slot_index >= NUM_FUEL_SLOTS as u8 || target_slot_index >= NUM_FUEL_SLOTS as u8 || source_slot_index == target_slot_index {
-        return Err("Invalid source or target slot index for split".to_string());
-    }
-
-    // 2. Find campfire
-    let mut campfire = campfires.id().find(campfire_id)
-        .ok_or(format!("Target campfire {} not found", campfire_id))?;
-
-    // 3. Get source item ID
-    let source_instance_id = match source_slot_index {
-        0 => campfire.fuel_instance_id_0,
-        1 => campfire.fuel_instance_id_1,
-        2 => campfire.fuel_instance_id_2,
-        3 => campfire.fuel_instance_id_3,
-        4 => campfire.fuel_instance_id_4,
-        _ => None,
-    }.ok_or(format!("No item found in source campfire slot {}", source_slot_index))?;
-
-    // 4. Get source item (mutable)
-    let mut source_item = inventory_items.instance_id().find(source_instance_id)
-        .ok_or("Source item instance not found in inventory table")?;
-
-    // 5. Check if target slot is empty
-    let is_target_occupied = match target_slot_index {
-        0 => campfire.fuel_instance_id_0.is_some(),
-        1 => campfire.fuel_instance_id_1.is_some(),
-        2 => campfire.fuel_instance_id_2.is_some(),
-        3 => campfire.fuel_instance_id_3.is_some(),
-        4 => campfire.fuel_instance_id_4.is_some(),
-        _ => true, // Treat invalid index as occupied
-    };
-    if is_target_occupied {
-        return Err(format!("Target campfire fuel slot {} is already occupied.", target_slot_index));
-    }
+    // Validate campfire interaction and get campfire
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, campfire_id)?;
     
-    // 6. Validate split quantity (using info from mutable source_item)
-    let item_def = ctx.db.item_definition().id().find(source_item.item_def_id).ok_or("Item def not found")?;
-     if !item_def.is_stackable { return Err("Source item is not stackable".to_string()); }
-     if quantity_to_split == 0 || quantity_to_split >= source_item.quantity {
-        return Err(format!("Invalid split quantity {} (must be > 0 and < {})", quantity_to_split, source_item.quantity));
-    }
-
-    // 7. Perform Split using helper
-    let new_item_instance_id = crate::items::split_stack_helper(ctx, &mut source_item, quantity_to_split)?;
-    let new_item_def_id = source_item.item_def_id;
-
-    // 8. Update target campfire slot
-    match target_slot_index {
-        0 => { campfire.fuel_instance_id_0 = Some(new_item_instance_id); campfire.fuel_def_id_0 = Some(new_item_def_id); },
-        1 => { campfire.fuel_instance_id_1 = Some(new_item_instance_id); campfire.fuel_def_id_1 = Some(new_item_def_id); },
-        2 => { campfire.fuel_instance_id_2 = Some(new_item_instance_id); campfire.fuel_def_id_2 = Some(new_item_def_id); },
-        3 => { campfire.fuel_instance_id_3 = Some(new_item_instance_id); campfire.fuel_def_id_3 = Some(new_item_def_id); },
-        4 => { campfire.fuel_instance_id_4 = Some(new_item_instance_id); campfire.fuel_def_id_4 = Some(new_item_def_id); },
-        _ => {}, // Should not happen
-    }
-    campfires.id().update(campfire);
-
-     log::info!("[SplitWithinCampfire] Split successful. New item {} placed in slot {}.", 
-             new_item_instance_id, target_slot_index);
+    // Use the generic container handler to split a stack within the campfire
+    inventory_management::handle_split_within_container(
+        ctx,
+        &mut campfire,
+        source_slot_index,
+        target_slot_index,
+        quantity_to_split
+    )?;
+    
+    // Update campfire state
+    ctx.db.campfire().id().update(campfire);
 
     Ok(())
 }
@@ -977,174 +548,33 @@ pub fn quick_move_to_campfire(
     campfire_id: u32,
     item_instance_id: u64,
 ) -> Result<(), String> {
-    let sender_id = ctx.sender;
-    let mut inventory_items = ctx.db.inventory_item();
-    let mut campfires = ctx.db.campfire();
-    let item_defs = ctx.db.item_definition();
-
-    log::info!(
-        "[QuickMoveToCampfire] Player {:?} trying to quick-move item {} to campfire {}",
-        sender_id, item_instance_id, campfire_id
-    );
-
-    // 1. Find Campfire & Item
-    let mut campfire = campfires
-        .id()
-        .find(campfire_id)
-        .ok_or(format!("Target campfire {} not found", campfire_id))?;
-    let mut item_to_add = inventory_items
-        .instance_id()
-        .find(item_instance_id)
-        .ok_or("Source item instance not found")?;
-
-    // 2. Validations
-    if item_to_add.player_identity != sender_id {
-        return Err("Item not owned by caller".to_string());
-    }
-    if item_to_add.inventory_slot.is_none() && item_to_add.hotbar_slot.is_none() {
-        return Err("Item must be in inventory or hotbar".to_string());
-    }
-    let definition = item_defs
-        .id()
-        .find(item_to_add.item_def_id)
-        .ok_or("Item definition not found")?;
-
-    // Check stackability for merge logic
-    let is_stackable = definition.is_stackable;
-    let item_def_id_to_add = definition.id;
-
-    // 3. Attempt to Merge onto existing matching stacks in campfire
-    let fuel_instance_ids = [
-        campfire.fuel_instance_id_0,
-        campfire.fuel_instance_id_1,
-        campfire.fuel_instance_id_2,
-        campfire.fuel_instance_id_3,
-        campfire.fuel_instance_id_4,
-    ];
-
-    let mut source_item_depleted = false;
-    for target_instance_id_opt in fuel_instance_ids {
-        if let Some(target_instance_id) = target_instance_id_opt {
-            if let Some(mut target_item) = inventory_items.instance_id().find(target_instance_id) {
-                // Check if the target item has the same definition ID AND item is stackable
-                if target_item.item_def_id == item_def_id_to_add && is_stackable {
-                    // Attempt merge
-                    match crate::items::calculate_merge_result(&item_to_add, &target_item, &definition) {
-                        Ok((qty_transfer, source_new_qty, target_new_qty, delete_source)) => {
-                            if qty_transfer > 0 {
-                                log::info!(
-                                    "[QuickMoveToCampfire Merge] Merging {} from item {} onto campfire item {}.",
-                                    qty_transfer, item_instance_id, target_instance_id
-                                );
-                                // Update target item quantity
-                                target_item.quantity = target_new_qty;
-                                inventory_items.instance_id().update(target_item);
-
-                                // Update source item quantity
-                                item_to_add.quantity = source_new_qty;
-
-                                if delete_source {
-                                    log::info!(
-                                        "[QuickMoveToCampfire Merge] Source item {} depleted, deleting.",
+    // Validate the item being moved is valid fuel
+    validate_fuel_item(ctx, item_instance_id)?;
+    
+    // Validate campfire interaction and get campfire
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, campfire_id)?;
+    
+    // Use the generic container handler for quick move to container
+    inventory_management::handle_quick_move_to_container(
+        ctx,
+        &mut campfire,
                                         item_instance_id
-                                    );
-                                    inventory_items.instance_id().delete(item_instance_id);
-                                    source_item_depleted = true;
-                                    break; // Source is gone, stop trying to merge
-                                } else {
-                                    // Update source item in DB (still has quantity left)
-                                    inventory_items.instance_id().update(item_to_add.clone());
-                                }
-                            }
-                        }
-                        Err(e) => {
-                             log::debug!("[QuickMoveToCampfire Merge] Cannot merge onto {}: {}", target_instance_id, e);
-                             // Continue to next slot if merge failed (e.g., target full)
-                        }
-                    }
-                }
-            }
-        }
-        // If source depleted, exit the loop
-        if source_item_depleted {
-            break;
-        }
-    }
-
-    // 4. If source item still exists, find first empty slot and place it
-    if !source_item_depleted {
-        log::info!(
-            "[QuickMoveToCampfire] Source item {} still has {} quantity after merge attempts. Finding empty slot...",
-            item_instance_id, item_to_add.quantity
-        );
-        let mut empty_slot_found: Option<u8> = None;
-        if campfire.fuel_instance_id_0.is_none() {
-            empty_slot_found = Some(0);
-        } else if campfire.fuel_instance_id_1.is_none() {
-            empty_slot_found = Some(1);
-        } else if campfire.fuel_instance_id_2.is_none() {
-            empty_slot_found = Some(2);
-        } else if campfire.fuel_instance_id_3.is_none() {
-            empty_slot_found = Some(3);
-        } else if campfire.fuel_instance_id_4.is_none() {
-            empty_slot_found = Some(4);
-        }
-
-        if let Some(slot_index) = empty_slot_found {
-            log::info!(
-                "[QuickMoveToCampfire] Placing remaining item {} into empty slot {}",
-                item_instance_id, slot_index
-            );
-            // Update item (remove from inv/hotbar)
-            item_to_add.inventory_slot = None;
-            item_to_add.hotbar_slot = None;
-            inventory_items.instance_id().update(item_to_add);
-
-            // Update campfire slot
-            match slot_index {
-                0 => {
-                    campfire.fuel_instance_id_0 = Some(item_instance_id);
-                    campfire.fuel_def_id_0 = Some(item_def_id_to_add); // Use correct def ID
-                }
-                1 => {
-                    campfire.fuel_instance_id_1 = Some(item_instance_id);
-                    campfire.fuel_def_id_1 = Some(item_def_id_to_add); // Use correct def ID
-                }
-                2 => {
-                    campfire.fuel_instance_id_2 = Some(item_instance_id);
-                    campfire.fuel_def_id_2 = Some(item_def_id_to_add); // Use correct def ID
-                }
-                3 => {
-                    campfire.fuel_instance_id_3 = Some(item_instance_id);
-                    campfire.fuel_def_id_3 = Some(item_def_id_to_add); // Use correct def ID
-                }
-                4 => {
-                    campfire.fuel_instance_id_4 = Some(item_instance_id);
-                    campfire.fuel_def_id_4 = Some(item_def_id_to_add); // Use correct def ID
-                }
-                _ => {} // Should not happen
-            }
-            campfires.id().update(campfire);
-        } else {
-            log::warn!(
-                "[QuickMoveToCampfire] Campfire {} fuel slots full, cannot place remaining item {}.",
-                campfire_id, item_instance_id
-            );
-            // If NO merge happened AND no empty slot, return error.
-            // Check if quantity changed. If it did, some merge happened, so it's a partial success (Ok).
-            // If quantity is unchanged AND no empty slot, then it failed.
-            let original_quantity_opt = inventory_items.instance_id().find(item_instance_id).map(|i| i.quantity); // Re-fetch original quantity
-            if let Some(original_quantity) = original_quantity_opt {
-                 let current_quantity = inventory_items.instance_id().find(item_instance_id).map(|i| i.quantity).unwrap_or(0); // Get current quantity
-                 if current_quantity == original_quantity { // No merge happened
-                    return Err("Campfire fuel slots are full (no space to merge or place)".to_string());
-                 } // else: merge happened, so Ok(()) is fine below
-            } else {
-                 // Item was somehow deleted mid-process? Should be rare.
-                 log::error!("[QuickMoveToCampfire] Source item {} disappeared during processing!", item_instance_id);
-                 return Err("Internal error during quick move".to_string());
-            }
-        }
+    )?;
+    
+    // Make a copy of the campfire for later use
+    let campfire_copy = campfire.clone();
+    
+    // Update campfire state
+    ctx.db.campfire().id().update(campfire);
+    
+    // If campfire is burning, ensure fuel consumption schedule exists
+    if campfire_copy.is_burning && campfire_copy.next_fuel_consume_at.is_none() {
+        // Schedule next fuel consumption
+        let next_consume_time = ctx.timestamp + Duration::from_secs(30).into();
+        let mut updated_campfire = campfire_copy.clone();
+        updated_campfire.next_fuel_consume_at = Some(next_consume_time);
+        ctx.db.campfire().id().update(updated_campfire);
+        log::info!("Scheduled next fuel consumption for campfire {} after quick move", campfire_id);
     }
 
     Ok(())
@@ -1160,73 +590,39 @@ pub fn move_fuel_item_to_player_slot(
     target_slot_type: String,
     target_slot_index: u32, // u32 to match client flexibility
 ) -> Result<(), String> {
-    let sender_id = ctx.sender;
-    let mut campfires = ctx.db.campfire();
-    // Inventory items table needed for move functions
-    let inventory_items = ctx.db.inventory_item(); 
-
-    log::info!(
-        "[MoveFuelToPlayer] Player {:?} moving fuel from campfire {} slot {} to {} slot {}",
-        sender_id, campfire_id, source_slot_index, target_slot_type, target_slot_index
-    );
-
-    // 1. Validate source slot index
-    if source_slot_index >= NUM_FUEL_SLOTS as u8 {
-        return Err(format!("Invalid source fuel slot index: {}", source_slot_index));
-    }
-
-    // 2. Find Campfire
-    let mut campfire = campfires.id().find(campfire_id)
-        .ok_or(format!("Campfire {} not found", campfire_id))?;
-
-    // 3. Get the instance ID from the source slot
-    let fuel_instance_id = match source_slot_index {
-        0 => campfire.fuel_instance_id_0,
-        1 => campfire.fuel_instance_id_1,
-        2 => campfire.fuel_instance_id_2,
-        3 => campfire.fuel_instance_id_3,
-        4 => campfire.fuel_instance_id_4,
-        _ => None,
-    }.ok_or(format!("No fuel item in campfire slot {} to move", source_slot_index))?;
-
-    // 4. Call the appropriate move function from items.rs
-    let move_result = match target_slot_type.as_str() {
-        "inventory" => {
-            if target_slot_index >= 24 { return Err("Invalid inventory target index".to_string()); }
-            crate::items::move_item_to_inventory(ctx, fuel_instance_id, target_slot_index as u16)
-        },
-        "hotbar" => {
-            if target_slot_index >= 6 { return Err("Invalid hotbar target index".to_string()); }
-            crate::items::move_item_to_hotbar(ctx, fuel_instance_id, target_slot_index as u8)
-        },
-        _ => Err(format!("Invalid target slot type '{}'", target_slot_type)),
-    };
-
-    // 5. If move was successful, clear the source slot in the campfire
-    if move_result.is_ok() {
-        log::info!(
-            "[MoveFuelToPlayer] Move successful. Clearing campfire {} slot {}.",
-            campfire_id, source_slot_index
-        );
-        match source_slot_index {
-            0 => { campfire.fuel_instance_id_0 = None; campfire.fuel_def_id_0 = None; },
-            1 => { campfire.fuel_instance_id_1 = None; campfire.fuel_def_id_1 = None; },
-            2 => { campfire.fuel_instance_id_2 = None; campfire.fuel_def_id_2 = None; },
-            3 => { campfire.fuel_instance_id_3 = None; campfire.fuel_def_id_3 = None; },
-            4 => { campfire.fuel_instance_id_4 = None; campfire.fuel_def_id_4 = None; },
-            _ => {} // Should not happen
+    // Validate campfire interaction and get campfire
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, campfire_id)?;
+    
+    // Use the generic container handler to move the item from campfire to player inventory
+    inventory_management::handle_move_from_container_slot(
+        ctx,
+        &mut campfire,
+        source_slot_index,
+        target_slot_type,
+        target_slot_index
+    )?;
+    
+    // Make a copy of the campfire for later use
+    let campfire_copy = campfire.clone();
+    
+    // Update campfire state
+    ctx.db.campfire().id().update(campfire);
+    
+    // Check if this changes the campfire's burning status
+    if campfire_copy.is_burning {
+        // Recheck if campfire still has valid fuel
+        let has_fuel = check_if_campfire_has_fuel(ctx, &campfire_copy);
+        if !has_fuel {
+            // Extinguish campfire if no fuel left
+            let mut updated_campfire = campfire_copy.clone();
+            updated_campfire.is_burning = false;
+            updated_campfire.next_fuel_consume_at = None;
+            ctx.db.campfire().id().update(updated_campfire);
+            log::info!("Campfire {} extinguished due to removing all fuel", campfire_id);
         }
-        // Update campfire state AFTER clearing the slot
-        campfires.id().update(campfire);
-    } else {
-        // Log error if move failed, but return the original error from move_result
-        log::error!(
-            "[MoveFuelToPlayer] Failed to move fuel item {} to player slot: {:?}. Campfire slot {} unchanged.",
-            fuel_instance_id, move_result.as_ref().err(), source_slot_index
-        );
     }
-
-    move_result // Return the actual result of the move operation
+    
+    Ok(())
 }
 
 // --- Init Helper --- 
@@ -1251,9 +647,362 @@ pub(crate) fn init_campfire_fuel_schedule(ctx: &ReducerContext) -> Result<(), St
             id: 0, // Auto-incremented
             scheduled_at: ScheduleAt::Interval(interval.into()),
         });
-    } else {
+                } else {
         log::debug!("Campfire fuel check schedule already exists.");
     }
     */
     Ok(())
+}
+
+// --- Implement ItemContainer Trait for Campfire ---
+
+impl ItemContainer for Campfire {
+    fn num_slots(&self) -> usize {
+        NUM_FUEL_SLOTS
+    }
+
+    fn get_slot_instance_id(&self, slot_index: u8) -> Option<u64> {
+        if slot_index >= NUM_FUEL_SLOTS as u8 { return None; }
+        match slot_index {
+            0 => self.fuel_instance_id_0,
+            1 => self.fuel_instance_id_1,
+            2 => self.fuel_instance_id_2,
+            3 => self.fuel_instance_id_3,
+            4 => self.fuel_instance_id_4,
+            _ => None, // Unreachable due to index check
+        }
+    }
+
+    fn get_slot_def_id(&self, slot_index: u8) -> Option<u64> {
+        if slot_index >= NUM_FUEL_SLOTS as u8 { return None; }
+        match slot_index {
+            0 => self.fuel_def_id_0,
+            1 => self.fuel_def_id_1,
+            2 => self.fuel_def_id_2,
+            3 => self.fuel_def_id_3,
+            4 => self.fuel_def_id_4,
+            _ => None, // Unreachable due to index check
+        }
+    }
+
+    fn set_slot(&mut self, slot_index: u8, instance_id: Option<u64>, def_id: Option<u64>) {
+        if slot_index >= NUM_FUEL_SLOTS as u8 { return; }
+        match slot_index {
+            0 => { self.fuel_instance_id_0 = instance_id; self.fuel_def_id_0 = def_id; },
+            1 => { self.fuel_instance_id_1 = instance_id; self.fuel_def_id_1 = def_id; },
+            2 => { self.fuel_instance_id_2 = instance_id; self.fuel_def_id_2 = def_id; },
+            3 => { self.fuel_instance_id_3 = instance_id; self.fuel_def_id_3 = def_id; },
+            4 => { self.fuel_instance_id_4 = instance_id; self.fuel_def_id_4 = def_id; },
+            _ => {}, // Unreachable due to index check
+        }
+    }
+}
+
+// --- Implement ContainerItemClearer Trait for Campfire ---
+
+/// Helper struct to implement the ContainerItemClearer trait for Campfire
+pub struct CampfireClearer;
+
+// --- Helper to clear a specific item instance from any campfire fuel slot ---
+pub(crate) fn clear_item_from_campfire_fuel_slots(ctx: &ReducerContext, item_instance_id_to_clear: u64) -> bool {
+    let mut campfires = ctx.db.campfire();
+    let mut found_and_cleared = false;
+    
+    // Iterate through campfires that *might* contain the item
+    let potential_campfire_ids: Vec<u32> = campfires.iter()
+                                            .filter(|c|
+                                                // Check all individual slots
+                                                c.fuel_instance_id_0 == Some(item_instance_id_to_clear) ||
+                                                c.fuel_instance_id_1 == Some(item_instance_id_to_clear) ||
+                                                c.fuel_instance_id_2 == Some(item_instance_id_to_clear) ||
+                                                c.fuel_instance_id_3 == Some(item_instance_id_to_clear) ||
+                                                c.fuel_instance_id_4 == Some(item_instance_id_to_clear)
+                                            )
+                                            .map(|c| c.id).collect();
+
+    for campfire_id in potential_campfire_ids {
+        // Use try_find to avoid panic if campfire disappears mid-iteration (less likely but safer)
+        if let Some(mut campfire) = campfires.id().find(campfire_id) {
+            let mut updated = false;
+            // Check and clear each slot individually using NEW field names
+            if campfire.fuel_instance_id_0 == Some(item_instance_id_to_clear) {
+                campfire.fuel_instance_id_0 = None; campfire.fuel_def_id_0 = None; updated = true;
+            }
+            if campfire.fuel_instance_id_1 == Some(item_instance_id_to_clear) {
+                campfire.fuel_instance_id_1 = None; campfire.fuel_def_id_1 = None; updated = true;
+            }
+            if campfire.fuel_instance_id_2 == Some(item_instance_id_to_clear) {
+                campfire.fuel_instance_id_2 = None; campfire.fuel_def_id_2 = None; updated = true;
+            }
+            if campfire.fuel_instance_id_3 == Some(item_instance_id_to_clear) {
+                campfire.fuel_instance_id_3 = None; campfire.fuel_def_id_3 = None; updated = true;
+            }
+            if campfire.fuel_instance_id_4 == Some(item_instance_id_to_clear) {
+                campfire.fuel_instance_id_4 = None; campfire.fuel_def_id_4 = None; updated = true;
+            }
+
+            if updated {
+                log::debug!("[ClearCampfireSlot] Cleared item {} from a fuel slot in campfire {}", item_instance_id_to_clear, campfire_id);
+                // Check if fire should extinguish after clearing slot
+                // Pass ctx instead of table handles
+                let still_has_fuel = check_if_campfire_has_fuel(ctx, &campfire);
+                 if !still_has_fuel && campfire.is_burning {
+                    campfire.is_burning = false;
+                    campfire.next_fuel_consume_at = None;
+                    log::info!("Campfire {} extinguished as last valid fuel was removed.", campfire_id);
+                }
+    campfires.id().update(campfire);
+                found_and_cleared = true; // Mark as found
+            }
+        }
+    }
+    
+    found_and_cleared
+}
+
+impl ContainerItemClearer for CampfireClearer {
+    fn clear_item(ctx: &ReducerContext, item_instance_id: u64) -> bool {
+        clear_item_from_campfire_fuel_slots(ctx, item_instance_id)
+    }
+}
+
+// --- Reducer: Split Stack From Campfire --- 
+// (Moved from items.rs)
+#[spacetimedb::reducer]
+pub fn split_stack_from_campfire(
+    ctx: &ReducerContext,
+    source_campfire_id: u32,
+    source_slot_index: u8,
+    quantity_to_split: u32,
+    target_slot_type: String,    // "inventory" or "hotbar"
+    target_slot_index: u32,     // Numeric index for inventory/hotbar
+) -> Result<(), String> {
+    // Get mutable campfire table handle
+    let mut campfires = ctx.db.campfire();
+
+    // --- Basic Validations --- 
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, source_campfire_id)?;
+    // Note: Further validations (item existence, stackability, quantity) are handled 
+    //       within the generic handle_split_from_container function.
+
+    log::info!(
+        "[SplitFromCampfire] Player {:?} delegating split {} from campfire {} slot {} to {} slot {}",
+        ctx.sender, quantity_to_split, source_campfire_id, source_slot_index, target_slot_type, target_slot_index
+    );
+
+    // --- Call GENERIC Handler --- 
+    inventory_management::handle_split_from_container(
+        ctx, 
+        &mut campfire, 
+        source_slot_index, 
+        quantity_to_split,
+        target_slot_type, 
+        target_slot_index
+    )?;
+
+    // --- Commit Campfire Update --- 
+    // The handler might have modified the source item quantity via split_stack_helper,
+    // but the campfire state itself (slots) isn't directly changed by this handler.
+    // However, to be safe and consistent with other reducers that fetch a mutable container,
+    // we update it here. In the future, if the handler needed to modify the container state
+    // (e.g., if the split failed and we needed to revert something), this update is necessary.
+    campfires.id().update(campfire);
+
+    Ok(())
+}
+
+// --- Reducer: Split From Campfire and Move/Merge --- 
+// (Moved from items.rs)
+#[spacetimedb::reducer]
+pub fn split_and_move_from_campfire(
+    ctx: &ReducerContext,
+    source_campfire_id: u32,
+    source_slot_index: u8,
+    quantity_to_split: u32,
+    target_slot_type: String,    // "inventory", "hotbar", or "campfire_fuel"
+    target_slot_index: u32,     // Numeric index for inventory/hotbar/campfire
+) -> Result<(), String> {
+    let sender_id = ctx.sender; // Needed for potential move to inventory/hotbar
+    let campfires = ctx.db.campfire();
+    let mut inventory_items = ctx.db.inventory_item(); // Mutable for split helper and move reducers
+
+    log::info!(
+        "[SplitMoveFromCampfire] Player {:?} splitting {} from campfire {} slot {} to {} slot {}",
+        sender_id, quantity_to_split, source_campfire_id, source_slot_index, target_slot_type, target_slot_index
+    );
+
+    // --- 1. Find Source Campfire & Item ID --- 
+    let campfire = campfires.id().find(source_campfire_id)
+        .ok_or(format!("Source campfire {} not found", source_campfire_id))?;
+    
+    if source_slot_index >= crate::campfire::NUM_FUEL_SLOTS as u8 {
+        return Err(format!("Invalid source fuel slot index: {}", source_slot_index));
+    }
+
+    let source_instance_id = match source_slot_index {
+        0 => campfire.fuel_instance_id_0,
+        1 => campfire.fuel_instance_id_1,
+        2 => campfire.fuel_instance_id_2,
+        3 => campfire.fuel_instance_id_3,
+        4 => campfire.fuel_instance_id_4,
+        _ => None,
+    }.ok_or(format!("No item found in source campfire slot {}", source_slot_index))?;
+
+    // --- 2. Get Source Item & Validate Split --- 
+    let mut source_item = inventory_items.instance_id().find(source_instance_id)
+        .ok_or("Source item instance not found in inventory table")?;
+
+    // Note: Ownership check isn't strictly needed here as item is in world container,
+    // but we might add checks later if campfires become player-specific.
+
+    // Get Item Definition for stackability check
+    let item_def = ctx.db.item_definition().id().find(source_item.item_def_id)
+        .ok_or_else(|| format!("Definition not found for item ID {}", source_item.item_def_id))?;
+    
+    if !item_def.is_stackable {
+        return Err(format!("Item '{}' is not stackable.", item_def.name));
+    }
+    if quantity_to_split == 0 {
+        return Err("Cannot split a quantity of 0.".to_string());
+    }
+    if quantity_to_split >= source_item.quantity {
+        return Err(format!("Cannot split {} items, only {} available.", quantity_to_split, source_item.quantity));
+    }
+
+    // --- 3. Perform Split --- 
+    // The helper updates the original source_item stack and returns the ID of the new stack.
+    let new_item_instance_id = split_stack_helper(ctx, &mut source_item, quantity_to_split)?;
+
+    // --- 4. Move/Merge the NEW Stack --- 
+    log::debug!("[SplitMoveFromCampfire] Calling appropriate move/add reducer for new stack {}", new_item_instance_id);
+    match target_slot_type.as_str() {
+        "inventory" => {
+            // Call move_item_to_inventory from player_inventory module
+            move_item_to_inventory(ctx, new_item_instance_id, target_slot_index as u16)
+        },
+        "hotbar" => {
+             // Call move_item_to_hotbar from player_inventory module
+            move_item_to_hotbar(ctx, new_item_instance_id, target_slot_index as u8)
+        },
+        "campfire_fuel" => {
+            // Call add_fuel_to_campfire, which handles merging onto existing stack or placing in empty slot.
+            // We use the source_campfire_id because we are moving *within* the same fire if target is campfire.
+            add_fuel_to_campfire(ctx, source_campfire_id, target_slot_index as u8, new_item_instance_id)
+        },
+        _ => {
+            log::error!("[SplitMoveFromCampfire] Invalid target_slot_type: {}", target_slot_type);
+            // Attempt to delete the orphaned split stack to prevent item loss
+            ctx.db.inventory_item().instance_id().delete(new_item_instance_id);
+            Err(format!("Invalid target slot type for split: {}", target_slot_type))
+        }
+    }
+}
+
+// --- Reducer: Add Wood to First Available Slot (with Merge) --- 
+// (Moved from items.rs)
+#[spacetimedb::reducer]
+pub fn auto_add_wood_to_campfire(
+    ctx: &ReducerContext,
+    campfire_id: u32,
+    item_instance_id: u64,
+) -> Result<(), String> {
+    // --- Initial Validations --- 
+    // Validate that the item is valid fuel first (checks ownership, location, type)
+    validate_fuel_item(ctx, item_instance_id)?;
+    // Validate campfire interaction and get campfire
+    let (_player, mut campfire) = validate_campfire_interaction(ctx, campfire_id)?;
+
+            log::info!(
+        "[AutoAddWood] Player {:?} trying to quick move item {} to campfire {}",
+        ctx.sender, item_instance_id, campfire_id
+    );
+    
+    // --- Call Generic Handler --- 
+    // This handles finding merge targets/empty slots in the container and moving/merging the item.
+    inventory_management::handle_quick_move_to_container(
+        ctx,
+        &mut campfire,
+        item_instance_id
+    )?;
+
+    // --- Update Campfire & Check Fuel Schedule --- 
+    // Need to copy before update for the check
+    let campfire_copy = campfire.clone();
+    
+    // Update campfire state (handler modified the mutable campfire struct)
+    ctx.db.campfire().id().update(campfire);
+    
+    // If campfire is burning, ensure fuel consumption schedule exists
+    if campfire_copy.is_burning && campfire_copy.next_fuel_consume_at.is_none() {
+        // Schedule next fuel consumption
+        let next_consume_time = ctx.timestamp + Duration::from_secs(30).into();
+        let mut updated_campfire = campfire_copy.clone();
+        updated_campfire.next_fuel_consume_at = Some(next_consume_time);
+        ctx.db.campfire().id().update(updated_campfire);
+        log::info!("Scheduled next fuel consumption for campfire {} after auto add wood", campfire_id);
+    }
+
+    Ok(())
+}
+
+// --- Helper Function (Validation) --- 
+
+/// Validates if a player can interact with a specific campfire (checks existence and distance).
+/// Returns Ok((Player struct instance, Campfire struct instance)) on success, or Err(String) on failure.
+fn validate_campfire_interaction(
+    ctx: &ReducerContext,
+    campfire_id: u32,
+) -> Result<(Player, Campfire), String> {
+    let sender_id = ctx.sender;
+    let players = ctx.db.player();
+    let campfires = ctx.db.campfire();
+
+    let player = players.identity().find(sender_id).ok_or_else(|| "Player not found".to_string())?;
+    let campfire = campfires.id().find(campfire_id).ok_or_else(|| format!("Campfire {} not found", campfire_id))?;
+
+    // Check distance between the interacting player and the campfire
+    let dx = player.position_x - campfire.pos_x;
+    let dy = player.position_y - campfire.pos_y;
+    if (dx * dx + dy * dy) > PLAYER_CAMPFIRE_INTERACTION_DISTANCE_SQUARED {
+        return Err("Too far away from campfire".to_string());
+    }
+    Ok((player, campfire))
+}
+
+/// Validates if an item can be used as fuel in a campfire.
+/// Returns Ok(InventoryItem) if valid, Err(String) if not.
+fn validate_fuel_item(
+    ctx: &ReducerContext,
+    item_instance_id: u64
+) -> Result<InventoryItem, String> {
+    let sender_id = ctx.sender;
+    let inventory_items = ctx.db.inventory_item();
+    let item_defs = ctx.db.item_definition();
+
+    // Find the item instance
+    let item = inventory_items.instance_id().find(item_instance_id)
+        .ok_or_else(|| format!("Item instance {} not found", item_instance_id))?;
+    
+    // Check ownership
+    if item.player_identity != sender_id {
+        return Err("Item does not belong to you".to_string());
+    }
+
+    // Check if it's in inventory or hotbar
+    if item.inventory_slot.is_none() && item.hotbar_slot.is_none() {
+        return Err("Item must be in inventory or hotbar".to_string());
+    }
+
+    // Get the definition and check if it's a valid fuel type
+    let item_def = item_defs.id().find(item.item_def_id)
+        .ok_or_else(|| "Item definition not found".to_string())?;
+    
+    // This is a campfire-specific check - only certain items can be used as fuel
+    // Modify this list based on your game's fuel items
+    let valid_fuel_items = ["Wood", "Stick", "Coal", "Tree Bark"];
+    if !valid_fuel_items.contains(&item_def.name.as_str()) {
+        return Err(format!("Item '{}' is not a valid fuel source", item_def.name));
+    }
+
+    Ok(item)
 }

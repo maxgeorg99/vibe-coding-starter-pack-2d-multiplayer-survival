@@ -14,6 +14,8 @@ mod world_state;
 mod campfire;
 // Declare the active_equipment module
 mod active_equipment;
+// Declare the player_inventory module
+mod player_inventory;
 // Declare the mushroom module
 mod mushroom;
 // Declare the consumables module
