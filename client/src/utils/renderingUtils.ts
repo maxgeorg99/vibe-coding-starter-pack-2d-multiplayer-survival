@@ -196,8 +196,8 @@ export const renderPlayer = (
   }
   // --- End Draw Sprite ---
 
-  // Draw name tag if hovered AND alive
-  if (isHovered && !player.isDead) { // Check !player.isDead
+  // Draw name tag if player is alive
+  if (!player.isDead) {
     drawNameTag(ctx, player, spriteDrawY, spriteBaseX + drawWidth / 2);
   }
 }; 

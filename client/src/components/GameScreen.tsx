@@ -16,6 +16,7 @@ import GameCanvas from './GameCanvas';
 import PlayerUI from './PlayerUI';
 import Hotbar from './Hotbar';
 import DayNightCycleTracker from './DayNightCycleTracker';
+import Chat from './Chat';
 
 // Import types used by props
 import { 
@@ -32,7 +33,8 @@ import {
     ActiveEquipment as SpacetimeDBActiveEquipment,
     Recipe as SpacetimeDBRecipe,
     CraftingQueueItem as SpacetimeDBCraftingQueueItem,
-    DbConnection
+    DbConnection,
+    Message as SpacetimeDBMessage
 } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import { PlacementItemInfo, PlacementActions } from '../hooks/usePlacementManager';
@@ -55,6 +57,7 @@ interface GameScreenProps {
     activeEquipments: Map<string, SpacetimeDBActiveEquipment>;
     recipes: Map<string, SpacetimeDBRecipe>;
     craftingQueueItems: Map<string, SpacetimeDBCraftingQueueItem>;
+    messages: Map<string, SpacetimeDBMessage>;
     
     // Connection & Player Info
     localPlayerId?: string;
@@ -83,6 +86,8 @@ interface GameScreenProps {
     callSetSprintingReducer: (isSprinting: boolean) => void;
     isMinimapOpen: boolean;
     setIsMinimapOpen: React.Dispatch<React.SetStateAction<boolean>>;
+    isChatting: boolean;
+    setIsChatting: (isChatting: boolean) => void;
 }
 
 const GameScreen: React.FC<GameScreenProps> = (props) => {
@@ -90,13 +95,16 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
     const {
         players, trees, stones, campfires, mushrooms, droppedItems, woodenStorageBoxes,
         inventoryItems, itemDefinitions, worldState, activeEquipments, recipes, craftingQueueItems,
+        messages,
         localPlayerId, playerIdentity, connection,
         placementInfo, placementActions, placementError, startPlacement, cancelPlacement,
         interactingWith, handleSetInteractingWith,
         draggedItemInfo, onItemDragStart, onItemDrop,
         updatePlayerPosition, callJumpReducer, callSetSprintingReducer,
         isMinimapOpen,
-        setIsMinimapOpen
+        setIsMinimapOpen,
+        isChatting,
+        setIsChatting
     } = props;
 
     return (
@@ -124,6 +132,7 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
                 callSetSprintingReducer={callSetSprintingReducer}
                 isMinimapOpen={isMinimapOpen}
                 setIsMinimapOpen={setIsMinimapOpen}
+                isChatting={isChatting}
             />
             <PlayerUI
                 identity={playerIdentity}
@@ -163,6 +172,13 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
                 campfires={campfires}
             />
             <DayNightCycleTracker worldState={worldState} />
+            <Chat 
+                connection={connection}
+                messages={messages} 
+                players={players}
+                isChatting={isChatting}
+                setIsChatting={setIsChatting}
+            />
         </div>
     );
 };

@@ -74,6 +74,7 @@ interface GameCanvasProps {
   callSetSprintingReducer: (isSprinting: boolean) => void;
   isMinimapOpen: boolean;
   setIsMinimapOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  isChatting: boolean;
 }
 
 /**
@@ -105,6 +106,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   callSetSprintingReducer,
   isMinimapOpen,
   setIsMinimapOpen,
+  isChatting,
 }) => {
 
   // --- Refs ---
@@ -139,6 +141,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       closestInteractableMushroomId, closestInteractableCampfireId, closestInteractableDroppedItemId,
       closestInteractableBoxId, isClosestInteractableBoxEmpty, isMinimapOpen, setIsMinimapOpen,
       onSetInteractingWith, updatePlayerPosition, callJumpReducer, callSetSprintingReducer,
+      isChatting,
   });
 
   // --- UI State ---
@@ -440,8 +443,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       animationFrame, placementInfo, placementError, overlayRgba, maskCanvasRef,
       closestInteractableMushroomId, closestInteractableCampfireId,
       closestInteractableDroppedItemId, closestInteractableBoxId, isClosestInteractableBoxEmpty,
-      interactionProgress, isMinimapOpen, isMouseOverMinimap, lastPositionsRef
-    ]);
+      interactionProgress, isMinimapOpen, isMouseOverMinimap, lastPositionsRef,
+      isChatting,
+  ]);
 
   const gameLoopCallback = useCallback(() => {
     processInputsAndActions();

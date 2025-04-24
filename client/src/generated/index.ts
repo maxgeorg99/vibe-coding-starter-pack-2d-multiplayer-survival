@@ -116,6 +116,8 @@ import { SeedRecipes } from "./seed_recipes_reducer.ts";
 export { SeedRecipes };
 import { SeedWorldState } from "./seed_world_state_reducer.ts";
 export { SeedWorldState };
+import { SendMessage } from "./send_message_reducer.ts";
+export { SendMessage };
 import { SetSprinting } from "./set_sprinting_reducer.ts";
 export { SetSprinting };
 import { SplitAndMoveFromCampfire } from "./split_and_move_from_campfire_reducer.ts";
@@ -172,6 +174,8 @@ import { InventoryItemTableHandle } from "./inventory_item_table.ts";
 export { InventoryItemTableHandle };
 import { ItemDefinitionTableHandle } from "./item_definition_table.ts";
 export { ItemDefinitionTableHandle };
+import { MessageTableHandle } from "./message_table.ts";
+export { MessageTableHandle };
 import { MushroomTableHandle } from "./mushroom_table.ts";
 export { MushroomTableHandle };
 import { PlayerTableHandle } from "./player_table.ts";
@@ -216,6 +220,8 @@ import { ItemCategory } from "./item_category_type.ts";
 export { ItemCategory };
 import { ItemDefinition } from "./item_definition_type.ts";
 export { ItemDefinition };
+import { Message } from "./message_type.ts";
+export { Message };
 import { Mushroom } from "./mushroom_type.ts";
 export { Mushroom };
 import { Player } from "./player_type.ts";
@@ -294,6 +300,11 @@ const REMOTE_MODULE = {
     item_definition: {
       tableName: "item_definition",
       rowType: ItemDefinition.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    message: {
+      tableName: "message",
+      rowType: Message.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     mushroom: {
@@ -506,6 +517,10 @@ const REMOTE_MODULE = {
       reducerName: "seed_world_state",
       argsType: SeedWorldState.getTypeScriptAlgebraicType(),
     },
+    send_message: {
+      reducerName: "send_message",
+      argsType: SendMessage.getTypeScriptAlgebraicType(),
+    },
     set_sprinting: {
       reducerName: "set_sprinting",
       argsType: SetSprinting.getTypeScriptAlgebraicType(),
@@ -639,6 +654,7 @@ export type Reducer = never
 | { name: "SeedItems", args: SeedItems }
 | { name: "SeedRecipes", args: SeedRecipes }
 | { name: "SeedWorldState", args: SeedWorldState }
+| { name: "SendMessage", args: SendMessage }
 | { name: "SetSprinting", args: SetSprinting }
 | { name: "SplitAndMoveFromCampfire", args: SplitAndMoveFromCampfire }
 | { name: "SplitStack", args: SplitStack }
@@ -1288,6 +1304,22 @@ export class RemoteReducers {
     this.connection.offReducer("seed_world_state", callback);
   }
 
+  sendMessage(text: string) {
+    const __args = { text };
+    let __writer = new BinaryWriter(1024);
+    SendMessage.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("send_message", __argsBuffer, this.setCallReducerFlags.sendMessageFlags);
+  }
+
+  onSendMessage(callback: (ctx: ReducerEventContext, text: string) => void) {
+    this.connection.onReducer("send_message", callback);
+  }
+
+  removeOnSendMessage(callback: (ctx: ReducerEventContext, text: string) => void) {
+    this.connection.offReducer("send_message", callback);
+  }
+
   setSprinting(sprinting: boolean) {
     const __args = { sprinting };
     let __writer = new BinaryWriter(1024);
@@ -1743,6 +1775,11 @@ export class SetReducerFlags {
     this.seedWorldStateFlags = flags;
   }
 
+  sendMessageFlags: CallReducerFlags = 'FullUpdate';
+  sendMessage(flags: CallReducerFlags) {
+    this.sendMessageFlags = flags;
+  }
+
   setSprintingFlags: CallReducerFlags = 'FullUpdate';
   setSprinting(flags: CallReducerFlags) {
     this.setSprintingFlags = flags;
@@ -1870,6 +1907,10 @@ export class RemoteTables {
 
   get itemDefinition(): ItemDefinitionTableHandle {
     return new ItemDefinitionTableHandle(this.connection.clientCache.getOrCreateTable<ItemDefinition>(REMOTE_MODULE.tables.item_definition));
+  }
+
+  get message(): MessageTableHandle {
+    return new MessageTableHandle(this.connection.clientCache.getOrCreateTable<Message>(REMOTE_MODULE.tables.message));
   }
 
   get mushroom(): MushroomTableHandle {

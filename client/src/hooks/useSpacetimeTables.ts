@@ -18,6 +18,7 @@ export interface SpacetimeTableStates {
     woodenStorageBoxes: Map<string, SpacetimeDB.WoodenStorageBox>;
     recipes: Map<string, SpacetimeDB.Recipe>;
     craftingQueueItems: Map<string, SpacetimeDB.CraftingQueueItem>;
+    messages: Map<string, SpacetimeDB.Message>;
     localPlayerRegistered: boolean; // Flag indicating local player presence
 }
 
@@ -61,6 +62,7 @@ export const useSpacetimeTables = ({
     const [woodenStorageBoxes, setWoodenStorageBoxes] = useState<Map<string, SpacetimeDB.WoodenStorageBox>>(new Map());
     const [recipes, setRecipes] = useState<Map<string, SpacetimeDB.Recipe>>(new Map());
     const [craftingQueueItems, setCraftingQueueItems] = useState<Map<string, SpacetimeDB.CraftingQueueItem>>(new Map());
+    const [messages, setMessages] = useState<Map<string, SpacetimeDB.Message>>(new Map());
     const [localPlayerRegistered, setLocalPlayerRegistered] = useState<boolean>(false);
 
     // Ref to hold the cancelPlacement function
@@ -221,6 +223,9 @@ export const useSpacetimeTables = ({
              const handleCraftingQueueInsert = (ctx: any, queueItem: SpacetimeDB.CraftingQueueItem) => setCraftingQueueItems(prev => new Map(prev).set(queueItem.queueItemId.toString(), queueItem));
              const handleCraftingQueueUpdate = (ctx: any, oldItem: SpacetimeDB.CraftingQueueItem, newItem: SpacetimeDB.CraftingQueueItem) => setCraftingQueueItems(prev => new Map(prev).set(newItem.queueItemId.toString(), newItem));
              const handleCraftingQueueDelete = (ctx: any, queueItem: SpacetimeDB.CraftingQueueItem) => setCraftingQueueItems(prev => { const newMap = new Map(prev); newMap.delete(queueItem.queueItemId.toString()); return newMap; });
+             const handleMessageInsert = (ctx: any, msg: SpacetimeDB.Message) => setMessages(prev => new Map(prev).set(msg.id.toString(), msg));
+             const handleMessageUpdate = (ctx: any, oldMsg: SpacetimeDB.Message, newMsg: SpacetimeDB.Message) => setMessages(prev => new Map(prev).set(newMsg.id.toString(), newMsg));
+             const handleMessageDelete = (ctx: any, msg: SpacetimeDB.Message) => setMessages(prev => { const newMap = new Map(prev); newMap.delete(msg.id.toString()); return newMap; });
              // --- End Callback Definitions ---
 
             // --- Register Callbacks ---
@@ -238,6 +243,17 @@ export const useSpacetimeTables = ({
             connection.db.recipe.onInsert(handleRecipeInsert); connection.db.recipe.onUpdate(handleRecipeUpdate); connection.db.recipe.onDelete(handleRecipeDelete);
             connection.db.craftingQueueItem.onInsert(handleCraftingQueueInsert); connection.db.craftingQueueItem.onUpdate(handleCraftingQueueUpdate); connection.db.craftingQueueItem.onDelete(handleCraftingQueueDelete);
             callbacksRegisteredRef.current = true;
+
+            // --- Log DB object before registering message callbacks ---
+            console.log('[useSpacetimeTables] Registering callbacks. Connection object:', connection);
+            console.log('[useSpacetimeTables] Connection DB object:', connection.db);
+            console.log('[useSpacetimeTables] Checking for db.message:', connection.db.message);
+            // --- End Logging ---
+
+            // <<< Register Message Callbacks >>>
+            connection.db.message.onInsert(handleMessageInsert);
+            connection.db.message.onUpdate(handleMessageUpdate);
+            connection.db.message.onDelete(handleMessageDelete);
 
             // --- Create Initial Non-Spatial Subscriptions ---
             // Unsubscribe any lingering non-spatial handles from a previous connection (safety net)
@@ -265,6 +281,11 @@ export const useSpacetimeTables = ({
                     // .onApplied(() => console.log("[useSpacetimeTables] Non-spatial CRAFTING subscription applied.")) 
                     .onError((err) => console.error("[useSpacetimeTables] Non-spatial CRAFTING subscription error:", err))
                     .subscribe('SELECT * FROM crafting_queue_item'), // Fixed: lowercase snake_case
+                 // <<< ADDED: Subscribe to messages >>>
+                 connection.subscriptionBuilder()
+                    // .onApplied(() => console.log("[useSpacetimeTables] Non-spatial MESSAGE subscription applied.")) 
+                    .onError((err) => console.error("[useSpacetimeTables] Non-spatial MESSAGE subscription error:", err))
+                    .subscribe('SELECT * FROM message'), // Fixed: lowercase
             ];
             nonSpatialHandlesRef.current = currentInitialSubs; // Store handles in ref
         }
@@ -482,6 +503,7 @@ export const useSpacetimeTables = ({
                  setMushrooms(new Map()); setItemDefinitions(new Map()); setRecipes(new Map());
                  setInventoryItems(new Map()); setWorldState(null); setActiveEquipments(new Map());
                  setDroppedItems(new Map()); setWoodenStorageBoxes(new Map()); setCraftingQueueItems(new Map());
+                 setMessages(new Map());
              }
              // Don't try to unsubscribe spatial subscriptions here - already handled at the beginning of the effect
         };
@@ -503,6 +525,7 @@ export const useSpacetimeTables = ({
         woodenStorageBoxes,
         recipes,
         craftingQueueItems,
+        messages,
         localPlayerRegistered,
     };
 }; 

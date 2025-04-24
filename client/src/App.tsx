@@ -61,6 +61,7 @@ function App() {
     const [isRegistering, setIsRegistering] = useState<boolean>(false); // Tracks registration attempt
     const [uiError, setUiError] = useState<string | null>(null); // For general UI errors not handled by hooks
     const [isMinimapOpen, setIsMinimapOpen] = useState<boolean>(false);
+    const [isChatting, setIsChatting] = useState<boolean>(false); // <<< Add isChatting state
 
     // --- Viewport State & Refs ---
     const [currentViewport, setCurrentViewport] = useState<{ minX: number, minY: number, maxX: number, maxY: number } | null>(null);
@@ -71,7 +72,8 @@ function App() {
     const { 
       players, trees, stones, campfires, mushrooms, itemDefinitions, 
       inventoryItems, worldState, activeEquipments, droppedItems, 
-      woodenStorageBoxes, recipes, craftingQueueItems, localPlayerRegistered 
+      woodenStorageBoxes, recipes, craftingQueueItems, localPlayerRegistered, 
+      messages // <<< Add messages from useSpacetimeTables
     } = useSpacetimeTables({ connection, cancelPlacement, viewport: currentViewport }); // Pass currentViewport
 
     // --- Refs for Cross-Hook/Component Communication --- 
@@ -191,6 +193,36 @@ function App() {
         };
     }, []); // Empty dependency array: run only once on mount
 
+    // --- Effect to handle global key presses that aren't directly game actions ---
+    useEffect(() => {
+        const handleGlobalKeyDown = (event: KeyboardEvent) => {
+            // If chat is active, let the Chat component handle Enter/Escape
+            if (isChatting) return;
+
+            // Prevent global context menu unless placing item (moved from other effect)
+            if (event.key === 'ContextMenu' && !placementInfoRef.current) {
+                event.preventDefault();
+            }
+
+            // Other global keybinds could go here if needed
+        };
+
+        // Prevent global context menu unless placing item (separate listener for clarity)
+        const handleGlobalContextMenu = (event: MouseEvent) => {
+            if (!placementInfoRef.current) { // Use ref to check current placement status
+                event.preventDefault();
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        window.addEventListener('contextmenu', handleGlobalContextMenu);
+
+        return () => {
+            window.removeEventListener('keydown', handleGlobalKeyDown);
+            window.removeEventListener('contextmenu', handleGlobalContextMenu);
+        };
+    }, [isChatting]); // <<< Add isChatting dependency
+
     // --- Error Display Logic --- 
     // Combine potential errors from different sources for a single display point
     const displayError = connectionError || uiError || placementError || dropError;
@@ -248,6 +280,9 @@ function App() {
                       callSetSprintingReducer={callSetSprintingReducer}
                       isMinimapOpen={isMinimapOpen}
                       setIsMinimapOpen={setIsMinimapOpen}
+                      isChatting={isChatting} // Pass isChatting state
+                      setIsChatting={setIsChatting} // Pass isChatting setter
+                      messages={messages} // Pass messages map
                   />
                 // )
             )}
