@@ -32,6 +32,10 @@ mod crafting; // ADD: Crafting recipe definitions
 mod crafting_queue; // ADD: Crafting queue logic
 mod player_stats; // ADD: Player stat scheduling logic
 mod global_tick; // ADD: Global tick scheduling logic
+mod chat; // ADD: Chat module for message handling
+
+// Re-export chat types and reducers for use in other modules
+pub use chat::Message;
 
 // Import Table Traits needed in this module
 use crate::tree::tree as TreeTableTrait;
@@ -44,6 +48,7 @@ use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
 use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
 use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTableTrait;
 use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
+use crate::chat::message as MessageTableTrait; // Import the trait for Message table
 
 // Use struct names directly for trait aliases
 use crate::crafting::Recipe as RecipeTableTrait;
@@ -128,18 +133,6 @@ pub struct ClientViewport {
     max_x: f32,
     max_y: f32,
     last_update: Timestamp,
-}
-
-// --- ADDED BACK: Chat Table Definition ---
-#[spacetimedb::table(name = message, public)]
-#[derive(Clone, Debug)]
-pub struct Message {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    pub sender: Identity,
-    pub text: String,
-    pub sent: Timestamp, // Add timestamp for sorting
 }
 
 // --- Lifecycle Reducers ---
@@ -1184,30 +1177,5 @@ pub fn update_viewport(ctx: &ReducerContext, min_x: f32, min_y: f32, max_x: f32,
             }
         }
     }
-    Ok(())
-}
-
-// --- ADDED BACK: Chat Reducer ---
-#[spacetimedb::reducer]
-pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
-    if text.is_empty() {
-        return Err("Message cannot be empty.".to_string());
-    }
-    if text.len() > 100 { // Match client-side max length
-        return Err("Message too long (max 100 characters).".to_string());
-    }
-
-    let new_message = Message {
-        id: 0, // Auto-incremented
-        sender: ctx.sender,
-        text: text.clone(), // Clone text for logging after potential move
-        sent: ctx.timestamp,
-    };
-
-    log::info!("User {} sent message: {}", ctx.sender, text); // Log the message content
-    
-    // Use the database context handle to insert
-    ctx.db.message().insert(new_message);
-
     Ok(())
 } 

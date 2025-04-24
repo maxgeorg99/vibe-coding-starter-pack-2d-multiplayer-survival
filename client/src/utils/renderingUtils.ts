@@ -63,12 +63,15 @@ export const isPlayerHovered = (
   worldMouseY: number | null,
   player: SpacetimeDBPlayer
 ): boolean => {
+  // Skip hover detection if mouse coordinates are null
   if (worldMouseX === null || worldMouseY === null) return false;
+  
   const hoverDX = worldMouseX - player.positionX;
   const hoverDY = worldMouseY - player.positionY;
   const distSq = hoverDX * hoverDX + hoverDY * hoverDY;
-  // Use the local playerRadius constant
-  return distSq < (playerRadius * playerRadius);
+  const radiusSq = playerRadius * playerRadius;
+  
+  return distSq < radiusSq;
 };
 
 // Draws the styled name tag (Make exportable)
@@ -76,8 +79,11 @@ export const drawNameTag = (
   ctx: CanvasRenderingContext2D,
   player: SpacetimeDBPlayer,
   spriteTopY: number, // dy from drawPlayer calculation
-  spriteX: number // Added new parameter for shaken X position
+  spriteX: number, // Added new parameter for shaken X position
+  showLabel: boolean = true // Add parameter to control visibility
 ) => {
+  if (!showLabel) return; // Skip rendering if not showing label
+  
   ctx.font = '12px Arial';
   ctx.textAlign = 'center';
   const textWidth = ctx.measureText(player.username).width;
@@ -85,7 +91,7 @@ export const drawNameTag = (
   const tagHeight = 16;
   const tagWidth = textWidth + tagPadding * 2;
   const tagX = spriteX - tagWidth / 2;
-  const tagY = spriteTopY - tagHeight - 2;
+  const tagY = spriteTopY - tagHeight + 4;
 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   ctx.beginPath();
@@ -105,7 +111,8 @@ export const renderPlayer = (
   isHovered: boolean,
   currentAnimationFrame: number,
   nowMs: number, // <-- Added current time in ms
-  jumpOffsetY: number = 0
+  jumpOffsetY: number = 0,
+  shouldShowLabel: boolean = false // New parameter to control label visibility
 ) => {
   const { sx, sy } = getSpriteCoordinates(player, isMoving, currentAnimationFrame);
   
@@ -126,7 +133,7 @@ export const renderPlayer = (
   const drawHeight = gameConfig.spriteHeight * 2;
   const spriteBaseX = player.positionX - drawWidth / 2 + shakeX; // Includes shake if applicable
   const spriteBaseY = player.positionY - drawHeight / 2 + shakeY; // Includes shake if applicable
-  const spriteDrawY = spriteBaseY - jumpOffsetY; 
+  const spriteDrawY = spriteBaseY - jumpOffsetY;
 
   // --- Draw Shadow (Only if alive) --- 
   if (!player.isDead) { // Check !player.isDead
@@ -157,7 +164,7 @@ export const renderPlayer = (
   // --- End Draw Shadow ---
 
   // --- Draw Sprite --- 
-  ctx.save(); // Save context state before potential rotation
+  ctx.save();
   try {
     // Calculate center point for rotation (based on shaken position if alive)
     const centerX = spriteBaseX + drawWidth / 2;
@@ -196,11 +203,16 @@ export const renderPlayer = (
   }
   // --- End Draw Sprite ---
 
-  // Draw name tag if player is alive
+  // Draw name tag if player is alive and either currently hovered or in the tracked hover state
   if (!player.isDead) {
-    drawNameTag(ctx, player, spriteDrawY, spriteBaseX + drawWidth / 2);
+    // Show label based on the passed shouldShowLabel parameter
+    const showingDueToCurrentHover = isHovered;
+    const showingDueToPersistentState = shouldShowLabel;
+    const willShowLabel = showingDueToCurrentHover || showingDueToPersistentState;
+    
+    drawNameTag(ctx, player, spriteDrawY, spriteBaseX + drawWidth / 2, willShowLabel);
   }
-}; 
+};
 
 // --- NEW: Rendering Loop Functions ---
 
@@ -256,6 +268,8 @@ interface RenderYSortedEntitiesProps {
     worldMouseY: number | null;
     animationFrame: number;
     nowMs: number;
+    hoveredPlayerIds?: Set<string>; // Optional set of tracked hovered player IDs 
+    onPlayerHover?: (playerId: string, isHovered: boolean) => void; // Optional callback for hover state changes
 }
 
 /**
@@ -275,6 +289,8 @@ export const renderYSortedEntities = ({
     worldMouseY,
     animationFrame,
     nowMs,
+    hoveredPlayerIds = new Set(), // Default to empty set
+    onPlayerHover = () => {}, // Default to no-op function
 }: RenderYSortedEntitiesProps) => {
     ySortedEntities.forEach(entity => {
         if (isPlayer(entity)) {
@@ -306,7 +322,30 @@ export const renderYSortedEntities = ({
                    jumpOffset = (-4 * h / (d * d)) * x * (x - d);
                }
            }
-           const hovered = isPlayerHovered(worldMouseX, worldMouseY, entity);
+           
+           // Check if mouse is currently hovering over this player
+           const currentlyHovered = isPlayerHovered(worldMouseX, worldMouseY, entity);
+           const isPersistentlyHovered = hoveredPlayerIds.has(playerId);
+           
+           // Call the callback if:
+           // 1. Mouse is non-null and hover state changed
+           // 2. Mouse became null and player was previously hovered
+           if ((worldMouseX !== null && worldMouseY !== null && currentlyHovered !== isPersistentlyHovered) || 
+               (worldMouseX === null && worldMouseY === null && isPersistentlyHovered)) {
+             
+             // Extremely rare logging (1 in 1000 chance) to avoid console spam
+             if (Math.random() < 0.001) {
+               console.log(
+                 `[Hover] Player "${entity.username}": ` +
+                 `hover=${currentlyHovered ? "ON" : "OFF"}, tracked=${isPersistentlyHovered ? "ON" : "OFF"}`
+               );
+             }
+             
+             // When mouse is null, always set hovered to false
+             const newHoverState = (worldMouseX === null || worldMouseY === null) ? false : currentlyHovered;
+             onPlayerHover(playerId, newHoverState);
+           }
+           
            const heroImg = heroImageRef.current;
 
            // --- Get Equipment Data ---
@@ -328,16 +367,24 @@ export const renderYSortedEntities = ({
               }
               // Draw Player
               if (heroImg) {
-                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, nowMs, jumpOffset);
+                renderPlayer(
+                  ctx, entity, heroImg, isPlayerMoving, currentlyHovered, 
+                  animationFrame, nowMs, jumpOffset, 
+                  isPersistentlyHovered // Pass tracked hover state
+                );
               }
            } else { // direction === 'right' or 'down'
               // Draw Player FIRST
               if (heroImg) {
-                renderPlayer(ctx, entity, heroImg, isPlayerMoving, hovered, animationFrame, nowMs, jumpOffset);
+                renderPlayer(
+                  ctx, entity, heroImg, isPlayerMoving, currentlyHovered, 
+                  animationFrame, nowMs, jumpOffset, 
+                  isPersistentlyHovered // Pass tracked hover state
+                );
               }
               // Draw Item IN FRONT of Player
               if (canRenderItem && equipment) {
-                 renderEquippedItem(ctx, entity, equipment, itemDef!, itemImg!, nowMs, jumpOffset);
+                renderEquippedItem(ctx, entity, equipment, itemDef!, itemImg!, nowMs, jumpOffset);
               }
            }
            // --- End Conditional Rendering Order ---

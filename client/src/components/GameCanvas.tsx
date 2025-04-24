@@ -10,7 +10,8 @@ import {
   InventoryItem as SpacetimeDBInventoryItem,
   ItemDefinition as SpacetimeDBItemDefinition,
   DroppedItem as SpacetimeDBDroppedItem,
-  WoodenStorageBox as SpacetimeDBWoodenStorageBox
+  WoodenStorageBox as SpacetimeDBWoodenStorageBox,
+  Message as SpacetimeDBMessage
 } from '../generated';
 
 // --- Core Hooks ---
@@ -22,6 +23,7 @@ import { useDayNightCycle } from '../hooks/useDayNightCycle';
 import { useInteractionFinder } from '../hooks/useInteractionFinder';
 import { useGameLoop } from '../hooks/useGameLoop';
 import { useInputHandler } from '../hooks/useInputHandler';
+import { usePlayerHover } from '../hooks/usePlayerHover';
 
 // --- Rendering Utilities ---
 import { renderWorldBackground } from '../utils/worldRenderingUtils';
@@ -75,6 +77,7 @@ interface GameCanvasProps {
   isMinimapOpen: boolean;
   setIsMinimapOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isChatting: boolean;
+  messages: Map<string, SpacetimeDBMessage>;
 }
 
 /**
@@ -107,6 +110,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   isMinimapOpen,
   setIsMinimapOpen,
   isChatting,
+  messages,
 }) => {
 
   // --- Refs ---
@@ -146,7 +150,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // --- UI State ---
   const [isMouseOverMinimap ] = useState(false);
-
+  
+  // Replace inline hover implementation with hook
+  const { hoveredPlayerIds, handlePlayerHover } = usePlayerHover();
+  
   // --- Derived State ---
   const respawnTimestampMs = useMemo(() => {
     if (localPlayer?.isDead && localPlayer.respawnAt) {
@@ -154,6 +161,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     return 0;
   }, [localPlayer?.isDead, localPlayer?.respawnAt]);
+
   // --- Add logging for dead player state ---
   useEffect(() => {
     if (localPlayer?.isDead) {
@@ -329,16 +337,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const currentCanvasWidth = canvasSize.width;
     const currentCanvasHeight = canvasSize.height;
 
-    // --- LOGGING: Camera and Viewport --- 
-    // console.log(`[Camera] OffsetX: ${cameraOffsetX.toFixed(2)}, OffsetY: ${cameraOffsetY.toFixed(2)}`);
-    // const currentViewBounds = getViewportBounds(); // Get current bounds for logging
-    // console.log(`[Viewport] MinX: ${currentViewBounds.viewMinX.toFixed(2)}, MaxX: ${currentViewBounds.viewMaxX.toFixed(2)}, MinY: ${currentViewBounds.viewMinY.toFixed(2)}, MaxY: ${currentViewBounds.viewMaxY.toFixed(2)}`);
-    // --- END LOGGING ---
-
-    // --- LOGGING: Entity counts before rendering ---
-    // console.log(`[Render Counts] Ground: ${groundItems.length}, Y-Sorted: ${ySortedEntities.length} (Players: ${visiblePlayers.length}, Trees: ${visibleTrees.length}, Stones: ${visibleStones.length}, Boxes: ${visibleWoodenStorageBoxes.length}, Mushrooms: ${visibleMushrooms.length}, Campfires: ${visibleCampfires.length}, Dropped Items: ${visibleDroppedItems.length})`);
-    // --- END LOGGING ---
-
     // --- Rendering ---
     ctx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight);
     ctx.fillStyle = '#000000';
@@ -364,7 +362,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     renderYSortedEntities({
         ctx, ySortedEntities, heroImageRef, lastPositionsRef, activeEquipments,
         itemDefinitions, itemImagesRef, worldMouseX: currentWorldMouseX, worldMouseY: currentWorldMouseY,
-        animationFrame, nowMs: now_ms
+        animationFrame, nowMs: now_ms, hoveredPlayerIds, onPlayerHover: handlePlayerHover
     });
 
     renderInteractionLabels({
@@ -444,7 +442,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       closestInteractableMushroomId, closestInteractableCampfireId,
       closestInteractableDroppedItemId, closestInteractableBoxId, isClosestInteractableBoxEmpty,
       interactionProgress, isMinimapOpen, isMouseOverMinimap, lastPositionsRef,
-      isChatting,
+      isChatting, hoveredPlayerIds, handlePlayerHover, messages // Added messages
   ]);
 
   const gameLoopCallback = useCallback(() => {

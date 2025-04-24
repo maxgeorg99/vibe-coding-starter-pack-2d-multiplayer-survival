@@ -17,6 +17,7 @@ import PlayerUI from './PlayerUI';
 import Hotbar from './Hotbar';
 import DayNightCycleTracker from './DayNightCycleTracker';
 import Chat from './Chat';
+import SpeechBubbleManager from './SpeechBubbleManager';
 
 // Import types used by props
 import { 
@@ -40,6 +41,9 @@ import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import { PlacementItemInfo, PlacementActions } from '../hooks/usePlacementManager';
 import { InteractionTarget } from '../hooks/useInteractionManager';
 import { DraggedItemInfo } from '../types/dragDropTypes';
+
+// Import useSpeechBubbleManager hook
+import { useSpeechBubbleManager } from '../hooks/useSpeechBubbleManager';
 
 // Define props required by GameScreen and its children
 interface GameScreenProps {
@@ -107,6 +111,12 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
         setIsChatting
     } = props;
 
+    // Find local player for viewport calculations
+    const localPlayer = localPlayerId ? players.get(localPlayerId) : undefined;
+    
+    // Use our custom hook to get camera offsets
+    const { cameraOffsetX, cameraOffsetY } = useSpeechBubbleManager(localPlayer);
+
     return (
         <div className="game-container">
             <GameCanvas
@@ -133,7 +143,18 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
                 isMinimapOpen={isMinimapOpen}
                 setIsMinimapOpen={setIsMinimapOpen}
                 isChatting={isChatting}
+                messages={messages}
             />
+            
+            {/* Use our camera offsets for SpeechBubbleManager */}
+            <SpeechBubbleManager
+                messages={messages}
+                players={players}
+                cameraOffsetX={cameraOffsetX}
+                cameraOffsetY={cameraOffsetY}
+                localPlayerId={localPlayerId}
+            />
+            
             <PlayerUI
                 identity={playerIdentity}
                 players={players}
