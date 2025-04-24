@@ -34,8 +34,6 @@ import {
 // Import and reexport all reducer arg types
 import { AddFuelToCampfire } from "./add_fuel_to_campfire_reducer.ts";
 export { AddFuelToCampfire };
-import { AutoAddWoodToCampfire } from "./auto_add_wood_to_campfire_reducer.ts";
-export { AutoAddWoodToCampfire };
 import { AutoRemoveFuelFromCampfire } from "./auto_remove_fuel_from_campfire_reducer.ts";
 export { AutoRemoveFuelFromCampfire };
 import { CancelCraftingItem } from "./cancel_crafting_item_reducer.ts";
@@ -344,10 +342,6 @@ const REMOTE_MODULE = {
       reducerName: "add_fuel_to_campfire",
       argsType: AddFuelToCampfire.getTypeScriptAlgebraicType(),
     },
-    auto_add_wood_to_campfire: {
-      reducerName: "auto_add_wood_to_campfire",
-      argsType: AutoAddWoodToCampfire.getTypeScriptAlgebraicType(),
-    },
     auto_remove_fuel_from_campfire: {
       reducerName: "auto_remove_fuel_from_campfire",
       argsType: AutoRemoveFuelFromCampfire.getTypeScriptAlgebraicType(),
@@ -604,7 +598,6 @@ const REMOTE_MODULE = {
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
 | { name: "AddFuelToCampfire", args: AddFuelToCampfire }
-| { name: "AutoAddWoodToCampfire", args: AutoAddWoodToCampfire }
 | { name: "AutoRemoveFuelFromCampfire", args: AutoRemoveFuelFromCampfire }
 | { name: "CancelCraftingItem", args: CancelCraftingItem }
 | { name: "CheckCampfireFuelConsumption", args: CheckCampfireFuelConsumption }
@@ -681,22 +674,6 @@ export class RemoteReducers {
 
   removeOnAddFuelToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, targetSlotIndex: number, itemInstanceId: bigint) => void) {
     this.connection.offReducer("add_fuel_to_campfire", callback);
-  }
-
-  autoAddWoodToCampfire(campfireId: number, itemInstanceId: bigint) {
-    const __args = { campfireId, itemInstanceId };
-    let __writer = new BinaryWriter(1024);
-    AutoAddWoodToCampfire.getTypeScriptAlgebraicType().serialize(__writer, __args);
-    let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("auto_add_wood_to_campfire", __argsBuffer, this.setCallReducerFlags.autoAddWoodToCampfireFlags);
-  }
-
-  onAutoAddWoodToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
-    this.connection.onReducer("auto_add_wood_to_campfire", callback);
-  }
-
-  removeOnAutoAddWoodToCampfire(callback: (ctx: ReducerEventContext, campfireId: number, itemInstanceId: bigint) => void) {
-    this.connection.offReducer("auto_add_wood_to_campfire", callback);
   }
 
   autoRemoveFuelFromCampfire(campfireId: number, sourceSlotIndex: number) {
@@ -1569,11 +1546,6 @@ export class SetReducerFlags {
   addFuelToCampfireFlags: CallReducerFlags = 'FullUpdate';
   addFuelToCampfire(flags: CallReducerFlags) {
     this.addFuelToCampfireFlags = flags;
-  }
-
-  autoAddWoodToCampfireFlags: CallReducerFlags = 'FullUpdate';
-  autoAddWoodToCampfire(flags: CallReducerFlags) {
-    this.autoAddWoodToCampfireFlags = flags;
   }
 
   autoRemoveFuelFromCampfireFlags: CallReducerFlags = 'FullUpdate';

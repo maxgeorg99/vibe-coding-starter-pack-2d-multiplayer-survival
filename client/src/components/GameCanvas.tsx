@@ -151,6 +151,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     return 0;
   }, [localPlayer?.isDead, localPlayer?.respawnAt]);
+  // --- Add logging for dead player state ---
+  useEffect(() => {
+    if (localPlayer?.isDead) {
+      console.log('[GameCanvas] Local player is dead. Data:', {
+        isDead: localPlayer.isDead,
+        respawnAt: localPlayer.respawnAt,
+        calculatedRespawnTimestampMs: respawnTimestampMs,
+        connectionExists: !!connection,
+      });
+    }
+  }, [localPlayer?.isDead, localPlayer?.respawnAt, respawnTimestampMs, connection]);
+  // --- End logging ---
   const cursorStyle = placementInfo ? 'cell' : 'crosshair';
 
   // --- Effects ---
@@ -414,7 +426,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Minimap (only if open)
     if (isMinimapOpen) {
         // Pass the original player map, minimap might show players outside main view
-        drawMinimapOntoCanvas({ ctx, players, localPlayerId, canvasWidth: currentCanvasWidth, canvasHeight: currentCanvasHeight, isMouseOverMinimap });
+        drawMinimapOntoCanvas({ ctx, players, trees, stones, localPlayerId, canvasWidth: currentCanvasWidth, canvasHeight: currentCanvasHeight, isMouseOverMinimap });
     }
   }, [
       // Dependencies: Include new helper functions and filtered lists' sources
@@ -442,7 +454,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       console.error("Connection or reducers not available for respawn request.");
       return;
     }
-    // console.log("Requesting respawn via generated function...");
+    // --- Add Logging --- 
+    console.log('[GameCanvas] Calling connection.reducers.requestRespawn()');
+    // --- End Logging ---
     try {
       connection.reducers.requestRespawn();
     } catch (err) {
@@ -452,12 +466,25 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   return (
     <>
-      {localPlayer?.isDead && respawnTimestampMs > 0 && connection && (
-        <DeathScreen
-          respawnAt={respawnTimestampMs}
-          onRespawn={handleRespawnRequest}
-        />
-      )}
+      {/* --- Add Logging for render condition --- */}
+      {(() => {
+        const shouldRenderDeathScreen = !!(localPlayer?.isDead && respawnTimestampMs > 0 && connection);
+        if (localPlayer?.isDead) { // Log specifically when dead, regardless of other conditions
+          console.log('[GameCanvas] DeathScreen render check:', {
+            isDead: localPlayer.isDead,
+            respawnTimestampMs,
+            connectionExists: !!connection,
+            shouldRender: shouldRenderDeathScreen
+          });
+        }
+        return shouldRenderDeathScreen ? (
+          <DeathScreen
+            respawnAt={respawnTimestampMs}
+            onRespawn={handleRespawnRequest}
+          />
+        ) : null;
+      })()}
+      {/* --- End Logging --- */}
 
       <canvas
         ref={canvasRef}

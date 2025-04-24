@@ -36,6 +36,7 @@ export type DroppedItem = {
   quantity: number,
   posX: number,
   posY: number,
+  chunkIndex: number,
   createdAt: Timestamp,
 };
 
@@ -54,6 +55,7 @@ export namespace DroppedItem {
       new ProductTypeElement("quantity", AlgebraicType.createU32Type()),
       new ProductTypeElement("posX", AlgebraicType.createF32Type()),
       new ProductTypeElement("posY", AlgebraicType.createF32Type()),
+      new ProductTypeElement("chunkIndex", AlgebraicType.createU32Type()),
       new ProductTypeElement("createdAt", AlgebraicType.createTimestampType()),
     ]);
   }

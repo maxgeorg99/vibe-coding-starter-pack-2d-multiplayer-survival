@@ -133,26 +133,42 @@ function App() {
 
     // --- Effect to Sync App Connection State with Table Hook Registration State ---
     useEffect(() => {
-        // console.log(`[App Sync Effect] Running. localPlayerRegistered: ${localPlayerRegistered}, appIsConnected: ${appIsConnected}, isRegistering: ${isRegistering}`);
+        // console.log(`[App Sync Revert] Running. localPlayerRegistered: ${localPlayerRegistered}, appIsConnected: ${appIsConnected}, isRegistering: ${isRegistering}, hookIsLoading: ${hookIsLoading}`);
+
+        // Reverted Logic: Check registration status first
         if (localPlayerRegistered) {
+            // If registered and not connected, connect.
             if (!appIsConnected) {
-                // console.log("[App Sync Effect] Setting appIsConnected = true");
+                // console.log("[App Sync Revert] Player registered, setting appIsConnected = true");
                 setAppIsConnected(true);
             }
-            if (isRegistering) setIsRegistering(false); // Stop registering if registration confirmed
-        } else {
-            if (appIsConnected) { // Only change if previously connected
-                // console.log("[App Sync Effect] Local player unregistered, setting app disconnected.");
-                setAppIsConnected(false);
-                // Player is gone, ensure registering state is also false
-                if (isRegistering) setIsRegistering(false);
-                // When disconnected/unregistered, clear the viewport state
-                setCurrentViewport(null);
-                lastSentViewportCenterRef.current = null;
+            // If registered and currently in the registering process, mark registering as done.
+            if (isRegistering) {
+                // console.log("[App Sync Revert] Player registered, setting isRegistering = false");
+                setIsRegistering(false);
             }
+        } else {
+            // Player is not registered according to the tables hook.
+            // If we *were* connected, this means a disconnect or server cleanup.
+            // We should transition back to the login screen.
+            // *** However, this is where the original bug was - a dead player might also cause `localPlayerRegistered` to become false. ***
+            // For now, let's comment out the disconnection logic here and rely on the GameScreen to handle the 'dead' state.
+            // A more robust solution would involve checking the actual connection status from useSpacetimeConnection.
+            /*
+            if (appIsConnected) { // Only change if previously connected
+                console.log("[App Sync Revert] Local player unregistered, setting app disconnected. (COMMENTED OUT)");
+                // setAppIsConnected(false);
+                // if (isRegistering) setIsRegistering(false);
+                // setCurrentViewport(null);
+                // lastSentViewportCenterRef.current = null;
+            }
+            */
         }
-        // Depend only on the flag from the hook and the app's own states
-    }, [localPlayerRegistered, appIsConnected, isRegistering]);
+
+    // Keep dependencies minimal: only trigger when registration status changes or registering state changes.
+    // hookIsLoading might not be necessary if the core connection logic handles its own loading state internally.
+    // Let's remove hookIsLoading for now to simplify.
+    }, [localPlayerRegistered, isRegistering]); // Removed appIsConnected and hookIsLoading
 
     // --- Action Handlers --- 
     const handleAttemptRegisterPlayer = useCallback(() => {
@@ -197,8 +213,8 @@ function App() {
                 />
             ) : (
                 // --- Render Game Screen Component --- 
-                // Only render GameScreen if viewport is calculated (ensures tables hook gets initial bounds)
-                currentViewport && (
+                // Only render GameScreen if viewport is calculated (REMOVING THIS CONDITION)
+                // currentViewport && (
                   <GameScreen 
                       // Pass all necessary state and actions down as props
                       players={players}
@@ -233,7 +249,7 @@ function App() {
                       isMinimapOpen={isMinimapOpen}
                       setIsMinimapOpen={setIsMinimapOpen}
                   />
-                )
+                // )
             )}
         </div>
     );

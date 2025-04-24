@@ -354,9 +354,43 @@ export const useSpacetimeTables = ({
                             })
                             .subscribe(mushroomQuery)
                     );
+
+                    // --- ADDED: Chunked Campfire Subscription ---
+                    const campfireQuery = `SELECT * FROM campfire WHERE chunk_index = ${chunkIndex}`;
+                    newSpatialSubs.push(
+                        connection.subscriptionBuilder()
+                            .onError((err) => { 
+                                console.error(`[useSpacetimeTables] Spatial CAMPFIRE subscription error (Chunk ${chunkIndex}):`, err);
+                                console.error("[useSpacetimeTables] Failed query was:", campfireQuery);
+                                // Consider adding to completedResourceSubs if tracking these separately
+                            })
+                            .subscribe(campfireQuery)
+                    );
+
+                    // --- ADDED: Chunked WoodenStorageBox Subscription ---
+                    const boxQuery = `SELECT * FROM wooden_storage_box WHERE chunk_index = ${chunkIndex}`;
+                    newSpatialSubs.push(
+                        connection.subscriptionBuilder()
+                            .onError((err) => { 
+                                console.error(`[useSpacetimeTables] Spatial WOODEN_BOX subscription error (Chunk ${chunkIndex}):`, err);
+                                console.error("[useSpacetimeTables] Failed query was:", boxQuery);
+                            })
+                            .subscribe(boxQuery)
+                    );
+
+                    // --- ADDED: Chunked DroppedItem Subscription ---
+                    const droppedItemQuery = `SELECT * FROM dropped_item WHERE chunk_index = ${chunkIndex}`;
+                    newSpatialSubs.push(
+                        connection.subscriptionBuilder()
+                            .onError((err) => { 
+                                console.error(`[useSpacetimeTables] Spatial DROPPED_ITEM subscription error (Chunk ${chunkIndex}):`, err);
+                                console.error("[useSpacetimeTables] Failed query was:", droppedItemQuery);
+                            })
+                            .subscribe(droppedItemQuery)
+                    );
                 });
                 
-                // Player subscription (not currently chunk-indexed)
+                // Player subscription (KEEPING BROAD for now - Phase 2 step 6 is separate)
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
                         // .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial PLAYER subscription applied. Initial rows: ${ctx.db.player.count()}`))
@@ -364,23 +398,28 @@ export const useSpacetimeTables = ({
                         .subscribe(`SELECT * FROM player`)
                 );
                 
-                // Campfire subscription (not currently chunk-indexed)
+                // --- REMOVED: Broad Campfire subscription ---
+                /*
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
                         // .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial CAMPFIRE subscription applied. Initial rows: ${ctx.db.campfire.count()}`))
                         .onError((err) => console.error("[useSpacetimeTables] Spatial CAMPFIRE subscription error:", err))
                         .subscribe(`SELECT * FROM campfire`)
                 );
+                */
                 
-                // Dropped item subscription (not currently chunk-indexed)
+                // --- REMOVED: Broad Dropped item subscription ---
+                /*
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
                         // .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial DROPPED_ITEM subscription applied. Initial rows: ${ctx.db.droppedItem.count()}`))
                         .onError((err) => console.error("[useSpacetimeTables] Spatial DROPPED_ITEM subscription error:", err))
                         .subscribe(`SELECT * FROM dropped_item`)
                 );
+                */
                 
-                // Wooden storage box subscription (not currently chunk-indexed)
+                // --- REMOVED: Broad Wooden storage box subscription ---
+                /*
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
                         .onApplied((ctx) => {
@@ -399,6 +438,7 @@ export const useSpacetimeTables = ({
                         })
                         .subscribe(`SELECT * FROM wooden_storage_box`)
                 );
+                */
                 
                 // Store the new subscription handles
                 spatialHandlesRef.current = newSpatialSubs;

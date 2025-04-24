@@ -14,6 +14,7 @@ use crate::items::{add_item_to_player_inventory, InventoryItem, ItemDefinition};
 // Corrected imports for Player and PLAYER_RADIUS from crate root
 use crate::{Player, PLAYER_RADIUS}; 
 use crate::utils::get_distance_squared; // Assuming a utility function for distance
+use crate::environment::calculate_chunk_index; // Assuming helper is here or in utils
 
 // Define the table for items dropped in the world
 #[spacetimedb::table(name = dropped_item, public)]
@@ -26,6 +27,7 @@ pub struct DroppedItem {
     pub quantity: u32,         // How many of this item are in the sack
     pub pos_x: f32,            // World X position
     pub pos_y: f32,            // World Y position
+    pub chunk_index: u32,      // <<< ADDED chunk_index
     pub created_at: Timestamp, // When the item was dropped (for potential cleanup)
 }
 
@@ -157,12 +159,16 @@ pub(crate) fn create_dropped_item_entity(
     pos_x: f32,
     pos_y: f32,
 ) -> Result<(), String> { // Changed return type to Result<(), String> as we don't need the entity back
+    // --- ADD: Calculate chunk index ---
+    let chunk_idx = calculate_chunk_index(pos_x, pos_y);
+    // --- END ADD ---
      let new_dropped_item = DroppedItem {
         id: 0, // Auto-incremented
         item_def_id,
         quantity,
         pos_x,
         pos_y,
+        chunk_index: chunk_idx, // <<< SET chunk_index
         created_at: ctx.timestamp,
     };
 

@@ -52,7 +52,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     left: 0,
     width: '100%',
     height: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(255, 0, 0, 0.8)', // <<< TEMPORARY: Bright red background for debugging
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',

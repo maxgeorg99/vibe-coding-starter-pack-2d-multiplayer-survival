@@ -1,6 +1,7 @@
 use spacetimedb::{Identity, Timestamp, ReducerContext, Table};
 use log;
 use std::time::Duration;
+use crate::environment::calculate_chunk_index; // Make sure this helper is available
 
 // Declare the module
 mod environment;
@@ -115,15 +116,6 @@ pub struct Player {
     pub respawn_at: Timestamp,
     pub last_hit_time: Option<Timestamp>,
 }
-
-// --- TEMPORARILY COMMENT OUT Player Visibility Filter --- 
-/*
-#[spacetimedb::client_visibility_filter]
-const fn filter_player_self(ctx: ReducerContext, _table: &Player, row: &Player) -> bool { 
-    ctx.sender == row.identity
-}
-*/
-// We will later add spatial visibility for other players.
 
 // --- NEW: Define ClientViewport Table ---
 #[spacetimedb::table(name = client_viewport)]
@@ -509,11 +501,16 @@ pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32,
     // Use constant from campfire module
     let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS).into();
 
+    // --- ADD: Calculate chunk index ---
+    let chunk_idx = calculate_chunk_index(world_x, world_y);
+    // --- END ADD ---
+
     // Initialize all fields explicitly
     let new_campfire = crate::campfire::Campfire {
         id: 0, // Auto-incremented
         pos_x: world_x,
         pos_y: world_y,
+        chunk_index: chunk_idx, // <<< SET chunk_index HERE
         placed_by: sender_id,
         placed_at: ctx.timestamp,
         is_burning: true, // Start burning

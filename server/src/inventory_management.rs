@@ -1,12 +1,18 @@
+/******************************************************************************
+ *                                                                            *
+ * Provides generic traits and handler functions for managing items within    *
+ * various container types. This module abstracts common inventory operations *
+ * like moving, splitting, and merging items, allowing specific container     *
+ * modules (e.g., campfire, wooden_storage_box) to reuse this logic.          *
+ *                                                                            *
+ ******************************************************************************/
+
 use spacetimedb::{ReducerContext, Identity, Table};
 use log;
 
 // Import necessary types and Table Traits
 use crate::items::{InventoryItem, ItemDefinition, calculate_merge_result, add_item_to_player_inventory};
 use crate::items::{inventory_item as InventoryItemTableTrait, item_definition as ItemDefinitionTableTrait};
-// Remove specific container imports
-// use crate::wooden_storage_box::{WoodenStorageBox, NUM_BOX_SLOTS};
-// use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
 
 // --- Generic Item Container Trait --- 
 

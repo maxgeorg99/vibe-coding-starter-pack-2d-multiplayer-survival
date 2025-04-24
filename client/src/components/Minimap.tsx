@@ -1,5 +1,5 @@
 import { gameConfig } from '../config/gameConfig';
-import { Player as SpacetimeDBPlayer } from '../generated';
+import { Player as SpacetimeDBPlayer, Tree, Stone as SpacetimeDBStone } from '../generated';
 
 // --- Calculate Proportional Dimensions ---
 const worldPixelWidth = gameConfig.worldWidth * gameConfig.tileSize;
@@ -17,6 +17,10 @@ const MINIMAP_BG_COLOR_HOVER = 'rgba(60, 60, 80, 0.2)';
 const MINIMAP_BORDER_COLOR = '#a0a0c0';
 const PLAYER_DOT_SIZE = 3;
 const LOCAL_PLAYER_DOT_COLOR = '#FFFF00';
+// Add colors for trees and rocks
+const TREE_DOT_COLOR = '#008000'; // Green
+const ROCK_DOT_COLOR = '#808080'; // Grey
+const ENTITY_DOT_SIZE = 2; // Slightly smaller dot size for world objects
 // Unused constants removed
 const MINIMAP_WORLD_BG_COLOR = 'rgba(52, 88, 52, 0.2)';
 
@@ -29,6 +33,8 @@ const GRID_TEXT_FONT = '10px Arial';
 interface MinimapProps {
   ctx: CanvasRenderingContext2D;
   players: Map<string, SpacetimeDBPlayer>; // Map of player identities to player data
+  trees: Map<string, Tree>; // Map of tree identities/keys to tree data
+  stones: Map<string, SpacetimeDBStone>; // Add stones prop
   localPlayerId?: string; // Optional ID of the player viewing the map
   canvasWidth: number; // Width of the main game canvas
   canvasHeight: number; // Height of the main game canvas
@@ -41,6 +47,8 @@ interface MinimapProps {
 export function drawMinimapOntoCanvas({
   ctx,
   players,
+  trees,
+  stones,
   localPlayerId,
   canvasWidth,
   canvasHeight,
@@ -147,6 +155,46 @@ export function drawMinimapOntoCanvas({
 
   // --- End Grid Drawing ---
 
+  // --- Draw Trees ---
+  ctx.fillStyle = TREE_DOT_COLOR;
+  trees.forEach(tree => {
+      // Use posX/posY based on GameCanvas.tsx usage
+      const treeMinimapX = drawOffsetX + tree.posX * uniformScale;
+      const treeMinimapY = drawOffsetY + tree.posY * uniformScale;
+
+      // Draw only if within minimap bounds
+      if (treeMinimapX >= minimapX && treeMinimapX <= minimapX + minimapWidth &&
+          treeMinimapY >= minimapY && treeMinimapY <= minimapY + minimapHeight) 
+      {
+        ctx.fillRect(
+          treeMinimapX - ENTITY_DOT_SIZE / 2,
+          treeMinimapY - ENTITY_DOT_SIZE / 2,
+          ENTITY_DOT_SIZE,
+          ENTITY_DOT_SIZE
+        );
+      }
+  });
+
+  // --- Draw Stones ---
+  ctx.fillStyle = ROCK_DOT_COLOR; // Use ROCK_DOT_COLOR
+  stones.forEach(stone => { // Use stones prop (type SpacetimeDBStone)
+      // Use posX/posY based on GameCanvas.tsx usage
+      const stoneMinimapX = drawOffsetX + stone.posX * uniformScale;
+      const stoneMinimapY = drawOffsetY + stone.posY * uniformScale;
+
+      // Draw only if within minimap bounds
+      if (stoneMinimapX >= minimapX && stoneMinimapX <= minimapX + minimapWidth &&
+          stoneMinimapY >= minimapY && stoneMinimapY <= minimapY + minimapHeight) 
+      {
+        ctx.fillRect(
+          stoneMinimapX - ENTITY_DOT_SIZE / 2,
+          stoneMinimapY - ENTITY_DOT_SIZE / 2,
+          ENTITY_DOT_SIZE,
+          ENTITY_DOT_SIZE
+        );
+      }
+  });
+
   // --- Draw Local Player --- 
   players.forEach(player => {
     const isLocal = player.identity.toHexString() === localPlayerId;
@@ -173,7 +221,7 @@ export function drawMinimapOntoCanvas({
   });
 
   // Restore context after drawing clipped content
-  ctx.restore(); 
+  ctx.restore(); // Re-enable restore
 }
 
 // Export the calculated dimensions for potential use elsewhere (e.g., mouse interaction checks)
