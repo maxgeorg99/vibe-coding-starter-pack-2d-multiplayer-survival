@@ -97,21 +97,21 @@ export const useSpacetimeTables = ({
     useEffect(() => {
         // --- Callback Registration & Initial Subscriptions (Only Once Per Connection Instance) ---
         if (connection && !callbacksRegisteredRef.current) {
-            console.log("[useSpacetimeTables] Connection available. Registering callbacks & initial subs..."); // Log combined action
+            // console.log("[useSpacetimeTables] Connection available. Registering callbacks & initial subs..."); // Log combined action
 
             // --- Define Callbacks --- (Keep definitions here)
              const handlePlayerInsert = (ctx: any, player: SpacetimeDB.Player) => {
-                 console.log('[useSpacetimeTables] handlePlayerInsert CALLED for:', player.username, player.identity.toHexString());
+                 // console.log('[useSpacetimeTables] handlePlayerInsert CALLED for:', player.username, player.identity.toHexString());
                  setPlayers(prev => new Map(prev).set(player.identity.toHexString(), player));
                  if (connection.identity) {
                     const isLocalPlayer = player.identity.isEqual(connection.identity);
-                    console.log(`[useSpacetimeTables] Comparing identities: Player=${player.identity.toHexString()}, Connection=${connection.identity.toHexString()}, Match=${isLocalPlayer}`);
+                    // console.log(`[useSpacetimeTables] Comparing identities: Player=${player.identity.toHexString()}, Connection=${connection.identity.toHexString()}, Match=${isLocalPlayer}`);
                     if (isLocalPlayer && !localPlayerRegistered) {
-                         console.log('[useSpacetimeTables] Local player matched! Setting localPlayerRegistered = true.');
+                         // console.log('[useSpacetimeTables] Local player matched! Setting localPlayerRegistered = true.');
                          setLocalPlayerRegistered(true);
                      }
                  } else {
-                    console.warn('[useSpacetimeTables] handlePlayerInsert: connection.identity is null during check?');
+                    // console.warn('[useSpacetimeTables] handlePlayerInsert: connection.identity is null during check?');
                  }
              };
             // ... (Keep ALL other handle... callback definitions here) ...
@@ -125,7 +125,7 @@ export const useSpacetimeTables = ({
                  }
              };
              const handlePlayerDelete = (ctx: any, deletedPlayer: SpacetimeDB.Player) => {
-                 console.log('[useSpacetimeTables] Player Deleted:', deletedPlayer.username, deletedPlayer.identity.toHexString());
+                 // console.log('[useSpacetimeTables] Player Deleted:', deletedPlayer.username, deletedPlayer.identity.toHexString());
                  setPlayers(prev => { const newMap = new Map(prev); newMap.delete(deletedPlayer.identity.toHexString()); return newMap; });
                  if (connection.identity && deletedPlayer.identity.isEqual(connection.identity)) {
                      if (localPlayerRegistered) {
@@ -169,7 +169,7 @@ export const useSpacetimeTables = ({
              const handleCampfireInsert = (ctx: any, campfire: SpacetimeDB.Campfire) => {
                  setCampfires(prev => new Map(prev).set(campfire.id.toString(), campfire));
                  if (connection.identity && campfire.placedBy.isEqual(connection.identity)) {
-                    console.log("[useSpacetimeTables handleCampfireInsert] Calling cancelPlacement via ref...");
+                    // console.log("[useSpacetimeTables handleCampfireInsert] Calling cancelPlacement via ref...");
                     cancelPlacementRef.current();
                 }
              };
@@ -209,7 +209,7 @@ export const useSpacetimeTables = ({
              const handleWoodenStorageBoxInsert = (ctx: any, box: SpacetimeDB.WoodenStorageBox) => {
                  setWoodenStorageBoxes(prev => new Map(prev).set(box.id.toString(), box));
                  if (connection.identity && box.placedBy.isEqual(connection.identity)) {
-                    console.log("[useSpacetimeTables handleWoodenStorageBoxInsert] Calling cancelPlacement via ref...");
+                    // console.log("[useSpacetimeTables handleWoodenStorageBoxInsert] Calling cancelPlacement via ref...");
                     cancelPlacementRef.current();
                  }
              };
@@ -244,25 +244,25 @@ export const useSpacetimeTables = ({
             nonSpatialHandlesRef.current.forEach(sub => safeUnsubscribe(sub)); 
             nonSpatialHandlesRef.current = []; // Clear after unsubscribing
             
-            console.log("[useSpacetimeTables] Setting up initial non-spatial subscriptions.");
+            // console.log("[useSpacetimeTables] Setting up initial non-spatial subscriptions.");
             const currentInitialSubs = [
                  connection.subscriptionBuilder()
-                    .onApplied(() => console.log("[useSpacetimeTables] Non-spatial PLAYER subscription applied.")) 
+                    // .onApplied(() => console.log("[useSpacetimeTables] Non-spatial PLAYER subscription applied.")) 
                     .onError((err) => console.error("[useSpacetimeTables] Non-spatial PLAYER subscription error:", err)) 
                     .subscribe('SELECT * FROM player'), // Fixed: lowercase table name
                  connection.subscriptionBuilder().subscribe('SELECT * FROM item_definition'), // Fixed: lowercase snake_case
                  connection.subscriptionBuilder().subscribe('SELECT * FROM recipe'), // Fixed: lowercase
                  connection.subscriptionBuilder().subscribe('SELECT * FROM world_state'), // Fixed: lowercase snake_case
                  connection.subscriptionBuilder()
-                    .onApplied(() => console.log("[useSpacetimeTables] Non-spatial INVENTORY subscription applied.")) 
+                    // .onApplied(() => console.log("[useSpacetimeTables] Non-spatial INVENTORY subscription applied.")) 
                     .onError((err) => console.error("[useSpacetimeTables] Non-spatial INVENTORY subscription error:", err))
                     .subscribe('SELECT * FROM inventory_item'), // Fixed: lowercase snake_case
                  connection.subscriptionBuilder()
-                    .onApplied(() => console.log("[useSpacetimeTables] Non-spatial EQUIPMENT subscription applied.")) 
+                    // .onApplied(() => console.log("[useSpacetimeTables] Non-spatial EQUIPMENT subscription applied.")) 
                     .onError((err) => console.error("[useSpacetimeTables] Non-spatial EQUIPMENT subscription error:", err))
                     .subscribe('SELECT * FROM active_equipment'), // Fixed: lowercase snake_case
                  connection.subscriptionBuilder()
-                    .onApplied(() => console.log("[useSpacetimeTables] Non-spatial CRAFTING subscription applied.")) 
+                    // .onApplied(() => console.log("[useSpacetimeTables] Non-spatial CRAFTING subscription applied.")) 
                     .onError((err) => console.error("[useSpacetimeTables] Non-spatial CRAFTING subscription error:", err))
                     .subscribe('SELECT * FROM crafting_queue_item'), // Fixed: lowercase snake_case
             ];
@@ -275,7 +275,7 @@ export const useSpacetimeTables = ({
             const newChunkIndices = getChunkIndicesForViewport(viewport);
             
             if (newChunkIndices.length === 0) {
-                console.log("[useSpacetimeTables] No chunk indices in viewport range. Skipping spatial subscriptions.");
+                // console.log("[useSpacetimeTables] No chunk indices in viewport range. Skipping spatial subscriptions.");
                 return;
             }
             
@@ -285,14 +285,14 @@ export const useSpacetimeTables = ({
             if (!chunksChanged && spatialHandlesRef.current.length > 0) {
                 // If chunks haven't changed and we already have subscriptions, skip re-subscribing
                 // This prevents flickering and reduces unnecessary subscription churn
-                console.log(`[useSpacetimeTables] Viewport update detected but chunk set unchanged. Skipping re-subscription.`);
+                // console.log(`[useSpacetimeTables] Viewport update detected but chunk set unchanged. Skipping re-subscription.`);
                 return;
             }
             
             // Check if we already have active spatial subscriptions to avoid duplicate subscriptions
             // This helps prevent multiple sets of subscription callbacks from running in parallel
             if (spatialSubscriptionsActiveRef.current) {
-                console.log("[useSpacetimeTables] Spatial subscriptions already in progress. Skipping.");
+                // console.log("[useSpacetimeTables] Spatial subscriptions already in progress. Skipping.");
                 return;
             }
             
@@ -305,7 +305,7 @@ export const useSpacetimeTables = ({
             spatialHandlesRef.current = []; // Clear after unsubscribing
             
             const indicesString = newChunkIndices.join(',');
-            console.log(`[useSpacetimeTables] Viewport chunks changed. Setting up spatial subscriptions for ${newChunkIndices.length} chunks: ${indicesString}`);
+            // console.log(`[useSpacetimeTables] Viewport chunks changed. Setting up spatial subscriptions for ${newChunkIndices.length} chunks: ${indicesString}`);
             
             // Set flag to indicate we're in the process of subscribing
             spatialSubscriptionsActiveRef.current = true;
@@ -313,7 +313,7 @@ export const useSpacetimeTables = ({
             const newSpatialSubs = [];
             
             try {
-                console.log(`[useSpacetimeTables] Creating ${newChunkIndices.length * 3} individual chunk subscriptions for resources.`);
+                // console.log(`[useSpacetimeTables] Creating ${newChunkIndices.length * 3} individual chunk subscriptions for resources.`);
                 let completedResourceSubs = 0;
                 const totalResourceSubs = newChunkIndices.length * 3;
 
@@ -322,7 +322,7 @@ export const useSpacetimeTables = ({
                     const treeQuery = `SELECT * FROM tree WHERE chunk_index = ${chunkIndex}`;
                     newSpatialSubs.push(
                         connection.subscriptionBuilder()
-                            .onApplied(() => { completedResourceSubs++; /* console.log(`[Sub Debug] Tree chunk ${chunkIndex} applied.`); */ })
+                            // .onApplied(() => { completedResourceSubs++; /* console.log(`[Sub Debug] Tree chunk ${chunkIndex} applied.`); */ })
                             .onError((err) => { 
                                  console.error(`[useSpacetimeTables] Spatial TREE subscription error (Chunk ${chunkIndex}):`, err);
                                  console.error("[useSpacetimeTables] Failed query was:", treeQuery);
@@ -334,7 +334,7 @@ export const useSpacetimeTables = ({
                     const stoneQuery = `SELECT * FROM stone WHERE chunk_index = ${chunkIndex}`;
                     newSpatialSubs.push(
                         connection.subscriptionBuilder()
-                            .onApplied(() => { completedResourceSubs++; /* console.log(`[Sub Debug] Stone chunk ${chunkIndex} applied.`); */ })
+                            // .onApplied(() => { completedResourceSubs++; /* console.log(`[Sub Debug] Stone chunk ${chunkIndex} applied.`); */ })
                             .onError((err) => {
                                  console.error(`[useSpacetimeTables] Spatial STONE subscription error (Chunk ${chunkIndex}):`, err);
                                  console.error("[useSpacetimeTables] Failed query was:", stoneQuery);
@@ -346,7 +346,7 @@ export const useSpacetimeTables = ({
                     const mushroomQuery = `SELECT * FROM mushroom WHERE chunk_index = ${chunkIndex}`;
                     newSpatialSubs.push(
                         connection.subscriptionBuilder()
-                            .onApplied(() => { completedResourceSubs++; /* console.log(`[Sub Debug] Mushroom chunk ${chunkIndex} applied.`); */ })
+                            // .onApplied(() => { completedResourceSubs++; /* console.log(`[Sub Debug] Mushroom chunk ${chunkIndex} applied.`); */ })
                             .onError((err) => { 
                                 console.error(`[useSpacetimeTables] Spatial MUSHROOM subscription error (Chunk ${chunkIndex}):`, err);
                                 console.error("[useSpacetimeTables] Failed query was:", mushroomQuery);
@@ -359,7 +359,7 @@ export const useSpacetimeTables = ({
                 // Player subscription (not currently chunk-indexed)
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
-                        .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial PLAYER subscription applied. Initial rows: ${ctx.db.player.count()}`))
+                        // .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial PLAYER subscription applied. Initial rows: ${ctx.db.player.count()}`))
                         .onError((err) => console.error("[useSpacetimeTables] Spatial PLAYER subscription error:", err))
                         .subscribe(`SELECT * FROM player`)
                 );
@@ -367,7 +367,7 @@ export const useSpacetimeTables = ({
                 // Campfire subscription (not currently chunk-indexed)
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
-                        .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial CAMPFIRE subscription applied. Initial rows: ${ctx.db.campfire.count()}`))
+                        // .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial CAMPFIRE subscription applied. Initial rows: ${ctx.db.campfire.count()}`))
                         .onError((err) => console.error("[useSpacetimeTables] Spatial CAMPFIRE subscription error:", err))
                         .subscribe(`SELECT * FROM campfire`)
                 );
@@ -375,7 +375,7 @@ export const useSpacetimeTables = ({
                 // Dropped item subscription (not currently chunk-indexed)
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
-                        .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial DROPPED_ITEM subscription applied. Initial rows: ${ctx.db.droppedItem.count()}`))
+                        // .onApplied((ctx) => console.log(`[useSpacetimeTables] Spatial DROPPED_ITEM subscription applied. Initial rows: ${ctx.db.droppedItem.count()}`))
                         .onError((err) => console.error("[useSpacetimeTables] Spatial DROPPED_ITEM subscription error:", err))
                         .subscribe(`SELECT * FROM dropped_item`)
                 );
@@ -384,11 +384,11 @@ export const useSpacetimeTables = ({
                 newSpatialSubs.push(
                     connection.subscriptionBuilder()
                         .onApplied((ctx) => {
-                            console.log(`[useSpacetimeTables] Spatial WOODEN_BOX subscription applied. Initial rows: ${ctx.db.woodenStorageBox.count()}`);
+                            // console.log(`[useSpacetimeTables] Spatial WOODEN_BOX subscription applied. Initial rows: ${ctx.db.woodenStorageBox.count()}`);
                             // Check if all resource subscriptions have reported back (applied or error)
                             // This approach is approximate but helps signal when loading might be complete
                             if (completedResourceSubs >= totalResourceSubs) {
-                                 console.log("[useSpacetimeTables] All tracked resource chunk subscriptions completed (applied or error).");
+                                // console.log("[useSpacetimeTables] All tracked resource chunk subscriptions completed (applied or error).");
                             }
                             spatialSubscriptionsActiveRef.current = false;
                         })
@@ -409,7 +409,7 @@ export const useSpacetimeTables = ({
             
         } else if (connection && !viewport) {
             // If viewport becomes null while connected, clean up spatial subs
-            console.log("[useSpacetimeTables] Viewport removed. Cleaning up spatial subscriptions.");
+            // console.log("[useSpacetimeTables] Viewport removed. Cleaning up spatial subscriptions.");
             spatialHandlesRef.current.forEach(sub => safeUnsubscribe(sub));
             spatialHandlesRef.current = [];
             currentChunksRef.current = [];
@@ -422,11 +422,11 @@ export const useSpacetimeTables = ({
              // Determine if cleanup is for unmount/connection loss or just a viewport change
              const isConnectionLost = !connection; // Check the connection prop passed to the hook
 
-             console.log(`[useSpacetimeTables] Running cleanup. Connection Lost: ${isConnectionLost}, Viewport was present: ${!!viewport}`);
+             // console.log(`[useSpacetimeTables] Running cleanup. Connection Lost: ${isConnectionLost}, Viewport was present: ${!!viewport}`);
 
              // ONLY unsubscribe NON-SPATIAL handles and reset state if the connection is actually lost
              if (isConnectionLost) {
-                 console.log("[useSpacetimeTables] Cleanup due to connection loss: Unsubscribing non-spatial, resetting state.");
+                 // console.log("[useSpacetimeTables] Cleanup due to connection loss: Unsubscribing non-spatial, resetting state.");
                  nonSpatialHandlesRef.current.forEach(sub => safeUnsubscribe(sub));
                  nonSpatialHandlesRef.current = []; // Clear ref
                  

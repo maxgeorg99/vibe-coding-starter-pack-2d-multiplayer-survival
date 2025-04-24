@@ -25,7 +25,7 @@ export function renderWorldBackground(
         ctx.fillStyle = '#8FBC8F'; // Medium Aquamarine fallback
         // Only fill the visible area for the fallback
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-        console.warn("[renderWorldBackground] Grass image not ready, drawing fallback for visible area.");
+        // console.warn("[renderWorldBackground] Grass image not ready, drawing fallback for visible area.");
         return;
     }
 

@@ -89,7 +89,7 @@ function App() {
     // --- Debounced Viewport Update ---
     const debouncedUpdateViewport = useDebouncedCallback(
         (vp: { minX: number, minY: number, maxX: number, maxY: number }) => {
-            console.log(`[App] Calling debounced server viewport update: ${JSON.stringify(vp)}`);
+            // console.log(`[App] Calling debounced server viewport update: ${JSON.stringify(vp)}`);
             callUpdateViewportReducer(vp.minX, vp.minY, vp.maxX, vp.maxY);
             lastSentViewportCenterRef.current = { x: (vp.minX + vp.maxX) / 2, y: (vp.minY + vp.maxY) / 2 };
         },
@@ -124,7 +124,7 @@ function App() {
             const newMaxY = playerCenterY + (VIEWPORT_HEIGHT / 2) + VIEWPORT_BUFFER;
             const newViewport = { minX: newMinX, minY: newMinY, maxX: newMaxX, maxY: newMaxY };
 
-            console.log(`[App] Viewport needs update. Triggering debounced call.`);
+            // console.log(`[App] Viewport needs update. Triggering debounced call.`);
             setCurrentViewport(newViewport); // Update local state immediately for useSpacetimeTables
             debouncedUpdateViewport(newViewport); // Call debounced server update
         }
@@ -133,16 +133,16 @@ function App() {
 
     // --- Effect to Sync App Connection State with Table Hook Registration State ---
     useEffect(() => {
-        console.log(`[App Sync Effect] Running. localPlayerRegistered: ${localPlayerRegistered}, appIsConnected: ${appIsConnected}, isRegistering: ${isRegistering}`);
+        // console.log(`[App Sync Effect] Running. localPlayerRegistered: ${localPlayerRegistered}, appIsConnected: ${appIsConnected}, isRegistering: ${isRegistering}`);
         if (localPlayerRegistered) {
             if (!appIsConnected) {
-                console.log("[App Sync Effect] Setting appIsConnected = true");
+                // console.log("[App Sync Effect] Setting appIsConnected = true");
                 setAppIsConnected(true);
             }
             if (isRegistering) setIsRegistering(false); // Stop registering if registration confirmed
         } else {
             if (appIsConnected) { // Only change if previously connected
-                console.log("[App Sync Effect] Local player unregistered, setting app disconnected.");
+                // console.log("[App Sync Effect] Local player unregistered, setting app disconnected.");
                 setAppIsConnected(false);
                 // Player is gone, ensure registering state is also false
                 if (isRegistering) setIsRegistering(false);

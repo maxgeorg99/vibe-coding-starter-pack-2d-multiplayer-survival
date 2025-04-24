@@ -155,7 +155,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // --- Effects ---
   useEffect(() => {
-    console.log("Preloading item images based on itemDefinitions update...");
+    // console.log("Preloading item images based on itemDefinitions update...");
     itemDefinitions.forEach(itemDef => {
       const iconSrc = itemIcons[itemDef.iconAssetName];
       if (itemDef && iconSrc && typeof iconSrc === 'string' && !itemImagesRef.current.has(itemDef.iconAssetName)) {
@@ -163,7 +163,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         img.src = iconSrc;
         img.onload = () => {
           itemImagesRef.current.set(itemDef.iconAssetName, img);
-          console.log(`Preloaded item image: ${itemDef.iconAssetName} from ${img.src}`);
+          // console.log(`Preloaded item image: ${itemDef.iconAssetName} from ${img.src}`);
         };
         img.onerror = () => console.error(`Failed to preload item image asset: ${itemDef.iconAssetName} (Expected path/source: ${iconSrc})`);
         itemImagesRef.current.set(itemDef.iconAssetName, img);
@@ -314,6 +314,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const currentCanvasWidth = canvasSize.width;
     const currentCanvasHeight = canvasSize.height;
 
+    // --- LOGGING: Camera and Viewport --- 
+    // console.log(`[Camera] OffsetX: ${cameraOffsetX.toFixed(2)}, OffsetY: ${cameraOffsetY.toFixed(2)}`);
+    // const currentViewBounds = getViewportBounds(); // Get current bounds for logging
+    // console.log(`[Viewport] MinX: ${currentViewBounds.viewMinX.toFixed(2)}, MaxX: ${currentViewBounds.viewMaxX.toFixed(2)}, MinY: ${currentViewBounds.viewMinY.toFixed(2)}, MaxY: ${currentViewBounds.viewMaxY.toFixed(2)}`);
+    // --- END LOGGING ---
+
     // --- LOGGING: Entity counts before rendering ---
     // console.log(`[Render Counts] Ground: ${groundItems.length}, Y-Sorted: ${ySortedEntities.length} (Players: ${visiblePlayers.length}, Trees: ${visibleTrees.length}, Stones: ${visibleStones.length}, Boxes: ${visibleWoodenStorageBoxes.length}, Mushrooms: ${visibleMushrooms.length}, Campfires: ${visibleCampfires.length}, Dropped Items: ${visibleDroppedItems.length})`);
     // --- END LOGGING ---
@@ -436,7 +442,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       console.error("Connection or reducers not available for respawn request.");
       return;
     }
-    console.log("Requesting respawn via generated function...");
+    // console.log("Requesting respawn via generated function...");
     try {
       connection.reducers.requestRespawn();
     } catch (err) {

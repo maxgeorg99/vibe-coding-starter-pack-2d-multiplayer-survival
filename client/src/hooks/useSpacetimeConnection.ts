@@ -34,26 +34,26 @@ export const useSpacetimeConnection = (): SpacetimeConnectionState => {
             setIsLoading(true);
             setError(null);
             try {
-                console.log(`[useSpacetimeConnection] Attempting to connect to SpacetimeDB at ${SPACETIME_DB_ADDRESS}, module: ${SPACETIME_DB_NAME}...`);
+                // console.log(`[useSpacetimeConnection] Attempting to connect to SpacetimeDB at ${SPACETIME_DB_ADDRESS}, module: ${SPACETIME_DB_NAME}...`);
 
                 connectionInstance = DbConnection.builder()
                     .withUri(SPACETIME_DB_ADDRESS)
                     .withModuleName(SPACETIME_DB_NAME)
                     .onConnect((conn: DbConnection, identity: SpacetimeDBIdentity, token: string) => {
-                        console.log('[useSpacetimeConnection] Connected!', { identity: identity.toHexString(), token });
+                        // console.log('[useSpacetimeConnection] Connected!', { identity: identity.toHexString(), token });
                         setConnection(conn);
                         setError(null);
                         setIsLoading(false); // <-- Set loading false once connected
                     })
                     .onDisconnect((context: any, error?: Error) => {
-                        console.log('[useSpacetimeConnection] Disconnected.', error?.message);
+                        // console.log('[useSpacetimeConnection] Disconnected.', error?.message);
                         setConnection(null);
                         setIsConnected(false);
                         setIsLoading(false);
                         setError(`Disconnected${error ? ': ' + error.message : ''}. Please refresh.`);
                     })
                     .onConnectError((context: any, error: Error) => {
-                        console.error('[useSpacetimeConnection] Initial Connection Error:', error);
+                        // console.error('[useSpacetimeConnection] Initial Connection Error:', error);
                         setConnection(null);
                         setIsConnected(false);
                         setIsLoading(false);
@@ -75,7 +75,7 @@ export const useSpacetimeConnection = (): SpacetimeConnectionState => {
         // Cleanup function
         return () => {
             if (connectionInstance) {
-                console.log('[useSpacetimeConnection] Closing SpacetimeDB connection.');
+                // console.log('[useSpacetimeConnection] Closing SpacetimeDB connection.');
                 connectionInstance.disconnect();
                 setConnection(null);
                 setIsConnected(false);
@@ -96,7 +96,7 @@ export const useSpacetimeConnection = (): SpacetimeConnectionState => {
         if (connection && username.trim()) {
             setIsLoading(true); // Set loading during registration attempt
             setError(null);
-            console.log(`[useSpacetimeConnection] Calling registerPlayer reducer with username: ${username}`);
+            // console.log(`[useSpacetimeConnection] Calling registerPlayer reducer with username: ${username}`);
             try {
                 connection.reducers.registerPlayer(username);
                 // setIsLoading will be set to false in App.tsx when the player entity appears OR if register fails

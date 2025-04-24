@@ -32,7 +32,7 @@ export const usePlacementManager = (connection: DbConnection | null): [Placement
 
   // --- Start Placement --- 
   const startPlacement = useCallback((itemInfo: PlacementItemInfo) => {
-    console.log(`[PlacementManager] Starting placement for: ${itemInfo.itemName} (ID: ${itemInfo.itemDefId})`);
+    // console.log(`[PlacementManager] Starting placement for: ${itemInfo.itemName} (ID: ${itemInfo.itemDefId})`);
     setPlacementInfo(itemInfo);
     setPlacementError(null); // Clear errors on new placement start
   }, []);
@@ -40,7 +40,7 @@ export const usePlacementManager = (connection: DbConnection | null): [Placement
   // --- Cancel Placement --- 
   const cancelPlacement = useCallback(() => {
     if (placementInfo) { // Only log if actually cancelling
-      console.log("[PlacementManager] Cancelling placement mode.");
+      // console.log("[PlacementManager] Cancelling placement mode.");
       setPlacementInfo(null);
       setPlacementError(null);
     }
@@ -53,7 +53,7 @@ export const usePlacementManager = (connection: DbConnection | null): [Placement
       return;
     }
 
-    console.log(`[PlacementManager] Attempting to place ${placementInfo.itemName} at (${worldX}, ${worldY})`);
+    // console.log(`[PlacementManager] Attempting to place ${placementInfo.itemName} at (${worldX}, ${worldY})`);
     setPlacementError(null); // Clear previous error
 
     try {
@@ -61,13 +61,13 @@ export const usePlacementManager = (connection: DbConnection | null): [Placement
       // This needs to be expanded as more placeable items are added
       switch (placementInfo.itemName) {
         case 'Camp Fire':
-          console.log(`[PlacementManager] Calling placeCampfire reducer with instance ID: ${placementInfo.instanceId}`);
+          // console.log(`[PlacementManager] Calling placeCampfire reducer with instance ID: ${placementInfo.instanceId}`);
           connection.reducers.placeCampfire(placementInfo.instanceId, worldX, worldY);
           // Note: We don't call cancelPlacement here. 
           // App.tsx's handleCampfireInsert callback will call it upon success.
           break;
         case 'Wooden Storage Box':
-          console.log(`[PlacementManager] Calling placeWoodenStorageBox reducer with instance ID: ${placementInfo.instanceId}`);
+          // console.log(`[PlacementManager] Calling placeWoodenStorageBox reducer with instance ID: ${placementInfo.instanceId}`);
           connection.reducers.placeWoodenStorageBox(placementInfo.instanceId, worldX, worldY);
           // Assume App.tsx will have a handleWoodenStorageBoxInsert similar to campfire
           break;

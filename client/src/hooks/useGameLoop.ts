@@ -23,12 +23,12 @@ export function useGameLoop(callback: () => void): void {
     };
 
     // Start the loop
-    console.log("[useGameLoop] Starting animation frame loop.");
+    // console.log("[useGameLoop] Starting animation frame loop.");
     requestIdRef.current = requestAnimationFrame(loop);
 
     // Cleanup function to cancel the animation frame on unmount
     return () => {
-      console.log("[useGameLoop] Cancelling animation frame loop with ID:", requestIdRef.current);
+      // console.log("[useGameLoop] Cancelling animation frame loop with ID:", requestIdRef.current);
       cancelAnimationFrame(requestIdRef.current);
     };
   }, []); // Empty dependency array ensures this runs only once on mount/unmount

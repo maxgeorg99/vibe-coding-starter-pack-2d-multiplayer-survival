@@ -10,11 +10,11 @@ let isBoxImageLoaded = false;
 export function preloadWoodenStorageBoxImage() {
   if (boxImage) return; // Already loading or loaded
 
-  console.log("Preloading Wooden Storage Box image...");
+  // console.log("Preloading Wooden Storage Box image...");
   boxImage = new Image();
   boxImage.onload = () => {
     isBoxImageLoaded = true;
-    console.log("Wooden Storage Box image loaded successfully.");
+    // console.log("Wooden Storage Box image loaded successfully.");
   };
   boxImage.onerror = () => {
     console.error("Failed to load Wooden Storage Box image.");

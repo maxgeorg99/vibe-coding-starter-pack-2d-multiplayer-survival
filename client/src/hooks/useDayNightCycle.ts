@@ -56,7 +56,7 @@ export function useDayNightCycle({
         // Initialize mask canvas if it doesn't exist
         if (!maskCanvasRef.current) {
             maskCanvasRef.current = document.createElement('canvas');
-            console.log('Off-screen mask canvas created by hook.');
+            // console.log('Off-screen mask canvas created by hook.');
         }
         const maskCanvas = maskCanvasRef.current;
         const maskCtx = maskCanvas.getContext('2d');

@@ -19,7 +19,7 @@ export function preloadCampfireImage() {
         campfireImage = new Image();
         campfireImage.onload = () => {
             isCampfireImageLoaded = true;
-            console.log('Campfire ON image loaded successfully.');
+            // console.log('Campfire ON image loaded successfully.');
         };
         campfireImage.onerror = () => {
             console.error('Failed to load campfire ON image.');
@@ -32,7 +32,7 @@ export function preloadCampfireImage() {
         campfireOffImage = new Image();
         campfireOffImage.onload = () => {
             isCampfireOffImageLoaded = true;
-            console.log('Campfire OFF image loaded successfully.');
+            // console.log('Campfire OFF image loaded successfully.');
         };
         campfireOffImage.onerror = () => {
             console.error('Failed to load campfire OFF image.');

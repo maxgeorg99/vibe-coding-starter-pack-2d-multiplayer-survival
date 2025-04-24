@@ -31,14 +31,14 @@ export const useDragDropManager = ({
     }, [draggedItemInfo]);
 
     const handleItemDragStart = useCallback((info: DraggedItemInfo) => {
-        console.log("[useDragDropManager] Drag Start:", info);
+        // console.log("[useDragDropManager] Drag Start:", info);
         setDraggedItemInfo(info);
         setDropError(null); // Clear previous errors on new drag
         document.body.classList.add('item-dragging');
     }, []);
 
     const handleItemDrop = useCallback((targetSlot: DragSourceSlotInfo | null) => {
-        console.log("[useDragDropManager] Drop Target:", targetSlot);
+        // console.log("[useDragDropManager] Drop Target:", targetSlot);
         document.body.classList.remove('item-dragging');
         const sourceInfo = draggedItemRef.current;
 
@@ -48,11 +48,11 @@ export const useDragDropManager = ({
         setDropError(null); // Clear previous errors on new drop attempt
 
         if (!sourceInfo) {
-            console.log("[useDragDropManager Drop] No source info found, ignoring drop.");
+            // console.log("[useDragDropManager Drop] No source info found, ignoring drop.");
             return;
         }
         if (!connection?.reducers) {
-            console.log("[useDragDropManager Drop] No reducers connection, ignoring drop.");
+            // console.log("[useDragDropManager Drop] No reducers connection, ignoring drop.");
             setDropError("Cannot perform action: Not connected to server.");
             return;
         }
@@ -61,19 +61,19 @@ export const useDragDropManager = ({
 
         // --- Handle Dropping Item into the World ---
         if (targetSlot === null) {
-            console.log(`[useDragDropManager Drop] Target is NULL. Dropping item ${itemInstanceId} into the world.`);
+            // console.log(`[useDragDropManager Drop] Target is NULL. Dropping item ${itemInstanceId} into the world.`);
             const quantityToDrop = sourceInfo.splitQuantity ?? sourceInfo.item.instance.quantity;
             try {
                 connection.reducers.dropItem(itemInstanceId, quantityToDrop);
             } catch (error: any) {
-                console.error("[useDragDropManager Drop] Error calling dropItem reducer:", error);
+                // console.error("[useDragDropManager Drop] Error calling dropItem reducer:", error);
                 setDropError(`Failed to drop item: ${error?.message || error}`);
             }
             return; // Drop handled, exit
         }
 
         // --- Proceed with logic for dropping onto a slot ---
-        console.log(`[useDragDropManager Drop] Processing drop onto slot: Item ${itemInstanceId} from ${sourceInfo.sourceSlot.type}:${sourceInfo.sourceSlot.index} to ${targetSlot.type}:${targetSlot.index}`);
+        // console.log(`[useDragDropManager Drop] Processing drop onto slot: Item ${itemInstanceId} from ${sourceInfo.sourceSlot.type}:${sourceInfo.sourceSlot.index} to ${targetSlot.type}:${targetSlot.index}`);
 
         try {
             // --- Handle Stack Splitting First ---
@@ -83,7 +83,7 @@ export const useDragDropManager = ({
                 const targetSlotType = targetSlot.type;
                 const sourceInstanceId = BigInt(sourceInfo.item.instance.instanceId);
 
-                console.log(`[useDragDropManager Drop] Initiating SPLIT: Qty ${quantityToSplit} from ${sourceSlotType}:${sourceInfo.sourceSlot.index} to ${targetSlotType}:${targetSlot.index}`);
+                // console.log(`[useDragDropManager Drop] Initiating SPLIT: Qty ${quantityToSplit} from ${sourceSlotType}:${sourceInfo.sourceSlot.index} to ${targetSlotType}:${targetSlot.index}`);
 
                 // --- Split Logic ---
                 if (sourceSlotType === 'inventory' || sourceSlotType === 'hotbar') {
@@ -93,7 +93,7 @@ export const useDragDropManager = ({
                     if (targetSlotType === 'inventory' || targetSlotType === 'hotbar') {
                         targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
                         if (isNaN(targetSlotIndexNum)) { setDropError("Invalid target slot index."); return; }
-                        console.log(`[useDragDropManager Drop Split] Calling splitStack (Inv/Hotbar -> Inv/Hotbar)`);
+                        // console.log(`[useDragDropManager Drop Split] Calling splitStack (Inv/Hotbar -> Inv/Hotbar)`);
                         connection.reducers.splitStack(sourceInstanceId, quantityToSplit, targetSlotType, targetSlotIndexNum);
                     } else if (targetSlotType === 'campfire_fuel') {
                         targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
@@ -103,7 +103,7 @@ export const useDragDropManager = ({
                             setDropError("Invalid target slot or context for campfire split.");
                             return;
                         }
-                        console.log(`[useDragDropManager Drop Split] Calling split_stack_into_campfire`);
+                        // console.log(`[useDragDropManager Drop Split] Calling split_stack_into_campfire`);
                         connection.reducers.splitStackIntoCampfire(sourceInstanceId, quantityToSplit, targetContainerIdNum, targetSlotIndexNum);
                     } else if (targetSlotType === 'wooden_storage_box') {
                         targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
@@ -113,10 +113,10 @@ export const useDragDropManager = ({
                             setDropError("Invalid target slot or context for box split.");
                             return;
                         }
-                        console.log(`[useDragDropManager Drop Split] Calling split_stack_into_box`);
+                        // console.log(`[useDragDropManager Drop Split] Calling split_stack_into_box`);
                         connection.reducers.splitStackIntoBox(targetContainerIdNum, targetSlotIndexNum, sourceInstanceId, quantityToSplit);
                     } else {
-                        console.warn(`[useDragDropManager Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
+                        // console.warn(`[useDragDropManager Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
                         setDropError("Cannot split item to that location.");
                         return;
                     }
@@ -136,7 +136,7 @@ export const useDragDropManager = ({
                             setDropError("Invalid target slot for split.");
                             return;
                         }
-                        console.log(`[useDragDropManager Drop] Calling splitAndMoveFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum} -> ${targetSlotType}:${targetSlotIndexNum}`);
+                        // console.log(`[useDragDropManager Drop] Calling splitAndMoveFromCampfire: Campfire ${sourceCampfireId} Slot ${sourceIndexNum} -> ${targetSlotType}:${targetSlotIndexNum}`);
                         connection.reducers.splitAndMoveFromCampfire(
                             sourceCampfireId,
                             sourceIndexNum,
@@ -165,7 +165,7 @@ export const useDragDropManager = ({
                             setDropError("Invalid target slot for split.");
                             return;
                         }
-                        console.log(`[useDragDropManager Drop] Calling split_stack_from_box`);
+                        // console.log(`[useDragDropManager Drop] Calling split_stack_from_box`);
                         connection.reducers.splitStackFromBox(sourceBoxId, sourceIndexNum, quantityToSplit, targetSlotType, targetSlotIndexNum);
                     } else if (targetSlotType === 'wooden_storage_box') {
                         targetSlotIndexNum = typeof targetSlot.index === 'number' ? targetSlot.index : parseInt(targetSlot.index.toString(), 10);
@@ -175,7 +175,7 @@ export const useDragDropManager = ({
                             setDropError("Cannot split between different boxes yet.");
                             return;
                         }
-                        console.log(`[useDragDropManager Drop Split] Calling split_stack_within_box`);
+                        // console.log(`[useDragDropManager Drop Split] Calling split_stack_within_box`);
                         connection.reducers.splitStackWithinBox(sourceBoxId, sourceIndexNum, targetSlotIndexNum, quantityToSplit);
                     } else {
                         console.warn(`[useDragDropManager Drop] Split ignored: Cannot split from ${sourceSlotType} to ${targetSlotType}`);
@@ -196,16 +196,16 @@ export const useDragDropManager = ({
                     const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
                     const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
                     if (sourceCampfireId === null || isNaN(sourceIndexNum)) { console.error("[useDragDropManager Drop] Missing CampfireID/SourceIndex"); setDropError("Cannot move item: Source context lost."); return; }
-                    console.log(`[useDragDropManager Drop] Calling moveFuelItemToPlayerSlot (to inventory)`);
+                    // console.log(`[useDragDropManager Drop] Calling moveFuelItemToPlayerSlot (to inventory)`);
                     connection.reducers.moveFuelItemToPlayerSlot(sourceCampfireId, sourceIndexNum, targetSlot.type, targetIndexNum);
                 } else if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
                     const sourceBoxId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
                     const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
                     if (sourceBoxId === null || isNaN(sourceIndexNum)) { console.error("[useDragDropManager Drop] Missing BoxID/SourceIndex"); setDropError("Cannot move item: Source context lost."); return; }
-                    console.log(`[useDragDropManager Drop] Calling move_item_from_box (to inventory)`);
+                    // console.log(`[useDragDropManager Drop] Calling move_item_from_box (to inventory)`);
                     connection.reducers.moveItemFromBox(sourceBoxId, sourceIndexNum, targetSlot.type, targetIndexNum);
                 } else {
-                    console.log(`[useDragDropManager Drop] Calling moveItemToInventory`);
+                    // console.log(`[useDragDropManager Drop] Calling moveItemToInventory`);
                     connection.reducers.moveItemToInventory(itemInstanceId, targetIndexNum);
                 }
             } else if (targetSlot.type === 'hotbar') {
@@ -215,16 +215,16 @@ export const useDragDropManager = ({
                     const sourceCampfireId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
                     const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
                     if (sourceCampfireId === null || isNaN(sourceIndexNum)) { console.error("[useDragDropManager Drop] Missing CampfireID/SourceIndex"); setDropError("Cannot move item: Source context lost."); return; }
-                    console.log(`[useDragDropManager Drop] Calling moveFuelItemToPlayerSlot (to hotbar)`);
+                    // console.log(`[useDragDropManager Drop] Calling moveFuelItemToPlayerSlot (to hotbar)`);
                     connection.reducers.moveFuelItemToPlayerSlot(sourceCampfireId, sourceIndexNum, targetSlot.type, targetIndexNum);
                 } else if (sourceInfo.sourceSlot.type === 'wooden_storage_box') {
                     const sourceBoxId = sourceInfo.sourceSlot.parentId ? Number(sourceInfo.sourceSlot.parentId) : null;
                     const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
                     if (sourceBoxId === null || isNaN(sourceIndexNum)) { console.error("[useDragDropManager Drop] Missing BoxID/SourceIndex"); setDropError("Cannot move item: Source context lost."); return; }
-                    console.log(`[useDragDropManager Drop] Calling move_item_from_box (to hotbar)`);
+                    // console.log(`[useDragDropManager Drop] Calling move_item_from_box (to hotbar)`);
                     connection.reducers.moveItemFromBox(sourceBoxId, sourceIndexNum, targetSlot.type, targetIndexNum);
                 } else {
-                    console.log(`[useDragDropManager Drop] Calling moveItemToHotbar`);
+                    // console.log(`[useDragDropManager Drop] Calling moveItemToHotbar`);
                     connection.reducers.moveItemToHotbar(itemInstanceId, targetIndexNum);
                 }
             } else if (targetSlot.type === 'equipment' && typeof targetSlot.index === 'string') {
@@ -245,10 +245,10 @@ export const useDragDropManager = ({
                         setDropError("Cannot move fuel between different campfires.");
                         return;
                     }
-                    console.log(`[useDragDropManager Drop] Calling moveFuelWithinCampfire`);
+                    // console.log(`[useDragDropManager Drop] Calling moveFuelWithinCampfire`);
                     connection.reducers.moveFuelWithinCampfire(campfireIdNum, sourceIndexNum, targetIndexNum);
                 } else {
-                    console.log(`[useDragDropManager Drop] Calling addFuelToCampfire`);
+                    // console.log(`[useDragDropManager Drop] Calling addFuelToCampfire`);
                     connection.reducers.addFuelToCampfire(campfireIdNum, targetIndexNum, itemInstanceId);
                 }
             } else if (targetSlot.type === 'wooden_storage_box') {
@@ -262,7 +262,7 @@ export const useDragDropManager = ({
                 }
                 const source_type = sourceInfo.sourceSlot.type.trim();
                 if (source_type === 'inventory' || source_type === 'hotbar' || source_type === 'equipment') {
-                    console.log(`[useDragDropManager Drop] Calling move_item_to_box`);
+                    // console.log(`[useDragDropManager Drop] Calling move_item_to_box`);
                     connection.reducers.moveItemToBox(boxIdNum, targetIndexNum, itemInstanceId);
                 } else if (source_type === 'wooden_storage_box') {
                     const sourceIndexNum = typeof sourceInfo.sourceSlot.index === 'number' ? sourceInfo.sourceSlot.index : parseInt(sourceInfo.sourceSlot.index.toString(), 10);
@@ -271,7 +271,7 @@ export const useDragDropManager = ({
                         setDropError("Cannot move items between different boxes yet.");
                         return;
                     }
-                    console.log(`[useDragDropManager Drop] Calling move_item_within_box`);
+                    // console.log(`[useDragDropManager Drop] Calling move_item_within_box`);
                     connection.reducers.moveItemWithinBox(boxIdNum, sourceIndexNum, targetIndexNum);
                 } else {
                     console.warn(`[useDragDropManager Drop] Unhandled move from ${sourceInfo.sourceSlot.type} to wooden_storage_box`);

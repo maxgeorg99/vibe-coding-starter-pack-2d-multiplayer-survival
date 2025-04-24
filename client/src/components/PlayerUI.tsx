@@ -133,7 +133,7 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
             // 3. Check if the event target is *outside* the inventory panel entirely
             if (!inventoryPanel.contains(target)) {
                 // If outside, prevent default (stops page scroll)
-                console.log("Scroll outside inventory, preventing.");
+                // console.log("Scroll outside inventory, preventing.");
                 event.preventDefault();
                 return;
             }
@@ -144,12 +144,12 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
 
             // 5. If it IS within a designated scrollable child, allow the default behavior
             if (scrollableCrafting || scrollableQueue) {
-                console.log("Scroll inside designated scrollable area, allowing.");
+                // console.log("Scroll inside designated scrollable area, allowing.");
                 return; // Allow scroll within these areas
             }
 
             // 6. If it's inside the panel but *not* within a designated scrollable child, prevent default
-            console.log("Scroll inside inventory but outside scrollable areas, preventing.");
+            // console.log("Scroll inside inventory but outside scrollable areas, preventing.");
             event.preventDefault();
         };
 

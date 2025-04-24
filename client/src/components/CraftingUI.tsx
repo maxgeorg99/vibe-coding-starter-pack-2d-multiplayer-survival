@@ -49,7 +49,7 @@ const CraftingUI: React.FC<CraftingUIProps> = ({
         const resources: Map<string, number> = new Map();
         if (!playerIdentity) return resources;
 
-        console.log('[CraftingUI DEBUG] Recalculating resources. inventoryItems prop:', new Map(inventoryItems)); // Log a clone
+        // console.log('[CraftingUI DEBUG] Recalculating resources. inventoryItems prop:', new Map(inventoryItems)); // Log a clone
 
         Array.from(inventoryItems.values())
             .filter(item => {
@@ -59,17 +59,17 @@ const CraftingUI: React.FC<CraftingUIProps> = ({
                                         (item.hotbarSlot !== null && item.hotbarSlot !== undefined);
                 // Focus logging on items involved in the move - ADJUST DEF IDs IF NEEDED
                 if (item.itemDefId.toString() === '1' || item.itemDefId.toString() === '0') { // Check Wood(0) or Stone(1)
-                     console.log(`[CraftingUI DEBUG Filter Check] Item ${item.instanceId} (Def ${item.itemDefId}): Owned=${isOwned}, InvSlot=${item.inventorySlot}, HotbarSlot=${item.hotbarSlot} => Included=${isOwned && isInPlayerSlots}`);
+                     // console.log(`[CraftingUI DEBUG Filter Check] Item ${item.instanceId} (Def ${item.itemDefId}): Owned=${isOwned}, InvSlot=${item.inventorySlot}, HotbarSlot=${item.hotbarSlot} => Included=${isOwned && isInPlayerSlots}`);
                  }
                 return isOwned && isInPlayerSlots;
             })
             .forEach(item => {
                 const defIdStr = item.itemDefId.toString();
-                console.log(`[CraftingUI DEBUG Sum] Adding ${item.quantity} of Def ${defIdStr} (Instance ${item.instanceId}) from slot Inv=${item.inventorySlot}/Hotbar=${item.hotbarSlot}`);
+                // console.log(`[CraftingUI DEBUG Sum] Adding ${item.quantity} of Def ${defIdStr} (Instance ${item.instanceId}) from slot Inv=${item.inventorySlot}/Hotbar=${item.hotbarSlot}`);
                 resources.set(defIdStr, (resources.get(defIdStr) || 0) + item.quantity);
             });
             
-        console.log('[CraftingUI DEBUG] Calculated playerInventoryResources:', resources);
+        // console.log('[CraftingUI DEBUG] Calculated playerInventoryResources:', resources);
             
         return resources;
     }, [inventoryItems, playerIdentity]);
@@ -85,7 +85,7 @@ const CraftingUI: React.FC<CraftingUIProps> = ({
     // --- Crafting Handlers ---
     const handleCraftItem = (recipeId: bigint) => {
         if (!connection?.reducers) return;
-        console.log(`Attempting to craft recipe ID: ${recipeId}`);
+        // console.log(`Attempting to craft recipe ID: ${recipeId}`);
         try {
             connection.reducers.startCrafting(recipeId);
         } catch (err) {
@@ -96,7 +96,7 @@ const CraftingUI: React.FC<CraftingUIProps> = ({
 
     const handleCancelCraft = (queueItemId: bigint) => {
         if (!connection?.reducers) return;
-        console.log(`Attempting to cancel craft queue item ID: ${queueItemId}`);
+        // console.log(`Attempting to cancel craft queue item ID: ${queueItemId}`);
         try {
             connection.reducers.cancelCraftingItem(queueItemId);
         } catch (err) {

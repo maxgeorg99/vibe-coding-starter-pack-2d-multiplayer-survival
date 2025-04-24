@@ -28,7 +28,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
   const didDragRef = useRef(false);
 
   const createGhostElement = useCallback((e: MouseEvent | Touch, splitQuantity: number | null) => {
-    console.log(`[DraggableItem] Creating ghost element... Split: ${splitQuantity}`);
+    // console.log(`[DraggableItem] Creating ghost element... Split: ${splitQuantity}`);
     if (ghostRef.current && document.body.contains(ghostRef.current)) {
       document.body.removeChild(ghostRef.current);
     }
@@ -60,7 +60,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
 
     document.body.appendChild(ghost);
     ghostRef.current = ghost;
-    console.log("[DraggableItem] Ghost element appended.");
+    // console.log("[DraggableItem] Ghost element appended.");
   }, [item]); // Dependency: item (for definition and original quantity)
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -81,7 +81,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     // Create ghost only if threshold is met AND ghost doesn't exist yet
     else if (distSq >= thresholdSq) {
         didDragRef.current = true;
-        console.log(`[DraggableItem] Drag threshold met, didDrag = true.`);
+        // console.log(`[DraggableItem] Drag threshold met, didDrag = true.`);
         createGhostElement(e, currentSplitQuantity.current);
     }
   }, [createGhostElement]);
@@ -89,7 +89,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
   const handleMouseUp = useCallback((e: MouseEvent) => {
     // Capture drag state BEFORE removing listeners / resetting state
     const wasDragging = didDragRef.current;
-    console.log(`[DraggableItem MouseUp] Button: ${e.button}, wasDragging: ${wasDragging}`);
+    // console.log(`[DraggableItem MouseUp] Button: ${e.button}, wasDragging: ${wasDragging}`);
 
     if (!isDraggingRef.current) {
         // Safety check - mouseup when not dragging shouldn't happen often here
@@ -155,7 +155,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
                       if (!isSameSlot) { 
                            dropHandledInternal = true;
                       } else {
-                          console.log("[DraggableItem] Drop on source slot ignored (no action needed).");
+                          // console.log("[DraggableItem] Drop on source slot ignored (no action needed).");
                           dropHandledInternal = true; 
                           targetSlotInfo = null; // Reset target if it was the source
                       }
@@ -168,7 +168,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
       }
       ghostRef.current = null;
     } else {
-        console.log("[DraggableItem] MouseUp without significant drag/ghost.");
+        // console.log("[DraggableItem] MouseUp without significant drag/ghost.");
     }
     // --- End Drop Target Determination ---
 
@@ -176,7 +176,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
     if (e.button === 2) { // Right Button Release
         if (wasDragging) {
             // Right-DRAG: Perform the drop action (split/merge)
-            console.log("[DraggableItem MouseUp] Right-DRAG detected. Calling onItemDrop.");
+            // console.log("[DraggableItem MouseUp] Right-DRAG detected. Calling onItemDrop.");
              if (dropHandledInternal) {
                 onItemDrop(targetSlotInfo); 
             } else {
@@ -184,7 +184,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
             }
         } else {
             // Right-CLICK: Perform the context menu action
-            console.log("[DraggableItem MouseUp] Right-CLICK detected. Calling onContextMenu prop.");
+            // console.log("[DraggableItem MouseUp] Right-CLICK detected. Calling onContextMenu prop.");
             if (onContextMenu) {
                 // We might need to pass a simulated event if the handler expects it,
                 // but for now, let's pass null or a minimal object. 
@@ -193,25 +193,25 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
             }
         }
     } else { // Left or Middle Button Release
-        console.log("[DraggableItem MouseUp] Left/Middle mouse button released.");
+        // console.log("[DraggableItem MouseUp] Left/Middle mouse button released.");
         if (dropHandledInternal && targetSlotInfo) {
             // Valid drop onto different slot
-            console.log("[DraggableItem MouseUp] Valid L/M drop. Calling onItemDrop with target:", targetSlotInfo);
+            // console.log("[DraggableItem MouseUp] Valid L/M drop. Calling onItemDrop with target:", targetSlotInfo);
             onItemDrop(targetSlotInfo);
         } else if (wasDragging) {
             // Dragged, but ended outside or on source slot
             // Only call drop(null) if it ended outside a valid target altogether
             if (!targetSlotInfo) { // If targetSlotInfo is null (meaning not over a valid slot)
-                 console.log("[DraggableItem MouseUp] L/M Dragged outside. Calling onItemDrop(null).");
+                 // console.log("[DraggableItem MouseUp] L/M Dragged outside. Calling onItemDrop(null).");
                  onItemDrop(null);
             } else {
                  // Dragged, but ended on source slot or invalid target. No action needed.
-                 console.log("[DraggableItem MouseUp] L/M Dragged to source/invalid. No drop action.");
+                 // console.log("[DraggableItem MouseUp] L/M Dragged to source/invalid. No drop action.");
                  // App state is cleared by App.handleItemDrop unconditionally.
             }
         } else {
             // Simple click without drag. No action needed.
-            console.log("[DraggableItem MouseUp] Simple left/middle click. No drop action.");
+            // console.log("[DraggableItem MouseUp] Simple left/middle click. No drop action.");
             // App state is cleared by App.handleItemDrop unconditionally.
         }
     }
@@ -234,7 +234,7 @@ const DraggableItem: React.FC<DraggableItemProps> = ({
 
     // --- NEW: Prevent default for right-click --- 
     if (e.button === 2) {
-        console.log('[DraggableItem MouseDown] Right button pressed, preventing default.');
+        // console.log('[DraggableItem MouseDown] Right button pressed, preventing default.');
         e.preventDefault(); // Attempt to suppress native context menu
     }
     // --- END NEW ---

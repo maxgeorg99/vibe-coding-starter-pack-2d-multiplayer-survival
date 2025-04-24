@@ -39,7 +39,7 @@ export function useAssetLoader(): AssetLoaderResult {
     const checkLoadingComplete = () => {
       if (!allStaticLoaded && loadedCount === totalStaticAssets) {
         allStaticLoaded = true;
-        console.log('Essential static assets loaded.');
+        // console.log('Essential static assets loaded.');
         setIsLoadingAssets(false); // Set loading to false only when hero, grass, campfire are done
       }
     };
@@ -51,7 +51,7 @@ export function useAssetLoader(): AssetLoaderResult {
     heroImg.src = heroSpriteSheet;
     heroImg.onload = () => {
       heroImageRef.current = heroImg;
-      console.log('Hero spritesheet loaded by hook.');
+      // console.log('Hero spritesheet loaded by hook.');
       loadedCount++;
       checkLoadingComplete();
     };
@@ -66,7 +66,7 @@ export function useAssetLoader(): AssetLoaderResult {
     grassImg.src = grassTexture;
     grassImg.onload = () => {
        grassImageRef.current = grassImg;
-       console.log('Grass texture loaded by hook.');
+       // console.log('Grass texture loaded by hook.');
        loadedCount++;
        checkLoadingComplete();
     };
@@ -81,7 +81,7 @@ export function useAssetLoader(): AssetLoaderResult {
     fireImg.src = campfireSprite;
     fireImg.onload = () => {
        campfireImageRef.current = fireImg;
-       console.log('Campfire sprite loaded by hook.');
+       // console.log('Campfire sprite loaded by hook.');
        loadedCount++;
        checkLoadingComplete();
     };
@@ -99,7 +99,7 @@ export function useAssetLoader(): AssetLoaderResult {
         preloadCampfireImage(); // For the actual campfire animation/states
         preloadMushroomImages();
         preloadWoodenStorageBoxImage();
-        console.log('Entity preloading initiated by hook.');
+        // console.log('Entity preloading initiated by hook.');
     } catch (error) {
         console.error("Error during entity preloading:", error);
     }

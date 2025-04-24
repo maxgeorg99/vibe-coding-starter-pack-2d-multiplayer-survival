@@ -14,8 +14,8 @@ export function preloadStoneImage() {
     const img = new Image();
     img.src = stoneImageSource;
     imageCache[stoneImageSource] = img;
-    img.onload = () => console.log(`Loaded stone image: ${stoneImageSource}`);
-    img.onerror = () => console.error(`Failed to load stone image: ${stoneImageSource}`);
+    // img.onload = () => console.log(`Loaded stone image: ${stoneImageSource}`);
+    // img.onerror = () => console.error(`Failed to load stone image: ${stoneImageSource}`);
   }
 }
 

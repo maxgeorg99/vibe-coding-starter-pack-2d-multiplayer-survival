@@ -18,8 +18,8 @@ export function preloadMushroomImages() {
       const img = new Image();
       img.src = src;
       imageCache[src] = img;
-      img.onload = () => console.log(`Loaded mushroom image: ${src}`);
-      img.onerror = () => console.error(`Failed to load mushroom image: ${src}`);
+      // img.onload = () => console.log(`Loaded mushroom image: ${src}`);
+      // img.onerror = () => console.error(`Failed to load mushroom image: ${src}`);
     }
   });
 }

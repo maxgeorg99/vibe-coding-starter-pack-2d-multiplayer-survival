@@ -155,7 +155,7 @@ const InventoryUI: React.FC<InventoryUIProps> = ({
     // --- Callbacks & Handlers ---
     const handleClose = useCallback(() => {
         if (isPlacingItem) {
-            console.log("[InventoryUI] Closing panel, cancelling placement mode.");
+            // console.log("[InventoryUI] Closing panel, cancelling placement mode.");
             cancelPlacement();
         }
         onClose();

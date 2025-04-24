@@ -102,7 +102,7 @@ export const useInputHandler = ({
     // --- Effect to reset sprint state if player dies --- 
     useEffect(() => {
         if (localPlayer?.isDead && isSprintingRef.current) {
-            console.log("[InputHandler] Player died while sprinting, forcing sprint off.");
+            // console.log("[InputHandler] Player died while sprinting, forcing sprint off.");
             isSprintingRef.current = false;
             // Call reducer to ensure server state is consistent
             callSetSprintingReducer(false);
@@ -218,19 +218,19 @@ export const useInputHandler = ({
                     }
                     return;
                 } else if (box !== null) {
-                    console.log(`[InputHandler KeyDown E] Starting hold check for Box ID: ${box}. Empty: ${boxEmpty}`);
+                    // console.log(`[InputHandler KeyDown E] Starting hold check for Box ID: ${box}. Empty: ${boxEmpty}`);
                     isEHeldDownRef.current = true;
                     eKeyDownTimestampRef.current = Date.now();
                     if (boxEmpty) {
                         setInteractionProgress({ targetId: box, targetType: 'wooden_storage_box', startTime: Date.now() });
-                        console.log(`[InputHandler KeyDown E - Box] Set interactionProgress.targetId = ${box}, targetType = wooden_storage_box`);
+                        // console.log(`[InputHandler KeyDown E - Box] Set interactionProgress.targetId = ${box}, targetType = wooden_storage_box`);
                     }
                     if (eKeyHoldTimerRef.current) clearTimeout(eKeyHoldTimerRef.current);
                     eKeyHoldTimerRef.current = setTimeout(() => {
                         if (isEHeldDownRef.current) {
                             const stillClosest = closestIdsRef.current; // Re-check closest box via ref
                             if (stillClosest.box === box && stillClosest.boxEmpty) {
-                                console.log(`[InputHandler Hold Timer] Executing pickup for EMPTY Box ID: ${box}`);
+                                // console.log(`[InputHandler Hold Timer] Executing pickup for EMPTY Box ID: ${box}`);
                                 try {
                                     connectionRef.current?.reducers.pickupStorageBox(box);
                                     isEHeldDownRef.current = false;
@@ -245,7 +245,7 @@ export const useInputHandler = ({
                                     eKeyHoldTimerRef.current = null;
                                 }
                             } else {
-                                console.log(`[InputHandler Hold Timer] Hold expired, but box ${box} is not empty or no longer closest. No pickup.`);
+                                // console.log(`[InputHandler Hold Timer] Hold expired, but box ${box} is not empty or no longer closest. No pickup.`);
                                 setInteractionProgress(null);
                                 if (eKeyHoldTimerRef.current) clearTimeout(eKeyHoldTimerRef.current);
                                 eKeyHoldTimerRef.current = null;
@@ -261,17 +261,17 @@ export const useInputHandler = ({
                     }
                     return;
                 } else if (campfire !== null) {
-                    console.log(`[InputHandler KeyDown E] Starting hold check for Campfire ID: ${campfire}`);
+                    // console.log(`[InputHandler KeyDown E] Starting hold check for Campfire ID: ${campfire}`);
                     isEHeldDownRef.current = true;
                     eKeyDownTimestampRef.current = Date.now();
                     setInteractionProgress({ targetId: campfire, targetType: 'campfire', startTime: Date.now() });
-                    console.log(`[InputHandler KeyDown E - Campfire] Set interactionProgress.targetId = ${campfire}, targetType = campfire`);
+                    // console.log(`[InputHandler KeyDown E - Campfire] Set interactionProgress.targetId = ${campfire}, targetType = campfire`);
                     if (eKeyHoldTimerRef.current) clearTimeout(eKeyHoldTimerRef.current);
                     eKeyHoldTimerRef.current = setTimeout(() => {
                         if (isEHeldDownRef.current) {
                             const stillClosest = closestIdsRef.current; // Re-check via ref
                             if (stillClosest.campfire === campfire) {
-                                console.log(`[InputHandler Hold Timer - Campfire] Executing toggle for Campfire ID: ${campfire}`);
+                                // console.log(`[InputHandler Hold Timer - Campfire] Executing toggle for Campfire ID: ${campfire}`);
                                 try {
                                     connectionRef.current?.reducers.toggleCampfireBurning(campfire);
                                 } catch (err) { console.error("[InputHandler Hold Timer - Campfire] Error toggling campfire:", err); }
@@ -328,13 +328,13 @@ export const useInputHandler = ({
 
                         // Prioritize Box if it was the target. Remove check for emptiness here.
                         if (closestBeforeClear.box !== null) {
-                             console.log(`[KeyUp E - Box] Short press detected for Box ID: ${closestBeforeClear.box}. Opening UI.`);
+                             // console.log(`[KeyUp E - Box] Short press detected for Box ID: ${closestBeforeClear.box}. Opening UI.`);
                              try {
                                 currentConnection.reducers.interactWithStorageBox(closestBeforeClear.box);
                                 onSetInteractingWithRef.current({ type: 'wooden_storage_box', id: closestBeforeClear.box });
                              } catch (err) { console.error("[KeyUp E - Box] Error interacting:", err); }
                         } else if (closestBeforeClear.campfire !== null) {
-                             console.log(`[KeyUp E - Campfire] Short press detected for Campfire ID: ${closestBeforeClear.campfire}. Opening UI.`);
+                             // console.log(`[KeyUp E - Campfire] Short press detected for Campfire ID: ${closestBeforeClear.campfire}. Opening UI.`);
                             try {
                                 currentConnection.reducers.interactWithCampfire(closestBeforeClear.campfire);
                                 onSetInteractingWithRef.current({ type: 'campfire', id: closestBeforeClear.campfire });
@@ -423,9 +423,9 @@ export const useInputHandler = ({
         if (canvas) {
            // Attach the locally defined handler
            canvas.addEventListener('click', handleCanvasClick);
-           console.log("[useInputHandler] Added canvas click listener.");
+           // console.log("[useInputHandler] Added canvas click listener.");
         } else {
-            console.warn("[useInputHandler] Canvas ref not available on mount to add click listener.");
+            // console.warn("[useInputHandler] Canvas ref not available on mount to add click listener.");
         }
 
         // Cleanup
@@ -440,7 +440,7 @@ export const useInputHandler = ({
             // Remove canvas listener on cleanup
             if (canvas) {
                canvas.removeEventListener('click', handleCanvasClick);
-               console.log("[useInputHandler] Removed canvas click listener.");
+               // console.log("[useInputHandler] Removed canvas click listener.");
             }
             // Clear any active timers on cleanup
             if (eKeyHoldTimerRef.current) {

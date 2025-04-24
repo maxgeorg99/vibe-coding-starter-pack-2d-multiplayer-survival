@@ -20,7 +20,7 @@ export function preloadTreeImages() {
       const img = new Image();
       img.src = src;
       imageCache[src] = img;
-      img.onload = () => console.log(`Loaded tree image: ${src}`);
+      // img.onload = () => console.log(`Loaded tree image: ${src}`);
       img.onerror = () => console.error(`Failed to load tree image: ${src}`);
     }
   });

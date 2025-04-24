@@ -46,7 +46,7 @@ export function renderDroppedItem({
         if (!itemImagesRef.current?.has(iconAssetName)) {
             const iconSrc = itemIcons[iconAssetName] || '';
             if (iconSrc) {
-                console.log(`[Render DroppedItem Util] Eagerly loading ${iconAssetName}`);
+                // console.log(`[Render DroppedItem Util] Eagerly loading ${iconAssetName}`);
                 const img = new Image();
                 img.src = iconSrc;
                 img.onload = () => itemImagesRef.current?.set(iconAssetName!, img);
