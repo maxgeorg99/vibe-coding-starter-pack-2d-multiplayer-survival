@@ -1,6 +1,8 @@
 use spacetimedb::{Identity, Timestamp, ReducerContext, Table};
 use log;
 use std::time::Duration;
+use spacetimedb::rand::rngs::StdRng;
+use spacetimedb::rand::SeedableRng;
 use crate::environment::calculate_chunk_index; // Make sure this helper is available
 
 // Declare the module
@@ -32,7 +34,10 @@ mod crafting; // ADD: Crafting recipe definitions
 mod crafting_queue; // ADD: Crafting queue logic
 mod player_stats; // ADD: Player stat scheduling logic
 mod global_tick; // ADD: Global tick scheduling logic
-mod chat; // ADD: Chat module for message handling
+mod chat;
+mod character;
+mod enemy;
+mod buff;
 mod player_pin; // ADD: Player pin module for minimap
 
 // Re-export chat types and reducers for use in other modules
@@ -46,6 +51,7 @@ use crate::world_state::world_state as WorldStateTableTrait;
 use crate::items::inventory_item as InventoryItemTableTrait;
 use crate::items::item_definition as ItemDefinitionTableTrait;
 use crate::active_equipment::active_equipment as ActiveEquipmentTableTrait;
+use crate::buff::{buff as BuffTableTrait, Buff};
 use crate::dropped_item::dropped_item_despawn_schedule as DroppedItemDespawnScheduleTableTrait;
 use crate::campfire::campfire_fuel_check_schedule as CampfireFuelCheckScheduleTableTrait;
 use crate::wooden_storage_box::wooden_storage_box as WoodenStorageBoxTableTrait;
@@ -58,13 +64,7 @@ use crate::crafting_queue::CraftingFinishSchedule as CraftingFinishScheduleTable
 use crate::global_tick::GlobalTickSchedule as GlobalTickScheduleTableTrait;
 
 // Import constants needed from player_stats
-use crate::player_stats::{
-    SPRINT_SPEED_MULTIPLIER,
-    JUMP_COOLDOWN_MS,
-    LOW_NEED_THRESHOLD,
-    LOW_THIRST_SPEED_PENALTY,
-    LOW_WARMTH_SPEED_PENALTY
-};
+use crate::player_stats::{SPRINT_SPEED_MULTIPLIER, JUMP_COOLDOWN_MS, LOW_NEED_THRESHOLD, LOW_THIRST_SPEED_PENALTY, LOW_WARMTH_SPEED_PENALTY, BASE_EXP_TO_LEVEL, EXP_TO_LEVEL_MULTIPLIER, player_stats as PlayerStatsTableTrait};
 
 // Use specific items needed globally (or use qualified paths)
 use crate::world_state::TimeOfDay; // Keep TimeOfDay if needed elsewhere, otherwise remove
@@ -112,11 +112,6 @@ pub struct Player {
     pub last_update: Timestamp, // Timestamp of the last update (movement or stats)
     pub last_stat_update: Timestamp, // Timestamp of the last stat processing tick
     pub jump_start_time_ms: u64,
-    pub health: f32,
-    pub stamina: f32,
-    pub thirst: f32,
-    pub hunger: f32,
-    pub warmth: f32,
     pub is_sprinting: bool,
     pub is_dead: bool,
     pub respawn_at: Timestamp,
@@ -373,11 +368,6 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
         last_update: ctx.timestamp, // Set initial timestamp
         last_stat_update: ctx.timestamp, // Initialize stat timestamp
         jump_start_time_ms: 0,
-        health: 100.0,
-        stamina: 100.0,
-        thirst: 100.0,
-        hunger: 100.0,
-        warmth: 100.0,
         is_sprinting: false,
         is_dead: false,
         respawn_at: ctx.timestamp, // Set initial respawn time (not dead yet)
@@ -387,20 +377,19 @@ pub fn register_player(ctx: &ReducerContext, username: String) -> Result<(), Str
     // Insert the new player
     match players.try_insert(player) {
         Ok(_) => {
-            log::info!("Player registered: {}. Granting starting items...", username);
+            log::info!("Player registered: {}. Initializing systems...", username);
 
-            // --- Grant Starting Items ---
-            // Call the dedicated function from the starting_items module
-            match crate::starting_items::grant_starting_items(ctx, sender_id, &username) {
-                Ok(_) => { /* Items granted (or individual errors logged) */ },
-                Err(e) => {
-                    // This function currently always returns Ok, but handle error just in case
-                    log::error!("Unexpected error during grant_starting_items for player {}: {}", username, e);
-                    // Potentially return the error from register_player if item grant failure is critical
-                    // return Err(format!("Failed to grant starting items: {}", e));
-                }
+            // Initialize player stats
+            match crate::player_stats::initialize_player_stats(ctx, sender_id) {
+                Ok(_) => log::info!("Player stats initialized for {}", username),
+                Err(e) => log::error!("Failed to initialize player stats: {}", e),
             }
-            // --- End Grant Starting Items ---
+
+            // Grant starting items
+            match crate::starting_items::grant_starting_items(ctx, sender_id, &username) {
+                Ok(_) => log::info!("Starting items granted to {}", username),
+                Err(e) => log::error!("Failed to grant starting items: {}", e),
+            }
 
             Ok(())
         },
@@ -505,7 +494,7 @@ pub fn place_campfire(ctx: &ReducerContext, item_instance_id: u64, world_x: f32,
     // --- 5b. Initialize Campfire with Fuel and Burning ---
     let current_time = ctx.timestamp;
     // Use constant from campfire module
-    let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS).into();
+    let first_consumption_time = current_time + Duration::from_secs(crate::campfire::FUEL_CONSUME_INTERVAL_SECS);
 
     // --- ADD: Calculate chunk index ---
     let chunk_idx = calculate_chunk_index(world_x, world_y);
@@ -572,6 +561,7 @@ pub fn update_player_position(
 ) -> Result<(), String> {
     let sender_id = ctx.sender;
     let players = ctx.db.player();
+    let players_stats = ctx.db.player_stats();
     let trees = ctx.db.tree();
     let stones = ctx.db.stone();
     let campfires = ctx.db.campfire(); // Get campfire table
@@ -580,6 +570,8 @@ pub fn update_player_position(
     let current_player = players.identity()
         .find(sender_id)
         .ok_or_else(|| "Player not found".to_string())?;
+
+    let current_player_stats = players_stats.player_id().find(sender_id).ok_or_else(|| "Player stats not found")?;
 
     // --- If player is dead, prevent movement ---
     if current_player.is_dead {
@@ -613,7 +605,7 @@ pub fn update_player_position(
     let delta_time_secs = (elapsed_micros as f32 / 1_000_000.0).min(0.1); // Clamp max delta time
 
     // --- Stamina Drain & Base Speed Calculation ---
-    let mut new_stamina = current_player.stamina; // Base this on current_player for speed calc
+    let mut new_stamina = current_player_stats.stamina; // Base this on current_player for speed calc
     let mut base_speed_multiplier = 1.0;
     // Movement now depends only on having a direction input from the client
     let is_moving = move_x.abs() > 0.01 || move_y.abs() > 0.01;
@@ -629,24 +621,8 @@ pub fn update_player_position(
         // The actual player.is_sprinting state will be forced off in player_stats.rs
     }
 
-    // --- Calculate Final Speed Multiplier based on Current Stats ---
-    let mut final_speed_multiplier = base_speed_multiplier;
-    // Use current player stats read at the beginning of the reducer
-    if current_player.thirst < LOW_NEED_THRESHOLD {
-        if is_moving { // Only apply penalty if trying to move
-            final_speed_multiplier *= LOW_THIRST_SPEED_PENALTY;
-            log::debug!("Player {:?} has low thirst. Applying speed penalty.", sender_id);
-        }
-    }
-    if current_player.warmth < LOW_NEED_THRESHOLD {
-        if is_moving { // Only apply penalty if trying to move
-            final_speed_multiplier *= LOW_WARMTH_SPEED_PENALTY;
-            log::debug!("Player {:?} is cold. Applying speed penalty.", sender_id);
-        }
-    }
-
     // --- Calculate Target Velocity & Server Displacement ---
-    let target_speed = PLAYER_SPEED * final_speed_multiplier;
+    let target_speed = PLAYER_SPEED * base_speed_multiplier;
     // Velocity is the normalized direction vector scaled by target speed
     let velocity_x = move_x * target_speed;
     let velocity_y = move_y * target_speed;
@@ -1111,11 +1087,6 @@ pub fn request_respawn(ctx: &ReducerContext) -> Result<(), String> {
     // --- End Grant Starting Rock ---
 
     // --- Reset Stats and State ---
-    player.health = 100.0;
-    player.hunger = 100.0;
-    player.thirst = 100.0;
-    player.warmth = 100.0;
-    player.stamina = 100.0;
     player.jump_start_time_ms = 0;
     player.is_sprinting = false;
     player.is_dead = false; // Mark as alive again
@@ -1179,4 +1150,54 @@ pub fn update_viewport(ctx: &ReducerContext, min_x: f32, min_y: f32, max_x: f32,
         }
     }
     Ok(())
-} 
+}
+
+// --- Reducers ---
+#[spacetimedb::reducer]
+pub fn add_experience(ctx: &ReducerContext, amount: f32) -> Result<(), String> {
+    let sender_id = ctx.sender;
+    let player_stats = ctx.db.player_stats();
+    let buffs = ctx.db.buff();
+
+    let mut stats = player_stats.player_id().find(sender_id)
+        .ok_or_else(|| "Player stats not found".to_string())?;
+
+    stats.experience += amount;
+
+    // Check for level up
+    while stats.experience >= stats.experience_to_next_level {
+        stats.level += 1;
+        stats.experience -= stats.experience_to_next_level;
+        stats.experience_to_next_level = BASE_EXP_TO_LEVEL * (EXP_TO_LEVEL_MULTIPLIER.powi(stats.level as i32 - 1));
+
+        // Generate random buffs for level up
+        let buff_count = 3; // Number of buffs to choose from
+        let mut available_buffs = Vec::new();
+
+        for _ in 0..buff_count {
+            let mut rng = StdRng::from_rng(ctx.rng()).map_err(|e| format!("Failed to seed RNG: {}", e))?;
+
+            let rarity = crate::buff::get_random_rarity(&mut rng);
+            let buff_type = crate::buff::get_random_buff(&mut rng,rarity.clone());
+
+            let buff = Buff {
+                id: 0, // Auto-incremented
+                player_id: sender_id,
+                buff_type: buff_type.clone(),
+                rarity: rarity.clone(),
+            };
+
+            available_buffs.push(buff);
+        }
+
+        // Store available buffs (they will be selected by the client)
+        for buff in available_buffs {
+            buffs.insert(buff);
+        }
+
+        log::info!("Player {:?} reached level {}!", sender_id, stats.level);
+    }
+
+    player_stats.player_id().update(stats);
+    Ok(())
+}

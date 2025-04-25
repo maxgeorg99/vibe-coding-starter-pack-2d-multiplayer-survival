@@ -25,7 +25,8 @@ import { useInteractionManager } from './hooks/useInteractionManager';
 
 // Assets & Styles
 import './App.css';
-import { useDebouncedCallback } from 'use-debounce'; // Import debounce helper
+import { useDebouncedCallback } from 'use-debounce';
+import StoryTextbox from "./components/StoryTextbox.tsx"; // Import debounce helper
 
 // Viewport constants
 const VIEWPORT_WIDTH = 1200; // Example: Base viewport width
@@ -54,6 +55,9 @@ function App() {
     const { interactingWith, handleSetInteractingWith } = useInteractionManager();
 
     const { draggedItemInfo, dropError, handleItemDragStart, handleItemDrop } = useDragDropManager({ connection, interactingWith });
+
+    // Add state for story completion
+    const [storyCompleted, setStoryCompleted] = useState(false);
 
     // --- App-Level State --- 
     const [appIsConnected, setAppIsConnected] = useState<boolean>(false); // Tracks if player is registered & game ready
@@ -198,6 +202,10 @@ function App() {
         };
     }, []); // Empty dependency array: run only once on mount
 
+    const handleStoryComplete = () => {
+        setStoryCompleted(true);
+    };
+
     // --- Effect to handle global key presses that aren't directly game actions ---
     useEffect(() => {
         const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -248,7 +256,10 @@ function App() {
                     isLoading={hookIsLoading || isRegistering} // Combine loading states
                     error={connectionError} // Pass only connection errors here
                 />
-            ) : (
+            ) : !storyCompleted ? (
+                // --- Render Story Prolog ---
+                <StoryTextbox onComplete={handleStoryComplete} />
+                ) : (
                 // --- Render Game Screen Component --- 
                 // Only render GameScreen if viewport is calculated (REMOVING THIS CONDITION)
                 // currentViewport && (

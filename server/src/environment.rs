@@ -33,10 +33,10 @@ use crate::utils::{calculate_tile_bounds, attempt_single_spawn};
 use crate::check_and_respawn_resource; // Import the macro
 
 use noise::{NoiseFn, Perlin, Fbm};
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 use std::collections::HashSet;
 use log;
+use spacetimedb::rand::{Rng, SeedableRng};
+use spacetimedb::rand::rngs::StdRng;
 
 // --- Constants for Chunk Calculation ---
 // Size of a chunk in tiles (e.g., 20x20 tiles per chunk)

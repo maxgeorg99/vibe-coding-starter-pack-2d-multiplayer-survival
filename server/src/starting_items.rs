@@ -2,10 +2,9 @@ use spacetimedb::{Identity, ReducerContext};
 use spacetimedb::Table;
 use log;
 
-// Import needed Item types and Table Traits
 use crate::items::{ItemDefinition, InventoryItem, EquipmentSlot, item_definition as ItemDefinitionTableTrait, inventory_item as InventoryItemTableTrait};
-// Import ActiveEquipment types and Table Trait
 use crate::active_equipment::{ActiveEquipment, active_equipment as ActiveEquipmentTableTrait};
+use crate::character::{CharacterType, character};
 
 /// Grants the predefined starting items (inventory/hotbar) and starting equipment to a newly registered player.
 pub(crate) fn grant_starting_items(ctx: &ReducerContext, player_id: Identity, username: &str) -> Result<(), String> {
@@ -13,24 +12,31 @@ pub(crate) fn grant_starting_items(ctx: &ReducerContext, player_id: Identity, us
 
     let item_defs = ctx.db.item_definition();
     let inventory = ctx.db.inventory_item();
+    let characters = ctx.db.character();
+
+    let character_type = characters.player_id()
+        .find(player_id)
+        .map(|c| c.character_type)
+        .unwrap_or(CharacterType::Chris); // Default to Chris if no character selected yet
+
+    let starting_weapon = match character_type {
+        CharacterType::Til => "Hammer",
+        CharacterType::Marc => "Dagger",
+        CharacterType::Max => "Sword",
+        CharacterType::Chris => "Stone Hatchet",
+    };
+
 
     // --- Grant Inventory/Hotbar Items --- 
     // Define the items to go into inventory/hotbar slots
     // Format: (item_name: &str, quantity: u32, hotbar_slot: Option<u8>, inventory_slot: Option<u16>)
     let starting_inv_items = [
         // Hotbar (Slots 0-5)
-        // ("Rock", 1, Some(0u8), None), 
-        ("Stone Hatchet", 1, Some(1u8), None), 
+        (starting_weapon, 1, Some(2u8), None),
         ("Stone Pickaxe", 1, Some(2u8), None),
-       
+
         ("Wooden Storage Box", 1, Some(3u8), None), 
         ("Camp Fire", 1, Some(4u8), None),
-        // ("Camp Fire", 1, Some(5u8), None),
-        
-        // Starting materials in Inventory (Slots 0-23 typically)
-        // ("Wood", 600, None, Some(12u16)), 
-        // ("Wood", 500, None, Some(13u16)), 
-        // ("Stone", 500, None, Some(14u16)),
     ];
 
     log::info!("[GrantItems] Defined {} starting inventory/hotbar item entries.", starting_inv_items.len());

@@ -21,7 +21,9 @@ use crate::active_equipment as ActiveEquipmentTableTrait;
 use crate::PLAYER_RADIUS; // Add back the import for PLAYER_RADIUS
 use std::f32::consts::PI;
 use crate::items::{InventoryItem, ItemDefinition, ItemCategory, EquipmentSlot};
-use crate::Player; // Corrected import path
+use crate::Player;
+use crate::player_stats::player_stats;
+// Corrected import path
 
 // --- Constants ---
 pub(crate) const RESPAWN_TIME_MS: u64 = 5000; // 5 seconds respawn time
@@ -130,6 +132,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
     // Get tables
     let active_equipments = ctx.db.active_equipment();
     let players = ctx.db.player();
+    let players_stats = ctx.db.player_stats();
     let item_defs = ctx.db.item_definition();
     let trees = ctx.db.tree();
     let stones = ctx.db.stone(); // Get stones table
@@ -280,7 +283,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
 
             if stone.health == 0 {
                 log::info!("Stone {} depleted by Player {:?}. Scheduling respawn.", stone_id, sender_id);
-                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                 stone.respawn_at = Some(respawn_time);
                 stones.id().update(stone); // Update with health 0 and respawn time
                 // stones.id().delete(stone_id); // Removed delete
@@ -293,16 +296,18 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             // --- Damage Player ---
             let mut target_player = players.identity().find(target_player_id)
                 .ok_or("Target player disappeared?")?;
-            let old_health = target_player.health;
+            let mut target_player_stats = players_stats.player_id().find(target_player_id)
+                .ok_or("Target player disappeared?")?;
+            let old_health = target_player_stats.health;
             // Apply PvP multiplier
             let actual_damage = (item_damage as f32 * PVP_DAMAGE_MULTIPLIER).max(0.0);
-            target_player.health = (target_player.health - actual_damage).max(0.0);
+            target_player_stats.health = (target_player_stats.health - actual_damage).max(0.0);
             target_player.last_hit_time = Some(now_ts); // <-- Set last hit time
             log::info!("Player {:?} hit Player {:?} with {} for {:.1} ({} base * {}x) damage. Health: {:.1} -> {:.1}",
-                     sender_id, target_player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+                     sender_id, target_player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player_stats.health);
 
             // Check for death
-            if target_player.health <= 0.0 && !target_player.is_dead {
+            if target_player_stats.health <= 0.0 && !target_player.is_dead {
                 target_player.is_dead = true;
                 let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
                 target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
@@ -311,6 +316,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             }
 
             players.identity().update(target_player);
+            players_stats.player_id().update(target_player_stats);
             hit_something = true;
         }
 
@@ -340,7 +346,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             
             if tree.health == 0 {
                 log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
-                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                 tree.respawn_at = Some(respawn_time);
                 trees.id().update(tree); // Update with health 0 and respawn time
                 // trees.id().delete(tree_id); // REMOVED delete
@@ -353,16 +359,18 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             // --- Damage Player ---
             let mut target_player = players.identity().find(target_player_id)
                 .ok_or("Target player disappeared?")?;
-            let old_health = target_player.health;
+            let mut target_player_stats = players_stats.player_id().find(target_player_id)
+                .ok_or("Target player disappeared?")?;
+            let old_health = target_player_stats.health;
             // Apply PvP multiplier
             let actual_damage = (item_damage as f32 * PVP_DAMAGE_MULTIPLIER).max(0.0);
-            target_player.health = (target_player.health - actual_damage).max(0.0);
+            target_player_stats.health = (target_player_stats.health - actual_damage).max(0.0);
             target_player.last_hit_time = Some(now_ts); // <-- Set last hit time
             log::info!("Player {:?} hit Player {:?} with {} for {:.1} ({} base * {}x) damage. Health: {:.1} -> {:.1}",
-                     sender_id, target_player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+                     sender_id, target_player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player_stats.health);
 
             // Check for death
-            if target_player.health <= 0.0 && !target_player.is_dead {
+            if target_player_stats.health <= 0.0 && !target_player.is_dead {
                 target_player.is_dead = true;
                 let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
                 target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
@@ -371,6 +379,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
             }
 
             players.identity().update(target_player);
+            players_stats.player_id().update(target_player_stats);
             hit_something = true;
         }
 
@@ -421,7 +430,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
 
                     if tree.health == 0 {
                         log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         tree.respawn_at = Some(respawn_time);
                         trees.id().update(tree); // Update with health 0 and respawn time
                         // trees.id().delete(tree_id); // REMOVED delete
@@ -453,7 +462,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
 
                     if stone.health == 0 {
                         log::info!("Stone {} depleted by Player {:?}. Scheduling respawn.", stone_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         stone.respawn_at = Some(respawn_time);
                         stones.id().update(stone); // Update with health 0 and respawn time
                         // stones.id().delete(stone_id);
@@ -468,16 +477,18 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     // --- Damage Player (Rock Damage = 1 * Multiplier) ---
                     let mut target_player = players.identity().find(player_id)
                         .ok_or("Target player disappeared?")?;
-                    let old_health = target_player.health;
+                    let mut target_player_stats = players_stats.player_id().find(target_player.identity)
+                        .ok_or("Target player disappeared?")?;
+                    let old_health = target_player_stats.health;
                     // Rock base damage is 1
                     let actual_damage = (1.0 * PVP_DAMAGE_MULTIPLIER).max(0.0);
-                    target_player.health = (target_player.health - actual_damage).max(0.0);
+                    target_player_stats.health = (target_player_stats.health - actual_damage).max(0.0);
                     target_player.last_hit_time = Some(now_ts);
                     log::info!("Player {:?} hit Player {:?} with {} for {:.1} (1 base * {}x) damage. Health: {:.1} -> {:.1}",
-                            sender_id, player_id, item_def.name, actual_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+                            sender_id, player_id, item_def.name, actual_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player_stats.health);
 
                     // Check for death
-                    if target_player.health <= 0.0 && !target_player.is_dead {
+                    if target_player_stats.health <= 0.0 && !target_player.is_dead {
                         target_player.is_dead = true;
                         let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
                         target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
@@ -485,6 +496,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     }
 
                     players.identity().update(target_player);
+                    players_stats.player_id().update(target_player_stats);
                     hit_something = true;
                 }
             },
@@ -527,7 +539,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                             sender_id, tree_id, item_def.name, item_damage, old_health, tree.health);
                     if tree.health == 0 {
                         log::info!("Tree {} destroyed by Player {:?}. Scheduling respawn.", tree_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         tree.respawn_at = Some(respawn_time);
                         trees.id().update(tree); // Update with health 0 and respawn time
                         // trees.id().delete(tree_id); // REMOVED delete
@@ -547,7 +559,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                             sender_id, stone_id, item_def.name, item_damage, old_health, stone.health);
                     if stone.health == 0 {
                         log::info!("Stone {} depleted by Player {:?}. Scheduling respawn.", stone_id, sender_id);
-                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS).into();
+                        let respawn_time = now_ts + Duration::from_secs(RESOURCE_RESPAWN_DURATION_SECS);
                         stone.respawn_at = Some(respawn_time);
                         stones.id().update(stone); // Update with health 0 and respawn time
                         // stones.id().delete(stone_id);
@@ -561,16 +573,18 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                 if let Some((player_id, _)) = closest_player_target { // Retrieve ID again
                     let mut target_player = players.identity().find(player_id)
                         .ok_or("Target player disappeared?")?;
-                    let old_health = target_player.health;
+                    let mut target_player_stats = players_stats.player_id().find(target_player.identity)
+                        .ok_or("Target player disappeared?")?;
+                    let old_health = target_player_stats.health;
                     // Apply PvP multiplier
                     let actual_damage = (item_damage as f32 * PVP_DAMAGE_MULTIPLIER).max(0.0);
-                    target_player.health = (target_player.health - actual_damage).max(0.0);
+                    target_player_stats.health = (target_player_stats.health - actual_damage).max(0.0);
                     target_player.last_hit_time = Some(now_ts); // <-- Set last hit time
                     log::info!("Player {:?} hit Player {:?} with {} for {:.1} ({} base * {}x) damage. Health: {:.1} -> {:.1}",
-                            sender_id, player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player.health);
+                            sender_id, player_id, item_def.name, actual_damage, item_damage, PVP_DAMAGE_MULTIPLIER, old_health, target_player_stats.health);
 
                     // Check for death
-                    if target_player.health <= 0.0 && !target_player.is_dead {
+                    if target_player_stats.health <= 0.0 && !target_player.is_dead {
                         target_player.is_dead = true;
                         let respawn_micros = now_micros.saturating_add((RESPAWN_TIME_MS * 1000) as i64);
                         target_player.respawn_at = Timestamp::from_micros_since_unix_epoch(respawn_micros);
@@ -579,6 +593,7 @@ pub fn use_equipped_item(ctx: &ReducerContext) -> Result<(), String> {
                     }
 
                     players.identity().update(target_player);
+                    players_stats.player_id().update(target_player_stats);
                     hit_something = true;
                 }
             },

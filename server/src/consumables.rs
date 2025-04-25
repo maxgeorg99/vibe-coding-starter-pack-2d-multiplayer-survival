@@ -6,7 +6,9 @@ use log;
 use crate::player as PlayerTableTrait;
 use crate::items::{InventoryItem, inventory_item as InventoryItemTableTrait};
 use crate::items::{ItemDefinition, item_definition as ItemDefinitionTableTrait};
-use crate::items::ItemCategory; // Import the enum itself
+use crate::items::ItemCategory;
+use crate::player_stats::player_stats;
+// Import the enum itself
 
 // --- Consumable Effect Constants ---
 const MUSHROOM_HEALTH_GAIN: f32 = 5.0;
@@ -19,7 +21,7 @@ pub fn consume_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), S
     let sender_id = ctx.sender;
     let inventory = ctx.db.inventory_item();
     let item_defs = ctx.db.item_definition();
-    let players = ctx.db.player();
+    let players_stats = ctx.db.player_stats();
 
     log::info!("[ConsumeItem] Player {:?} attempting to consume item instance {}", sender_id, item_instance_id);
 
@@ -41,30 +43,24 @@ pub fn consume_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), S
         return Err(format!("Item '{}' is not consumable.", item_def.name));
     }
 
-    // 5. Find the player to apply effects to
-    let mut player = players.identity().find(sender_id)
+    // 5. Find the player stats to apply effects to
+    let mut player_stat = players_stats.player_id().find(sender_id)
         .ok_or_else(|| "Player not found to apply consumable effects.".to_string())?;
 
     // 6. Apply Effects (Specific to Mushroom for now)
     // TODO: Refactor this to use data from ItemDefinition if more consumables are added
     let mut stat_changed = false;
     if item_def.name == "Mushroom" {
-        let old_health = player.health;
-        let old_hunger = player.hunger;
-        let old_thirst = player.thirst;
+        let old_health = player_stat.health;
 
-        player.health = (player.health + MUSHROOM_HEALTH_GAIN).min(MAX_STAT_VALUE);
-        player.hunger = (player.hunger + MUSHROOM_HUNGER_GAIN).min(MAX_STAT_VALUE);
-        player.thirst = (player.thirst + MUSHROOM_THIRST_GAIN).min(MAX_STAT_VALUE);
-        
+        player_stat.health = (player_stat.health + MUSHROOM_HEALTH_GAIN).min(MAX_STAT_VALUE);
+
         stat_changed = true; // Assume stats changed if it's a mushroom
 
         log::info!(
-            "[ConsumeItem] Player {:?} consumed {}. Stats: H {:.1}->{:.1}, Hu {:.1}->{:.1}, T {:.1}->{:.1}",
+            "[ConsumeItem] Player {:?} consumed {}. Stats: H {:.1}->{:.1}",
             sender_id, item_def.name, 
-            old_health, player.health, 
-            old_hunger, player.hunger, 
-            old_thirst, player.thirst
+            old_health, player_stat.health,
         );
 
     } else {
@@ -84,7 +80,7 @@ pub fn consume_item(ctx: &ReducerContext, item_instance_id: u64) -> Result<(), S
 
     // 8. Update Player state only if stats changed
     if stat_changed {
-         players.identity().update(player);
+         players_stats.player_id().update(player_stat);
     }
 
     Ok(())

@@ -15,10 +15,9 @@
 
 use spacetimedb::{ReducerContext, Table, SpacetimeType, Timestamp};
 use noise::NoiseFn;
-use rand::{Rng, rngs::StdRng};
 use std::collections::HashSet;
 use log;
-
+use spacetimedb::rand::Rng;
 // Assuming these are accessible from the crate root
 use crate::{WORLD_WIDTH_PX, WORLD_HEIGHT_PX, TILE_SIZE_PX, PLAYER_RADIUS};
 
