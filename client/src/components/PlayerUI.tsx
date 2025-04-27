@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment, Campfire as SpacetimeDBCampfire, WoodenStorageBox as SpacetimeDBWoodenStorageBox, Recipe, CraftingQueueItem } from '../generated';
+import { Player, InventoryItem, ItemDefinition, DbConnection, ActiveEquipment, Campfire as SpacetimeDBCampfire, WoodenStorageBox as SpacetimeDBWoodenStorageBox, Recipe, CraftingQueueItem, PlayerStats } from '../generated';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import InventoryUI, { PopulatedItem } from './InventoryUI';
 import Hotbar from './Hotbar';
@@ -49,6 +49,7 @@ const StatusBar: React.FC<StatusBarProps> = ({ label, icon, value, maxValue, bar
 interface PlayerUIProps {
   identity: Identity | null;
   players: Map<string, Player>;
+  playersStats: Map<string, PlayerStats>;
   inventoryItems: Map<string, InventoryItem>;
   itemDefinitions: Map<string, ItemDefinition>;
   connection: DbConnection | null;
@@ -70,6 +71,7 @@ interface PlayerUIProps {
 const PlayerUI: React.FC<PlayerUIProps> = ({
     identity,
     players,
+    playersStats,
     inventoryItems,
     itemDefinitions,
     connection,
@@ -88,16 +90,20 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
     craftingQueueItems
  }) => {
     const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
+    const [localPlayerStats, setLocalPlayerStats] = useState<PlayerStats | null>(null);
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
     
     useEffect(() => {
         if (!identity) {
             setLocalPlayer(null);
+            setLocalPlayerStats(null);
             return;
         }
         const player = players.get(identity.toHexString());
+        const player_stats = playersStats.get(identity.toHexString());
         setLocalPlayer(player || null);
-    }, [identity, players]);
+        setLocalPlayerStats(player_stats || null);
+    }, [identity, players, playersStats]);
 
     // Effect for inventory toggle keybind
     useEffect(() => {
@@ -183,7 +189,7 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
         onSetInteractingWith(null); // Clear interaction state when closing
     };
 
-    if (!localPlayer) {
+    if (!localPlayer || !localPlayerStats) {
         return null;
     }
 
@@ -206,12 +212,19 @@ const PlayerUI: React.FC<PlayerUIProps> = ({
                 boxShadow: '2px 2px 0px rgba(0,0,0,0.5)',
                 zIndex: 50, // Keep below inventory/overlay
             }}>
-                {/* Status Bars mapping */}
-                <StatusBar label="HP" icon="❤️" value={localPlayer.health} maxValue={100} barColor="#ff4040" />
-                <StatusBar label="SP" icon="⚡" value={localPlayer.stamina} maxValue={100} barColor="#40ff40" />
-                <StatusBar label="Thirst" icon="💧" value={localPlayer.thirst} maxValue={100} barColor="#40a0ff" />
-                <StatusBar label="Hunger" icon="🍖" value={localPlayer.hunger} maxValue={100} barColor="#ffa040" />
-                <StatusBar label="Warmth" icon="🔥" value={localPlayer.warmth} maxValue={100} barColor="#ffcc00" />
+                {/* Core Stats */}
+                <StatusBar label="HP" icon="❤️" value={localPlayerStats.health} maxValue={100} barColor="#ff4040" />
+                <StatusBar label="SP" icon="⚡" value={localPlayerStats.stamina} maxValue={100} barColor="#40ff40" />
+                
+                {/* Combat Stats */}
+                <div style={{ marginTop: '8px', fontSize: '10px', color: '#a0a0c0' }}>
+                    <div>Level: {localPlayerStats.level}</div>
+                    <div>EXP: {localPlayerStats.experience.toFixed(0)}/{localPlayerStats.experienceToNextLevel.toFixed(0)}</div>
+                    <div>Attack: {localPlayerStats.attack.toFixed(1)}</div>
+                    <div>Speed: {localPlayerStats.attackSpeed.toFixed(1)}</div>
+                    <div>Move: {localPlayerStats.moveSpeed.toFixed(1)}</div>
+                    <div>Armor: {localPlayerStats.armor.toFixed(1)}</div>
+                </div>
             </div>
 
             {/* Render Inventory UI conditionally - Pass props down */}

@@ -32,6 +32,8 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 
 // Import and reexport all reducer arg types
+import { AddExperience } from "./add_experience_reducer.ts";
+export { AddExperience };
 import { AddFuelToCampfire } from "./add_fuel_to_campfire_reducer.ts";
 export { AddFuelToCampfire };
 import { AutoRemoveFuelFromCampfire } from "./auto_remove_fuel_from_campfire_reducer.ts";
@@ -46,6 +48,8 @@ import { CheckResourceRespawns } from "./check_resource_respawns_reducer.ts";
 export { CheckResourceRespawns };
 import { ConsumeItem } from "./consume_item_reducer.ts";
 export { ConsumeItem };
+import { DamageEnemy } from "./damage_enemy_reducer.ts";
+export { DamageEnemy };
 import { DespawnExpiredItems } from "./despawn_expired_items_reducer.ts";
 export { DespawnExpiredItems };
 import { DropItem } from "./drop_item_reducer.ts";
@@ -116,12 +120,18 @@ import { SeedRecipes } from "./seed_recipes_reducer.ts";
 export { SeedRecipes };
 import { SeedWorldState } from "./seed_world_state_reducer.ts";
 export { SeedWorldState };
+import { SelectBuff } from "./select_buff_reducer.ts";
+export { SelectBuff };
+import { SelectCharacter } from "./select_character_reducer.ts";
+export { SelectCharacter };
 import { SendMessage } from "./send_message_reducer.ts";
 export { SendMessage };
 import { SetPlayerPin } from "./set_player_pin_reducer.ts";
 export { SetPlayerPin };
 import { SetSprinting } from "./set_sprinting_reducer.ts";
 export { SetSprinting };
+import { SpawnEnemies } from "./spawn_enemies_reducer.ts";
+export { SpawnEnemies };
 import { SplitAndMoveFromCampfire } from "./split_and_move_from_campfire_reducer.ts";
 export { SplitAndMoveFromCampfire };
 import { SplitStack } from "./split_stack_reducer.ts";
@@ -146,6 +156,8 @@ import { ToggleCampfireBurning } from "./toggle_campfire_burning_reducer.ts";
 export { ToggleCampfireBurning };
 import { UnequipItem } from "./unequip_item_reducer.ts";
 export { UnequipItem };
+import { UpdateEnemies } from "./update_enemies_reducer.ts";
+export { UpdateEnemies };
 import { UpdatePlayerPosition } from "./update_player_position_reducer.ts";
 export { UpdatePlayerPosition };
 import { UpdateViewport } from "./update_viewport_reducer.ts";
@@ -156,10 +168,14 @@ export { UseEquippedItem };
 // Import and reexport all table handle types
 import { ActiveEquipmentTableHandle } from "./active_equipment_table.ts";
 export { ActiveEquipmentTableHandle };
+import { BuffTableHandle } from "./buff_table.ts";
+export { BuffTableHandle };
 import { CampfireTableHandle } from "./campfire_table.ts";
 export { CampfireTableHandle };
 import { CampfireFuelCheckScheduleTableHandle } from "./campfire_fuel_check_schedule_table.ts";
 export { CampfireFuelCheckScheduleTableHandle };
+import { CharacterTableHandle } from "./character_table.ts";
+export { CharacterTableHandle };
 import { ClientViewportTableHandle } from "./client_viewport_table.ts";
 export { ClientViewportTableHandle };
 import { CraftingFinishScheduleTableHandle } from "./crafting_finish_schedule_table.ts";
@@ -170,6 +186,8 @@ import { DroppedItemTableHandle } from "./dropped_item_table.ts";
 export { DroppedItemTableHandle };
 import { DroppedItemDespawnScheduleTableHandle } from "./dropped_item_despawn_schedule_table.ts";
 export { DroppedItemDespawnScheduleTableHandle };
+import { EnemyTableHandle } from "./enemy_table.ts";
+export { EnemyTableHandle };
 import { GlobalTickScheduleTableHandle } from "./global_tick_schedule_table.ts";
 export { GlobalTickScheduleTableHandle };
 import { InventoryItemTableHandle } from "./inventory_item_table.ts";
@@ -186,6 +204,8 @@ import { PlayerPinTableHandle } from "./player_pin_table.ts";
 export { PlayerPinTableHandle };
 import { PlayerStatScheduleTableHandle } from "./player_stat_schedule_table.ts";
 export { PlayerStatScheduleTableHandle };
+import { PlayerStatsTableHandle } from "./player_stats_table.ts";
+export { PlayerStatsTableHandle };
 import { RecipeTableHandle } from "./recipe_table.ts";
 export { RecipeTableHandle };
 import { StoneTableHandle } from "./stone_table.ts";
@@ -200,10 +220,20 @@ export { WorldStateTableHandle };
 // Import and reexport all types
 import { ActiveEquipment } from "./active_equipment_type.ts";
 export { ActiveEquipment };
+import { Buff } from "./buff_type.ts";
+export { Buff };
+import { BuffRarity } from "./buff_rarity_type.ts";
+export { BuffRarity };
+import { BuffType } from "./buff_type_type.ts";
+export { BuffType };
 import { Campfire } from "./campfire_type.ts";
 export { Campfire };
 import { CampfireFuelCheckSchedule } from "./campfire_fuel_check_schedule_type.ts";
 export { CampfireFuelCheckSchedule };
+import { Character } from "./character_type.ts";
+export { Character };
+import { CharacterType } from "./character_type_type.ts";
+export { CharacterType };
 import { ClientViewport } from "./client_viewport_type.ts";
 export { ClientViewport };
 import { CraftingFinishSchedule } from "./crafting_finish_schedule_type.ts";
@@ -214,6 +244,10 @@ import { DroppedItem } from "./dropped_item_type.ts";
 export { DroppedItem };
 import { DroppedItemDespawnSchedule } from "./dropped_item_despawn_schedule_type.ts";
 export { DroppedItemDespawnSchedule };
+import { Enemy } from "./enemy_type.ts";
+export { Enemy };
+import { EnemyType } from "./enemy_type_type.ts";
+export { EnemyType };
 import { EquipmentSlot } from "./equipment_slot_type.ts";
 export { EquipmentSlot };
 import { GlobalTickSchedule } from "./global_tick_schedule_type.ts";
@@ -234,6 +268,8 @@ import { PlayerPin } from "./player_pin_type.ts";
 export { PlayerPin };
 import { PlayerStatSchedule } from "./player_stat_schedule_type.ts";
 export { PlayerStatSchedule };
+import { PlayerStats } from "./player_stats_type.ts";
+export { PlayerStats };
 import { Recipe } from "./recipe_type.ts";
 export { Recipe };
 import { RecipeIngredient } from "./recipe_ingredient_type.ts";
@@ -258,6 +294,11 @@ const REMOTE_MODULE = {
       rowType: ActiveEquipment.getTypeScriptAlgebraicType(),
       primaryKey: "playerIdentity",
     },
+    buff: {
+      tableName: "buff",
+      rowType: Buff.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
     campfire: {
       tableName: "campfire",
       rowType: Campfire.getTypeScriptAlgebraicType(),
@@ -267,6 +308,11 @@ const REMOTE_MODULE = {
       tableName: "campfire_fuel_check_schedule",
       rowType: CampfireFuelCheckSchedule.getTypeScriptAlgebraicType(),
       primaryKey: "id",
+    },
+    character: {
+      tableName: "character",
+      rowType: Character.getTypeScriptAlgebraicType(),
+      primaryKey: "playerId",
     },
     client_viewport: {
       tableName: "client_viewport",
@@ -291,6 +337,11 @@ const REMOTE_MODULE = {
     dropped_item_despawn_schedule: {
       tableName: "dropped_item_despawn_schedule",
       rowType: DroppedItemDespawnSchedule.getTypeScriptAlgebraicType(),
+      primaryKey: "id",
+    },
+    enemy: {
+      tableName: "enemy",
+      rowType: Enemy.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     global_tick_schedule: {
@@ -333,6 +384,11 @@ const REMOTE_MODULE = {
       rowType: PlayerStatSchedule.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
+    player_stats: {
+      tableName: "player_stats",
+      rowType: PlayerStats.getTypeScriptAlgebraicType(),
+      primaryKey: "playerId",
+    },
     recipe: {
       tableName: "recipe",
       rowType: Recipe.getTypeScriptAlgebraicType(),
@@ -360,6 +416,10 @@ const REMOTE_MODULE = {
     },
   },
   reducers: {
+    add_experience: {
+      reducerName: "add_experience",
+      argsType: AddExperience.getTypeScriptAlgebraicType(),
+    },
     add_fuel_to_campfire: {
       reducerName: "add_fuel_to_campfire",
       argsType: AddFuelToCampfire.getTypeScriptAlgebraicType(),
@@ -387,6 +447,10 @@ const REMOTE_MODULE = {
     consume_item: {
       reducerName: "consume_item",
       argsType: ConsumeItem.getTypeScriptAlgebraicType(),
+    },
+    damage_enemy: {
+      reducerName: "damage_enemy",
+      argsType: DamageEnemy.getTypeScriptAlgebraicType(),
     },
     despawn_expired_items: {
       reducerName: "despawn_expired_items",
@@ -528,6 +592,14 @@ const REMOTE_MODULE = {
       reducerName: "seed_world_state",
       argsType: SeedWorldState.getTypeScriptAlgebraicType(),
     },
+    select_buff: {
+      reducerName: "select_buff",
+      argsType: SelectBuff.getTypeScriptAlgebraicType(),
+    },
+    select_character: {
+      reducerName: "select_character",
+      argsType: SelectCharacter.getTypeScriptAlgebraicType(),
+    },
     send_message: {
       reducerName: "send_message",
       argsType: SendMessage.getTypeScriptAlgebraicType(),
@@ -539,6 +611,10 @@ const REMOTE_MODULE = {
     set_sprinting: {
       reducerName: "set_sprinting",
       argsType: SetSprinting.getTypeScriptAlgebraicType(),
+    },
+    spawn_enemies: {
+      reducerName: "spawn_enemies",
+      argsType: SpawnEnemies.getTypeScriptAlgebraicType(),
     },
     split_and_move_from_campfire: {
       reducerName: "split_and_move_from_campfire",
@@ -588,6 +664,10 @@ const REMOTE_MODULE = {
       reducerName: "unequip_item",
       argsType: UnequipItem.getTypeScriptAlgebraicType(),
     },
+    update_enemies: {
+      reducerName: "update_enemies",
+      argsType: UpdateEnemies.getTypeScriptAlgebraicType(),
+    },
     update_player_position: {
       reducerName: "update_player_position",
       argsType: UpdatePlayerPosition.getTypeScriptAlgebraicType(),
@@ -627,6 +707,7 @@ const REMOTE_MODULE = {
 
 // A type representing all the possible variants of a reducer.
 export type Reducer = never
+| { name: "AddExperience", args: AddExperience }
 | { name: "AddFuelToCampfire", args: AddFuelToCampfire }
 | { name: "AutoRemoveFuelFromCampfire", args: AutoRemoveFuelFromCampfire }
 | { name: "CancelCraftingItem", args: CancelCraftingItem }
@@ -634,6 +715,7 @@ export type Reducer = never
 | { name: "CheckFinishedCrafting", args: CheckFinishedCrafting }
 | { name: "CheckResourceRespawns", args: CheckResourceRespawns }
 | { name: "ConsumeItem", args: ConsumeItem }
+| { name: "DamageEnemy", args: DamageEnemy }
 | { name: "DespawnExpiredItems", args: DespawnExpiredItems }
 | { name: "DropItem", args: DropItem }
 | { name: "EquipArmor", args: EquipArmor }
@@ -669,9 +751,12 @@ export type Reducer = never
 | { name: "SeedItems", args: SeedItems }
 | { name: "SeedRecipes", args: SeedRecipes }
 | { name: "SeedWorldState", args: SeedWorldState }
+| { name: "SelectBuff", args: SelectBuff }
+| { name: "SelectCharacter", args: SelectCharacter }
 | { name: "SendMessage", args: SendMessage }
 | { name: "SetPlayerPin", args: SetPlayerPin }
 | { name: "SetSprinting", args: SetSprinting }
+| { name: "SpawnEnemies", args: SpawnEnemies }
 | { name: "SplitAndMoveFromCampfire", args: SplitAndMoveFromCampfire }
 | { name: "SplitStack", args: SplitStack }
 | { name: "SplitStackFromBox", args: SplitStackFromBox }
@@ -684,6 +769,7 @@ export type Reducer = never
 | { name: "TickWorldState", args: TickWorldState }
 | { name: "ToggleCampfireBurning", args: ToggleCampfireBurning }
 | { name: "UnequipItem", args: UnequipItem }
+| { name: "UpdateEnemies", args: UpdateEnemies }
 | { name: "UpdatePlayerPosition", args: UpdatePlayerPosition }
 | { name: "UpdateViewport", args: UpdateViewport }
 | { name: "UseEquippedItem", args: UseEquippedItem }
@@ -691,6 +777,22 @@ export type Reducer = never
 
 export class RemoteReducers {
   constructor(private connection: DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {}
+
+  addExperience(amount: number) {
+    const __args = { amount };
+    let __writer = new BinaryWriter(1024);
+    AddExperience.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("add_experience", __argsBuffer, this.setCallReducerFlags.addExperienceFlags);
+  }
+
+  onAddExperience(callback: (ctx: ReducerEventContext, amount: number) => void) {
+    this.connection.onReducer("add_experience", callback);
+  }
+
+  removeOnAddExperience(callback: (ctx: ReducerEventContext, amount: number) => void) {
+    this.connection.offReducer("add_experience", callback);
+  }
 
   addFuelToCampfire(campfireId: number, targetSlotIndex: number, itemInstanceId: bigint) {
     const __args = { campfireId, targetSlotIndex, itemInstanceId };
@@ -798,6 +900,22 @@ export class RemoteReducers {
 
   removeOnConsumeItem(callback: (ctx: ReducerEventContext, itemInstanceId: bigint) => void) {
     this.connection.offReducer("consume_item", callback);
+  }
+
+  damageEnemy(enemyId: bigint, damage: number) {
+    const __args = { enemyId, damage };
+    let __writer = new BinaryWriter(1024);
+    DamageEnemy.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("damage_enemy", __argsBuffer, this.setCallReducerFlags.damageEnemyFlags);
+  }
+
+  onDamageEnemy(callback: (ctx: ReducerEventContext, enemyId: bigint, damage: number) => void) {
+    this.connection.onReducer("damage_enemy", callback);
+  }
+
+  removeOnDamageEnemy(callback: (ctx: ReducerEventContext, enemyId: bigint, damage: number) => void) {
+    this.connection.offReducer("damage_enemy", callback);
   }
 
   despawnExpiredItems(schedule: DroppedItemDespawnSchedule) {
@@ -1320,6 +1438,38 @@ export class RemoteReducers {
     this.connection.offReducer("seed_world_state", callback);
   }
 
+  selectBuff(buffId: bigint) {
+    const __args = { buffId };
+    let __writer = new BinaryWriter(1024);
+    SelectBuff.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("select_buff", __argsBuffer, this.setCallReducerFlags.selectBuffFlags);
+  }
+
+  onSelectBuff(callback: (ctx: ReducerEventContext, buffId: bigint) => void) {
+    this.connection.onReducer("select_buff", callback);
+  }
+
+  removeOnSelectBuff(callback: (ctx: ReducerEventContext, buffId: bigint) => void) {
+    this.connection.offReducer("select_buff", callback);
+  }
+
+  selectCharacter(characterType: CharacterType) {
+    const __args = { characterType };
+    let __writer = new BinaryWriter(1024);
+    SelectCharacter.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("select_character", __argsBuffer, this.setCallReducerFlags.selectCharacterFlags);
+  }
+
+  onSelectCharacter(callback: (ctx: ReducerEventContext, characterType: CharacterType) => void) {
+    this.connection.onReducer("select_character", callback);
+  }
+
+  removeOnSelectCharacter(callback: (ctx: ReducerEventContext, characterType: CharacterType) => void) {
+    this.connection.offReducer("select_character", callback);
+  }
+
   sendMessage(text: string) {
     const __args = { text };
     let __writer = new BinaryWriter(1024);
@@ -1366,6 +1516,18 @@ export class RemoteReducers {
 
   removeOnSetSprinting(callback: (ctx: ReducerEventContext, sprinting: boolean) => void) {
     this.connection.offReducer("set_sprinting", callback);
+  }
+
+  spawnEnemies() {
+    this.connection.callReducer("spawn_enemies", new Uint8Array(0), this.setCallReducerFlags.spawnEnemiesFlags);
+  }
+
+  onSpawnEnemies(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("spawn_enemies", callback);
+  }
+
+  removeOnSpawnEnemies(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("spawn_enemies", callback);
   }
 
   splitAndMoveFromCampfire(sourceCampfireId: number, sourceSlotIndex: number, quantityToSplit: number, targetSlotType: string, targetSlotIndex: number) {
@@ -1560,6 +1722,18 @@ export class RemoteReducers {
     this.connection.offReducer("unequip_item", callback);
   }
 
+  updateEnemies() {
+    this.connection.callReducer("update_enemies", new Uint8Array(0), this.setCallReducerFlags.updateEnemiesFlags);
+  }
+
+  onUpdateEnemies(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("update_enemies", callback);
+  }
+
+  removeOnUpdateEnemies(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("update_enemies", callback);
+  }
+
   updatePlayerPosition(moveX: number, moveY: number) {
     const __args = { moveX, moveY };
     let __writer = new BinaryWriter(1024);
@@ -1607,6 +1781,11 @@ export class RemoteReducers {
 }
 
 export class SetReducerFlags {
+  addExperienceFlags: CallReducerFlags = 'FullUpdate';
+  addExperience(flags: CallReducerFlags) {
+    this.addExperienceFlags = flags;
+  }
+
   addFuelToCampfireFlags: CallReducerFlags = 'FullUpdate';
   addFuelToCampfire(flags: CallReducerFlags) {
     this.addFuelToCampfireFlags = flags;
@@ -1640,6 +1819,11 @@ export class SetReducerFlags {
   consumeItemFlags: CallReducerFlags = 'FullUpdate';
   consumeItem(flags: CallReducerFlags) {
     this.consumeItemFlags = flags;
+  }
+
+  damageEnemyFlags: CallReducerFlags = 'FullUpdate';
+  damageEnemy(flags: CallReducerFlags) {
+    this.damageEnemyFlags = flags;
   }
 
   despawnExpiredItemsFlags: CallReducerFlags = 'FullUpdate';
@@ -1807,6 +1991,16 @@ export class SetReducerFlags {
     this.seedWorldStateFlags = flags;
   }
 
+  selectBuffFlags: CallReducerFlags = 'FullUpdate';
+  selectBuff(flags: CallReducerFlags) {
+    this.selectBuffFlags = flags;
+  }
+
+  selectCharacterFlags: CallReducerFlags = 'FullUpdate';
+  selectCharacter(flags: CallReducerFlags) {
+    this.selectCharacterFlags = flags;
+  }
+
   sendMessageFlags: CallReducerFlags = 'FullUpdate';
   sendMessage(flags: CallReducerFlags) {
     this.sendMessageFlags = flags;
@@ -1820,6 +2014,11 @@ export class SetReducerFlags {
   setSprintingFlags: CallReducerFlags = 'FullUpdate';
   setSprinting(flags: CallReducerFlags) {
     this.setSprintingFlags = flags;
+  }
+
+  spawnEnemiesFlags: CallReducerFlags = 'FullUpdate';
+  spawnEnemies(flags: CallReducerFlags) {
+    this.spawnEnemiesFlags = flags;
   }
 
   splitAndMoveFromCampfireFlags: CallReducerFlags = 'FullUpdate';
@@ -1882,6 +2081,11 @@ export class SetReducerFlags {
     this.unequipItemFlags = flags;
   }
 
+  updateEnemiesFlags: CallReducerFlags = 'FullUpdate';
+  updateEnemies(flags: CallReducerFlags) {
+    this.updateEnemiesFlags = flags;
+  }
+
   updatePlayerPositionFlags: CallReducerFlags = 'FullUpdate';
   updatePlayerPosition(flags: CallReducerFlags) {
     this.updatePlayerPositionFlags = flags;
@@ -1906,12 +2110,20 @@ export class RemoteTables {
     return new ActiveEquipmentTableHandle(this.connection.clientCache.getOrCreateTable<ActiveEquipment>(REMOTE_MODULE.tables.active_equipment));
   }
 
+  get buff(): BuffTableHandle {
+    return new BuffTableHandle(this.connection.clientCache.getOrCreateTable<Buff>(REMOTE_MODULE.tables.buff));
+  }
+
   get campfire(): CampfireTableHandle {
     return new CampfireTableHandle(this.connection.clientCache.getOrCreateTable<Campfire>(REMOTE_MODULE.tables.campfire));
   }
 
   get campfireFuelCheckSchedule(): CampfireFuelCheckScheduleTableHandle {
     return new CampfireFuelCheckScheduleTableHandle(this.connection.clientCache.getOrCreateTable<CampfireFuelCheckSchedule>(REMOTE_MODULE.tables.campfire_fuel_check_schedule));
+  }
+
+  get character(): CharacterTableHandle {
+    return new CharacterTableHandle(this.connection.clientCache.getOrCreateTable<Character>(REMOTE_MODULE.tables.character));
   }
 
   get clientViewport(): ClientViewportTableHandle {
@@ -1932,6 +2144,10 @@ export class RemoteTables {
 
   get droppedItemDespawnSchedule(): DroppedItemDespawnScheduleTableHandle {
     return new DroppedItemDespawnScheduleTableHandle(this.connection.clientCache.getOrCreateTable<DroppedItemDespawnSchedule>(REMOTE_MODULE.tables.dropped_item_despawn_schedule));
+  }
+
+  get enemy(): EnemyTableHandle {
+    return new EnemyTableHandle(this.connection.clientCache.getOrCreateTable<Enemy>(REMOTE_MODULE.tables.enemy));
   }
 
   get globalTickSchedule(): GlobalTickScheduleTableHandle {
@@ -1964,6 +2180,10 @@ export class RemoteTables {
 
   get playerStatSchedule(): PlayerStatScheduleTableHandle {
     return new PlayerStatScheduleTableHandle(this.connection.clientCache.getOrCreateTable<PlayerStatSchedule>(REMOTE_MODULE.tables.player_stat_schedule));
+  }
+
+  get playerStats(): PlayerStatsTableHandle {
+    return new PlayerStatsTableHandle(this.connection.clientCache.getOrCreateTable<PlayerStats>(REMOTE_MODULE.tables.player_stats));
   }
 
   get recipe(): RecipeTableHandle {

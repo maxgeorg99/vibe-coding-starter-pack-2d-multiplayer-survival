@@ -22,6 +22,7 @@ import SpeechBubbleManager from './SpeechBubbleManager';
 // Import types used by props
 import { 
     Player as SpacetimeDBPlayer,
+    PlayerStats as SpacetimeDBPlayerStats,
     Tree as SpacetimeDBTree,
     Stone as SpacetimeDBStone,
     Campfire as SpacetimeDBCampfire,
@@ -64,6 +65,7 @@ interface GameScreenProps {
     recipes: Map<string, SpacetimeDBRecipe>;
     craftingQueueItems: Map<string, SpacetimeDBCraftingQueueItem>;
     messages: Map<string, SpacetimeDBMessage>;
+    playersStats: Map<string, SpacetimeDBPlayerStats>;
     
     // Connection & Player Info
     localPlayerId?: string;
@@ -101,7 +103,7 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
     const {
         players, trees, stones, campfires, mushrooms, droppedItems, woodenStorageBoxes, playerPins,
         inventoryItems, itemDefinitions, worldState, activeEquipments, recipes, craftingQueueItems,
-        messages,
+        messages, playersStats,
         localPlayerId, playerIdentity, connection,
         placementInfo, placementActions, placementError, startPlacement, cancelPlacement,
         interactingWith, handleSetInteractingWith,
@@ -161,6 +163,7 @@ const GameScreen: React.FC<GameScreenProps> = (props) => {
             <PlayerUI
                 identity={playerIdentity}
                 players={players}
+                playersStats={playersStats}
                 inventoryItems={inventoryItems}
                 itemDefinitions={itemDefinitions}
                 recipes={recipes}
